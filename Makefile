@@ -2,6 +2,7 @@
 #
 #   make test    build and run the host-side vector/unit tests (default)
 #   make cli     build the CLI natively (local dev convenience)
+#   make smoke   build the CLI and run the end-to-end CLI smoke test
 #   make diff    build and run the OpenSSL differential fuzz harness (opt-in)
 #   make m68k    cross-build the Amiga CLI binary (needs amiga-gcc)
 #   make clean
@@ -32,7 +33,7 @@ DIFF_ITERS ?= 5000
 
 BUILD := build
 
-.PHONY: all test cli diff m68k clean
+.PHONY: all test cli smoke diff m68k clean
 
 all: test cli
 
@@ -48,6 +49,10 @@ cli: $(BUILD)/amiauth
 
 $(BUILD)/amiauth: $(CORE_SRCS) $(CLI_SRCS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CObjINC) $(CORE_SRCS) $(CLI_SRCS) -o $@
+
+# --- Host: end-to-end CLI smoke test (always-unlocked round trip) ---
+smoke: $(BUILD)/amiauth
+	AMIAUTH_BIN=$(BUILD)/amiauth sh tests/cli/smoke.sh
 
 # --- Host: differential fuzz harness vs OpenSSL (opt-in; needs libcrypto) ---
 diff: $(BUILD)/run-diff
