@@ -10,7 +10,7 @@ jobs:
     name: Host vector tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build and run tests
         run: make test
       - name: Build native CLI
@@ -22,7 +22,7 @@ jobs:
     name: Differential fuzz (vs OpenSSL)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install OpenSSL headers
         run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
       - name: Fuzz crypto primitives against OpenSSL
@@ -36,6 +36,6 @@ jobs:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     container: stefanreinauer/amiga-gcc:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Cross-build CLI for 68000
         run: PATH="/opt/amiga/bin:$PATH" make m68k M68K_CC=m68k-amigaos-gcc
