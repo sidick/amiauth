@@ -48,7 +48,10 @@ so a secret exported from another authenticator can be pasted directly.
 Multi-account store, encrypted at rest. File header stores KDF salt + calibrated
 iteration count + cipher marker. Construction is encrypt-then-MAC (ChaCha20 +
 HMAC-SHA1). Supports an always-unlocked mode (cipher marked `none`) using the
-same file format. See [SECURITY.md](SECURITY.md).
+same file format. The on-disk layout is frozen in [VAULT_FORMAT.md](VAULT_FORMAT.md).
+`vault.c` takes an explicit file path and is unaware of `PROGDIR:`/`ENVARC:` —
+those live in the Amiga front-end; see [STORAGE.md](STORAGE.md) for where the
+vault and settings are kept and why. See also [SECURITY.md](SECURITY.md).
 
 ### `clock.c` — time resolution
 Resolves corrected UTC without touching the system clock, in priority order:

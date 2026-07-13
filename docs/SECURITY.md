@@ -7,16 +7,42 @@ secrets are the crown jewels: anyone who has them can generate your codes.
 
 The account database is encrypted at rest with a master passphrase:
 
-- **KDF:** PBKDF2-HMAC-SHA1 with a calibrated iteration count. The count is
-  measured at first run (target ~1 second on the host CPU) so it self-tunes
-  across everything from a 68000 to a Vampire or emulated 68040. Salt and
-  iteration count are stored in the file header.
+- **KDF:** PBKDF2-HMAC-SHA1. The iteration count is chosen at vault creation and
+  stored (with the salt) in the file header. See "KDF cost across the hardware
+  range" below — the count is a policy choice, not a raw "1 second here"
+  measurement, because the vault is portable across machines that differ in speed
+  by 100–1000×.
 - **Cipher:** ChaCha20 in an encrypt-then-MAC construction with HMAC-SHA1.
   ChaCha20 is fast on 68k (pure 32-bit ARX operations — no tables, no multiplies)
   and modern; SHA-1 is already in the binary for HMAC/OTP.
 
 This defends against an attacker who obtains the **vault file at rest**: a stolen
 HD image, a backup, a shared machine's disk.
+
+## KDF cost across the hardware range
+
+The iteration count is frozen into the vault when it is created, but AmiAuth
+vaults are meant to travel — copy the drawer to migrate machines (see
+[STORAGE.md](STORAGE.md)). Those machines can differ in CPU speed by two to three
+orders of magnitude, from a stock 7MHz 68000 to a Vampire/68080 or an emulated
+machine on a modern host. Two honest consequences follow:
+
+1. **A vault created on a fast machine can be slow to unlock on a slow one.** A
+   count calibrated to ~1s under emulation could take *minutes* on a real 68000.
+   Because unlock is on the critical path of a login, AmiAuth therefore does not
+   calibrate aggressively to the local CPU: it uses a conservative default and
+   **caps** the count so worst-case unlock on the slow end stays bounded (a few
+   seconds). A user on fast hardware may opt into a higher count, accepting slower
+   portability; re-tuning is a one-step re-encrypt (change passphrase / re-key),
+   since the count travels with the vault, not the machine.
+
+2. **On slow hardware the iteration count is modest, so passphrase strength is
+   what actually protects you.** A full second of PBKDF2 on a 68000 is only a few
+   thousand iterations — far below modern guidance (which is in the millions). No
+   single stored count can be both strong on fast machines and usable on slow
+   ones. Against an attacker who copies your vault and runs an *offline* guessing
+   attack on fast hardware, the iteration count buys only a small factor; a long,
+   unpredictable passphrase is the real defence. Choose one accordingly.
 
 ## What the vault does NOT protect against
 

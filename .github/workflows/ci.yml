@@ -16,6 +16,16 @@ jobs:
       - name: Build native CLI
         run: make cli
 
+  differential:
+    name: Differential fuzz (vs OpenSSL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenSSL headers
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+      - name: Fuzz crypto primitives against OpenSSL
+        run: make diff DIFF_ITERS=20000
+
   m68k-build:
     name: m68k Amiga build
     runs-on: ubuntu-latest
