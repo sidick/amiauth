@@ -17,17 +17,22 @@ the host. CLI tool generating codes from a plaintext secret.
 ## Phase 2 — Vault (≈1 weekend)
 PBKDF2, ChaCha20, encrypted account store, `otpauth://` import. CLI complete.
 
-- [ ] `chacha20.c` + vectors
-- [ ] `pbkdf2.c` (PBKDF2-HMAC-SHA1) + vectors
-- [ ] First-run iteration calibration (target ~1s on host CPU)
-- [ ] `vault.c` — encrypt-then-MAC store, header (salt/iters/cipher), load/save
-- [ ] Always-unlocked mode (cipher `none`), convertible both directions
-- [ ] `uri.c` — `otpauth://` parsing + import
-- [ ] CLI: add/list/remove accounts, `GET <account>`
-- [ ] Differential test harness: fuzz all crypto primitives (SHA-1, HMAC,
+- [x] `chacha20.c` + vectors (RFC 8439)
+- [x] `pbkdf2.c` (PBKDF2-HMAC-SHA1) + vectors (RFC 6070)
+- [x] `vault.c` — encrypt-then-MAC store, header (salt/iters/cipher), load/save,
+      atomic replace, constant-time MAC verify, golden fixture ([VAULT_FORMAT.md](VAULT_FORMAT.md))
+- [x] Always-unlocked mode (cipher `none`), convertible both directions
+- [x] Differential test harness: fuzz all crypto primitives (SHA-1, HMAC,
       ChaCha20, PBKDF2) against an OpenSSL reference oracle. Separate opt-in
       target/CI job; default suite stays dependency-free RFC vectors. (Host-only
       test dependency — the shipped binary stays dependency-free.)
+- [ ] `uri.c` — `otpauth://` parsing + import
+- [ ] CLI: add/list/remove accounts, `GET <account>`
+- [ ] Iteration calibration + cap (deferred to Phase 4 front-end; `vault.c`
+      takes an explicit count and the default is `VAULT_DEFAULT_ITERATIONS`).
+      See [SECURITY.md](SECURITY.md) "KDF cost across the hardware range".
+- [ ] CSPRNG for salt/nonce (Amiga front-end entropy source; core takes them
+      as parameters — flagged in VAULT_FORMAT.md implementation notes)
 
 ## Phase 3 — Clock (1–2 weekends)
 SNTP query, offset model, manual adjustment.

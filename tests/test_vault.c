@@ -1,36 +1,163 @@
-/* test_vault.c — account store behaviour. */
+/* test_vault.c — vault format round-trip, auth, tamper and conversion tests.
+ *
+ * These write to a temp file; the path is provided by the harness via an env
+ * var (VAULT_TEST_FILE) set in the Makefile, falling back to the CWD. */
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "test.h"
 #include "vault.h"
 
+static const char *tmp_path(void)
+{
+    const char *p = getenv("VAULT_TEST_FILE");
+    return p ? p : "amiauth-test.vault";
+}
+
+/* Fixed but arbitrary salt/nonce for deterministic tests. */
+static const uint8_t SALT[VAULT_SALT_SIZE] = {
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+    0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f
+};
+static const uint8_t NONCE[VAULT_NONCE_SIZE] = {
+    0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b
+};
+
+static void sample_account(otp_account *a)
+{
+    memset(a, 0, sizeof(*a));
+    strcpy(a->type, "totp");
+    strcpy(a->algorithm, "SHA1");
+    strcpy(a->issuer, "GitHub");
+    strcpy(a->label, "alice@example.com");
+    /* secret "12345678901234567890" */
+    memcpy(a->secret, "12345678901234567890", 20);
+    a->secret_len = 20;
+    a->digits = 6;
+    a->period = 30;
+    a->counter = 0;
+}
+
+static int accounts_equal(const otp_account *x, const otp_account *y)
+{
+    return strcmp(x->type, y->type) == 0
+        && strcmp(x->issuer, y->issuer) == 0
+        && strcmp(x->label, y->label) == 0
+        && x->secret_len == y->secret_len
+        && memcmp(x->secret, y->secret, x->secret_len) == 0
+        && x->digits == y->digits
+        && x->period == y->period
+        && x->counter == y->counter;
+}
+
 void run_vault_tests(void)
 {
-    /* Always-unlocked mode is implemented and needs no crypto: exercise the
-     * account list operations against it now. */
-    vault v;
+    const char *path = tmp_path();
     otp_account a;
-    memset(&a, 0, sizeof(a));
-    strcpy(a.type, "totp");
-    strcpy(a.issuer, "GitHub");
+    vault v, w;
 
-    TEST_CHECK(vault_create(&v, NULL) == VAULT_OK);
+    sample_account(&a);
+
+    /* --- encrypted round trip --- */
+    TEST_CHECK(vault_create(&v, "correct horse", 4096, SALT) == VAULT_OK);
+    TEST_CHECK(v.cipher == VAULT_CIPHER_CHACHA20 && v.iterations == 4096);
+    TEST_CHECK(vault_add(&v, &a) == VAULT_OK);
+    TEST_CHECK(vault_save(&v, path, NONCE) == VAULT_OK);
+
+    TEST_CHECK(vault_load(&w, path, "correct horse") == VAULT_OK);
+    TEST_CHECK(w.count == 1);
+    TEST_CHECK(accounts_equal(&w.accounts[0], &a));
+    TEST_CHECK(w.iterations == 4096);
+
+    /* --- wrong passphrase --- */
+    TEST_CHECK(vault_load(&w, path, "wrong passphrase") == VAULT_ERR_AUTH);
+
+    /* --- locked: header known, no accounts, until a passphrase is given --- */
+    TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_LOCKED);
+
+    /* --- tamper detection: flip one ciphertext byte --- */
+    {
+        FILE *f = fopen(path, "r+b");
+        long sz;
+        int c;
+        TEST_CHECK(f != NULL);
+        fseek(f, 0, SEEK_END); sz = ftell(f);
+        fseek(f, sz - 1, SEEK_SET);         /* last ciphertext byte */
+        c = fgetc(f);
+        fseek(f, sz - 1, SEEK_SET);
+        fputc(c ^ 0x01, f);
+        fclose(f);
+        TEST_CHECK(vault_load(&w, path, "correct horse") == VAULT_ERR_AUTH);
+    }
+
+    /* --- always-unlocked round trip --- */
+    TEST_CHECK(vault_create(&v, NULL, 0, NULL) == VAULT_OK);
+    TEST_CHECK(v.cipher == VAULT_CIPHER_NONE && v.unlocked == 1);
+    TEST_CHECK(vault_add(&v, &a) == VAULT_OK);
+    TEST_CHECK(vault_save(&v, path, NULL) == VAULT_OK);
+    TEST_CHECK(vault_load(&w, path, NULL) == VAULT_OK);   /* no passphrase needed */
+    TEST_CHECK(w.count == 1 && accounts_equal(&w.accounts[0], &a));
+    /* always-unlocked vaults never lock */
+    vault_lock(&w);
+    TEST_CHECK(w.unlocked == 1);
+
+    /* --- convert unlocked -> encrypted, and back --- */
+    TEST_CHECK(vault_set_passphrase(&v, "new secret", 2048, SALT) == VAULT_OK);
+    TEST_CHECK(v.cipher == VAULT_CIPHER_CHACHA20 && v.iterations == 2048);
+    TEST_CHECK(vault_save(&v, path, NONCE) == VAULT_OK);
+    TEST_CHECK(vault_load(&w, path, "new secret") == VAULT_OK);
+    TEST_CHECK(w.count == 1 && accounts_equal(&w.accounts[0], &a));
+
+    TEST_CHECK(vault_set_passphrase(&v, NULL, 0, NULL) == VAULT_OK);
     TEST_CHECK(v.cipher == VAULT_CIPHER_NONE);
-    TEST_CHECK(v.unlocked == 1);
+    TEST_CHECK(vault_save(&v, path, NULL) == VAULT_OK);
+    TEST_CHECK(vault_load(&w, path, NULL) == VAULT_OK);
+    TEST_CHECK(w.count == 1 && accounts_equal(&w.accounts[0], &a));
 
+    /* --- encrypted lock clears secrets --- */
+    TEST_CHECK(vault_create(&v, "pw", 1024, SALT) == VAULT_OK);
     TEST_CHECK(vault_add(&v, &a) == VAULT_OK);
-    TEST_CHECK(vault_add(&v, &a) == VAULT_OK);
-    TEST_CHECK(v.count == 2);
-    TEST_CHECK(vault_remove(&v, 0) == VAULT_OK);
-    TEST_CHECK(v.count == 1);
-    TEST_CHECK(vault_remove(&v, 5) == VAULT_ERR_RANGE);
-
-    /* Always-unlocked vaults never lock. */
     vault_lock(&v);
-    TEST_CHECK(v.unlocked == 1);
+    TEST_CHECK(v.unlocked == 0 && v.count == 0);
 
-    /* Encrypted-mode round trip (create/save/load/unlock) awaits Phase 2. */
-    TEST_PENDING("Encrypted vault create+save+load+unlock round trip");
-    TEST_PENDING("Wrong passphrase -> VAULT_ERR_AUTH");
-    TEST_PENDING("Encrypted vault locks and zeroes key on vault_lock()");
+    /* --- golden fixture: byte-exact format lock ---
+     * Guards against silent format drift. The expected bytes were verified
+     * independently against Python's PBKDF2/HMAC-SHA1 and OpenSSL's ChaCha20.
+     * Inputs: passphrase "golden", 4096 iters, SALT, NONCE, and one TOTP
+     * account (issuer "GH", label "a", secret "12345678901234567890"). */
+    {
+        static const char GOLDEN_HEX[] =
+            "414156540101010000001000"                 /* magic|ver|cipher|kdf|flags|iters */
+            "101112131415161718191a1b1c1d1e1f"         /* salt */
+            "202122232425262728292a2b"                 /* nonce */
+            "0000002b"                                  /* payload_len = 43 */
+            "8d5b3358ef283c53655e55edbb96a4f00fdf7b4a" /* mac */
+            "af19c1d4b53d4d6c6efba7b5aaaae8345fe10ba7"
+            "f4cf5eabbc24eefd414b2747d8356c6c621c1ec3"
+            "05460c";                                   /* ciphertext (43 bytes) */
+        otp_account g;
+        uint8_t filebuf[128];
+        FILE *f;
+        size_t n;
+
+        memset(&g, 0, sizeof(g));
+        strcpy(g.type, "totp"); strcpy(g.algorithm, "SHA1");
+        strcpy(g.issuer, "GH"); strcpy(g.label, "a");
+        memcpy(g.secret, "12345678901234567890", 20); g.secret_len = 20;
+        g.digits = 6; g.period = 30; g.counter = 0;
+
+        TEST_CHECK(vault_create(&v, "golden", 4096, SALT) == VAULT_OK);
+        TEST_CHECK(vault_add(&v, &g) == VAULT_OK);
+        TEST_CHECK(vault_save(&v, path, NONCE) == VAULT_OK);
+
+        f = fopen(path, "rb");
+        TEST_CHECK(f != NULL);
+        n = f ? fread(filebuf, 1, sizeof(filebuf), f) : 0;
+        if (f) fclose(f);
+        TEST_CHECK(n == 107);
+        TEST_CHECK(hex_eq(filebuf, n, GOLDEN_HEX));
+    }
+
+    remove(path);
 }

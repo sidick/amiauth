@@ -38,7 +38,7 @@ all: test cli
 
 # --- Host: unit / RFC-vector tests ---
 test: $(BUILD)/run-tests
-	$(BUILD)/run-tests
+	VAULT_TEST_FILE=$(BUILD)/amiauth-test.vault $(BUILD)/run-tests
 
 $(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CObjINC) -Itests $(CORE_SRCS) $(TEST_SRCS) -o $@

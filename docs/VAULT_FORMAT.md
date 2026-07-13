@@ -63,9 +63,17 @@ mac_key = dk[32, 64)     # HMAC-SHA1 key
 ```
 
 A single PBKDF2 call produces 64 bytes, split into independent encryption and MAC
-keys. `kdf_iterations` is calibrated at vault creation (target ~1s on the host
-CPU) and stored in the header so a faster machine can verify a vault made on a
-slower one and vice-versa.
+keys. `kdf_iterations` is chosen at vault creation and stored in the header so any
+machine can open the vault regardless of where it was made.
+
+The count is a **front-end policy decision, not a value `vault.c` measures**:
+`vault.c` takes an explicit iteration count and stays deterministic (so the golden
+fixture is byte-exact). Because vaults are portable across a 100–1000× CPU range,
+the policy uses a conservative default and a cap rather than raw "1s here"
+calibration — a vault calibrated to ~1s on a fast machine could take minutes to
+unlock on a 68000. See [SECURITY.md](SECURITY.md) "KDF cost across the hardware
+range". The default is `VAULT_DEFAULT_ITERATIONS` (a named constant in vault.h);
+calibration/capping to the local CPU is a front-end feature (Phase 4).
 
 > **On SHA-1:** HMAC-SHA1 and PBKDF2-HMAC-SHA1 remain cryptographically sound as
 > a MAC and a KDF — SHA-1's collision weaknesses do not translate into attacks on

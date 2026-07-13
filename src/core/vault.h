@@ -1,5 +1,10 @@
 /* vault.h — encrypted multi-account store (encrypt-then-MAC: ChaCha20 + HMAC-SHA1).
- * Stub: see docs/ROADMAP.md Phase 2 and docs/SECURITY.md. */
+ * On-disk layout is frozen in docs/VAULT_FORMAT.md.
+ *
+ * The core is deterministic and platform-agnostic: the caller supplies the
+ * iteration count and the random salt/nonce (a CSPRNG lives in the Amiga
+ * front-end), and an explicit file path (PROGDIR:/ENVARC: resolution is a
+ * front-end concern — see docs/STORAGE.md). See also docs/SECURITY.md. */
 #ifndef AMIAUTH_VAULT_H
 #define AMIAUTH_VAULT_H
 
@@ -8,9 +13,18 @@
 
 #include "uri.h"
 
-#define VAULT_MAX_ACCOUNTS 64
-#define VAULT_SALT_SIZE    16
-#define VAULT_KEY_SIZE     32
+#define VAULT_MAX_ACCOUNTS   64
+#define VAULT_SALT_SIZE      16
+#define VAULT_NONCE_SIZE     12
+#define VAULT_KEY_SIZE       32          /* each of enc_key / mac_key */
+#define VAULT_MAC_SIZE       20
+#define VAULT_FORMAT_VERSION  1
+
+/* Provisional policy default for the PBKDF2 iteration count. It is stored per
+ * vault, so this only affects newly-created vaults. Chosen conservatively
+ * because vaults are portable across a 100-1000x CPU range; the front-end will
+ * calibrate-and-cap to the local machine (Phase 4). See SECURITY.md. */
+#define VAULT_DEFAULT_ITERATIONS 10000u
 
 typedef enum {
     VAULT_CIPHER_NONE     = 0,   /* always-unlocked mode: stored in the clear */
@@ -18,10 +32,15 @@ typedef enum {
 } vault_cipher;
 
 typedef enum {
+    VAULT_KDF_NONE            = 0,
+    VAULT_KDF_PBKDF2_HMAC_SHA1 = 1
+} vault_kdf;
+
+typedef enum {
     VAULT_OK          =    0,
     VAULT_ERR_IO      =   -1,
-    VAULT_ERR_FORMAT  =   -2,
-    VAULT_ERR_AUTH    =   -3,     /* wrong passphrase / MAC mismatch */
+    VAULT_ERR_FORMAT  =   -2,     /* bad magic/version/length or malformed payload */
+    VAULT_ERR_AUTH    =   -3,     /* wrong passphrase / MAC mismatch / tampering */
     VAULT_ERR_LOCKED  =   -4,
     VAULT_ERR_FULL    =   -5,
     VAULT_ERR_RANGE   =   -6,
@@ -30,32 +49,48 @@ typedef enum {
 
 typedef struct {
     vault_cipher cipher;
-    uint32_t     iterations;                 /* PBKDF2 rounds (from header) */
-    uint8_t      salt[VAULT_SALT_SIZE];
-    int          unlocked;                   /* 1 when key is valid */
+    vault_kdf    kdf;
+    uint32_t     iterations;                 /* PBKDF2 rounds (0 when kdf none) */
+    uint8_t      salt[VAULT_SALT_SIZE];      /* zero when kdf none */
+    int          unlocked;                   /* 1 when accounts/keys are valid */
     size_t       count;
     otp_account  accounts[VAULT_MAX_ACCOUNTS];
-    uint8_t      key[VAULT_KEY_SIZE];        /* derived; zeroed on lock/quit */
+    uint8_t      enc_key[VAULT_KEY_SIZE];    /* derived; zeroed on lock/quit */
+    uint8_t      mac_key[VAULT_KEY_SIZE];    /* derived; zeroed on lock/quit */
 } vault;
 
-/* Create a fresh in-memory vault. NULL/empty passphrase selects always-unlocked
- * mode (VAULT_CIPHER_NONE). */
-vault_result vault_create(vault *v, const char *passphrase);
+/* Create a fresh in-memory (unlocked) vault.
+ *   passphrase NULL/empty -> always-unlocked mode (salt/iterations ignored).
+ *   otherwise             -> ChaCha20 + PBKDF2; `salt` (16 random bytes) is
+ *                            required and `iterations` (0 selects the default)
+ *                            is stored in the header. */
+vault_result vault_create(vault *v, const char *passphrase,
+                          uint32_t iterations, const uint8_t salt[VAULT_SALT_SIZE]);
 
-/* Load from disk. For an encrypted vault, `passphrase` derives the key and
- * verifies the MAC; VAULT_ERR_AUTH indicates a wrong passphrase. */
+/* Load from disk. Always parses the header. For an encrypted vault, a NULL
+ * passphrase returns VAULT_ERR_LOCKED with the header fields populated; a
+ * supplied passphrase derives the key, verifies the MAC (constant time) and
+ * decrypts — VAULT_ERR_AUTH on a wrong passphrase or tampering. */
 vault_result vault_load(vault *v, const char *path, const char *passphrase);
 
-/* Serialise to disk in the current mode. */
-vault_result vault_save(const vault *v, const char *path);
+/* Serialise to disk (atomic replace). `nonce` must be 12 fresh random bytes for
+ * an encrypted vault; it is ignored (may be NULL) in always-unlocked mode. */
+vault_result vault_save(const vault *v, const char *path,
+                        const uint8_t nonce[VAULT_NONCE_SIZE]);
 
 vault_result vault_add(vault *v, const otp_account *acct);
 vault_result vault_remove(vault *v, size_t index);
 
-/* Zero the derived key and mark locked. Always safe. */
-void         vault_lock(vault *v);
+/* Add / change / remove the passphrase, converting between encrypted and
+ * always-unlocked in place (a subsequent vault_save writes the new form).
+ * Requires the vault to be unlocked. Same argument rules as vault_create. */
+vault_result vault_set_passphrase(vault *v, const char *passphrase,
+                                  uint32_t iterations,
+                                  const uint8_t salt[VAULT_SALT_SIZE]);
 
-/* Re-derive the key from `passphrase` and verify against the stored MAC. */
-vault_result vault_unlock(vault *v, const char *passphrase);
+/* Zero the derived keys. For an encrypted vault this also clears the decrypted
+ * accounts and marks it locked (reopen via vault_load). Always-unlocked vaults
+ * have nothing to lock, so this is a no-op there. */
+void vault_lock(vault *v);
 
 #endif /* AMIAUTH_VAULT_H */
