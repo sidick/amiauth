@@ -11,16 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # No downloadable deps to cache; ccache caches compiler output, which
-      # grows worthwhile as the crypto implementations land (Phases 1-2).
-      - name: Set up ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: host-tests
       - name: Build and run tests
-        run: make test CC="ccache cc"
+        run: make test
       - name: Build native CLI
-        run: make cli CC="ccache cc"
+        run: make cli
 
   m68k-build:
     name: m68k Amiga build
@@ -28,9 +22,5 @@ jobs:
     container: stefanreinauer/amiga-gcc:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: m68k-build
       - name: Cross-build CLI for 68000
-        run: PATH="/opt/amiga/bin:$PATH" make m68k M68K_CC="ccache m68k-amigaos-gcc"
+        run: PATH="/opt/amiga/bin:$PATH" make m68k M68K_CC=m68k-amigaos-gcc
