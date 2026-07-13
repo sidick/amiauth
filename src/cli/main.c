@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "otp.h"
 #include "uri.h"
@@ -34,6 +35,9 @@
 #endif
 
 #if defined(__amigaos__) || defined(AMIGA) || defined(amiga)
+#  include <proto/exec.h>
+#  include <proto/locale.h>
+#  define AMIAUTH_AMIGA 1
 #  define DEFAULT_VAULT "PROGDIR:AmiAuth.vault"
 #else
 #  define DEFAULT_VAULT "AmiAuth.vault"
@@ -59,6 +63,41 @@ static int cli_random(uint8_t *buf, size_t n)
     (void)buf; (void)n;
     return -1;   /* TODO(Phase 4): AmigaOS CSPRNG */
 #endif
+}
+
+/* Seconds to add to the system clock to obtain UTC. On the host, time() is
+ * already UTC (0). On AmigaOS the RTC holds local time, so we read the timezone
+ * from locale.library: loc_GMTOffset is minutes west of GMT, and
+ *   UTC = local + (minutes_west * 60),
+ * which is exactly clock_ctx's offset convention (offset added to system time).
+ * A first-guess only — DST is not handled and the value is 0 if the user has
+ * not set a timezone in Locale prefs. Returns 0 on any failure. */
+static long cli_utc_offset(void)
+{
+#ifdef AMIAUTH_AMIGA
+    struct Library *LocaleBase;
+    long offset = 0;
+    LocaleBase = OpenLibrary((STRPTR)"locale.library", 38);   /* OS 2.1+ */
+    if (LocaleBase) {
+        struct Locale *loc = OpenLocale(NULL);
+        if (loc) {
+            offset = loc->loc_GMTOffset * 60;
+            CloseLocale(loc);
+        }
+        CloseLibrary(LocaleBase);
+    }
+    return offset;
+#else
+    return 0;
+#endif
+}
+
+/* Initialise a clock context and apply the platform UTC offset. */
+static void cli_clock_init(clock_ctx *c)
+{
+    long off = cli_utc_offset();
+    clock_init(c);
+    if (off) clock_set_offset(c, off);   /* -> CLOCK_MANUAL (amber) */
 }
 
 static void strip_eol(char *s)
@@ -194,13 +233,39 @@ static int cmd_code(const char *secret_b32, const char *digits_s, const char *pe
         return 2;
     }
 
-    clock_init(&clk);
+    cli_clock_init(&clk);
     now = clock_now_utc(&clk);
     printf("%0*lu\n", digits,
            (unsigned long)totp_sha1(key, (size_t)keylen, now, 0, (uint32_t)period, digits));
     fprintf(stderr, "(%u seconds remaining)\n",
             totp_seconds_remaining(now, 0, (uint32_t)period));
     memset(key, 0, sizeof(key));
+    return 0;
+}
+
+static int cmd_clock(void)
+{
+    clock_ctx c;
+    uint64_t utc;
+    time_t t;
+    struct tm *tm;
+    const char *status;
+
+    cli_clock_init(&c);
+    utc = clock_now_utc(&c);
+    status = c.state == CLOCK_SYNCED ? "synced (green)"
+           : c.state == CLOCK_MANUAL ? "offset applied (amber)"
+           :                           "unverified (red)";
+
+    printf("UTC offset : %+ld seconds (%+ld min)\n", c.offset_seconds,
+           c.offset_seconds / 60);
+    printf("status     : %s\n", status);
+    t = (time_t)utc;
+    tm = gmtime(&t);
+    if (tm)
+        printf("corrected  : %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+               tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+               tm->tm_hour, tm->tm_min, tm->tm_sec);
     return 0;
 }
 
@@ -332,7 +397,7 @@ static int cmd_get(const char *path, const char *account)
             fprintf(stderr, "AmiAuth: warning: could not persist HOTP counter (%s)\n",
                     vault_err(rc));
     } else {
-        clock_init(&clk);
+        cli_clock_init(&clk);
         now = clock_now_utc(&clk);
         printf("%0*lu\n", a->digits,
                (unsigned long)totp_sha1(a->secret, a->secret_len, now, 0, a->period, a->digits));
@@ -373,11 +438,12 @@ static int usage(const char *argv0)
         "  %s LIST                                     List account names\n"
         "  %s GET <account>                            Print an account's code\n"
         "  %s REMOVE <account>                         Delete an account\n"
+        "  %s CLOCK                                    Show the UTC offset and status\n"
         "  %s HELP\n"
         "\n"
         "Options: -v/--vault PATH (or AMIAUTH_VAULT). Default: %s\n"
         "An encrypted vault prompts for its passphrase on the terminal.\n",
-        argv0, argv0, argv0, argv0, argv0, argv0, argv0, DEFAULT_VAULT);
+        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, DEFAULT_VAULT);
     return 1;
 }
 
@@ -408,6 +474,7 @@ int main(int argc, char **argv)
     if (ci_streq(pos[0], "LIST"))   return cmd_list(vpath);
     if (ci_streq(pos[0], "GET"))    return npos >= 2 ? cmd_get(vpath, pos[1]) : usage(argv[0]);
     if (ci_streq(pos[0], "REMOVE")) return npos >= 2 ? cmd_remove(vpath, pos[1]) : usage(argv[0]);
+    if (ci_streq(pos[0], "CLOCK"))  return cmd_clock();
     if (ci_streq(pos[0], "HELP"))   { usage(argv[0]); return 0; }
 
     return usage(argv[0]);
