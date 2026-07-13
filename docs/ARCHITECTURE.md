@@ -80,8 +80,11 @@ Resolves corrected UTC without touching the system clock (full design in
 
 - **Host** — portable core compiled natively for CI. Runs RFC 6238 Appendix B
   and RFC 4226 Appendix D vectors without an emulator.
-- **m68k** — `amiga-gcc`, targeting plain 68000 for the core tool to maximise
-  audience reach.
+- **m68k** — `amiga-gcc`. **Plain 68000 (`-m68000`) is the baseline target**:
+  all code (CLI and GUI) must build and run on a stock 68000 to maximise reach.
+  Requiring 020+ needs a very good reason; the only 020+ code is the *optional*
+  AmiSSL/hand-asm crypto providers below, selected by runtime CPU detection and
+  never required.
 
 ## Planned optimisation (post-vectors)
 

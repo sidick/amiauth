@@ -44,6 +44,10 @@ AmiAuth aims to make "my A1200 is my 2FA device" a real, daily-useful thing.
 
 ## Design principles
 
+- **68000 is the baseline target** — everything builds and runs on a plain
+  68000 (`-m68000`), so AmiAuth works on stock hardware. Requiring 020+ needs a
+  very good reason; anything that does (an optional AmiSSL or hand-written-asm
+  crypto provider) is opt-in via runtime CPU dispatch, never the minimum.
 - **Zero mandatory dependencies** beyond the OS — all crypto is vendored; no
   AmiSSL requirement. `bsdsocket` is used only opportunistically for SNTP.
 - **Portable, testable core** — the OTP and crypto code is plain C with a
