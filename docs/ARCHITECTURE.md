@@ -64,7 +64,9 @@ Resolves corrected UTC without touching the system clock (full design in
 ## Front-ends
 
 - **CLI** — no GUI dependency at all; retains full code-generation on OS 2.x and
-  floppy-booted machines. Example: `AmiAuth GET github`.
+  floppy-booted machines. Commands: `CODE`, `INIT`, `ADD`, `LIST`, `GET`,
+  `REMOVE`, `CLOCK`, `SYNC`. Amiga-only front-end glue (bsdsocket SNTP, ...) lives
+  in `src/amiga/` and is linked into the m68k build only; the host build stubs it.
 - **GUI (ClassAct/ReAction)** — `listbrowser.gadget` account list, large code
   display, `fuelgauge.gadget` countdown, clipboard copy (clipboard.device, FTXT).
   Uses only classes common to ClassAct 3.3 and ReAction; ClassAct classes bundled

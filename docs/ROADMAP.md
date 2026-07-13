@@ -7,12 +7,12 @@ tested state.
 SHA-1, HMAC, TOTP/HOTP core, Base32 — all validated against RFC test vectors on
 the host. CLI tool generating codes from a plaintext secret.
 
-- [ ] `sha1.c` + host test (FIPS/RFC vectors)
-- [ ] `hmac.c` (HMAC-SHA1) + vectors
-- [ ] `otp.c` — HOTP (RFC 4226 App. D) and TOTP (RFC 6238 App. B) vectors pass
-- [ ] `base32.c` — tolerant decode + tests
-- [ ] Minimal CLI: generate a code from a plaintext secret
-- [ ] Host build target + CI running vectors on every commit
+- [x] `sha1.c` + host test (FIPS/RFC vectors)
+- [x] `hmac.c` (HMAC-SHA1) + vectors
+- [x] `otp.c` — HOTP (RFC 4226 App. D) and TOTP (RFC 6238 App. B) vectors pass
+- [x] `base32.c` — tolerant decode + tests
+- [x] Minimal CLI: generate a code from a plaintext secret (`CODE`)
+- [x] Host build target + CI running vectors on every commit
 
 ## Phase 2 — Vault (≈1 weekend)
 PBKDF2, ChaCha20, encrypted account store, `otpauth://` import. CLI complete.
@@ -54,15 +54,21 @@ See [CLOCK.md](CLOCK.md) for the full layered time-resolution design.
 ClassAct GUI with account list, live codes, countdown bars, clipboard copy.
 Commodity shell.
 
+Clock groundwork already landed in the CLI (see Phase 3): the **SNTP transport**
+(`src/amiga/sntp.c`, `SYNC`) and the **`locale.library` amber offset** + `CLOCK`
+status command are done and verified on OS 3.2. Remaining Phase 4 work:
+
+- [ ] Offset/status **persistence** (`ENVARC:`) so `GET`/`CODE` auto-use the
+      SNTP-synced offset + a configurable server (ties the clock work together)
+- [ ] **CSPRNG** for salt/nonce (Amiga entropy) — unblocks encrypted vaults on
+      hardware; PBKDF2 iteration calibration + cap (see [SECURITY.md](SECURITY.md))
 - [ ] ReAction window: `listbrowser` list, large code display, `fuelgauge` bar
 - [ ] Clipboard copy (clipboard.device, FTXT)
-- [ ] Clock-status indicator (green/amber/red)
-- [ ] SNTP transport (`bsdsocket`) + `locale.library` timezone auto-offset as
-      an amber first-guess default (mind DST / local-vs-UTC RTC / sign) — see
-      [CLOCK.md](CLOCK.md)
+- [ ] Clock-status **indicator** in the GUI (green/amber/red)
 - [ ] CxBroker setup, hotkey filter, popup/hide window lifecycle
 - [ ] Exchange messages (show/hide/kill), auto-lock timer
 - [ ] WBStartup-friendly tooltypes (`DONOTWAIT`, `CX_POPUP=NO`), passphrase flow
+- [ ] (polish) parse CLI args with dos.library `ReadArgs` on Amiga
 
 ## Phase 5 — Release
 - [ ] Docs, including the honest security note
