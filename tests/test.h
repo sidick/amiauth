@@ -7,7 +7,22 @@
 #ifndef AMIAUTH_TEST_H
 #define AMIAUTH_TEST_H
 
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
+
+/* Compare `len` raw bytes against a lower-case hex string (exactly len*2 chars).
+ * Returns non-zero on an exact match. Shared by the crypto vector tests. */
+static inline int hex_eq(const uint8_t *buf, size_t len, const char *hex)
+{
+    static const char H[] = "0123456789abcdef";
+    size_t i;
+    for (i = 0; i < len; i++) {
+        if (hex[i * 2]     != H[buf[i] >> 4])   return 0;
+        if (hex[i * 2 + 1] != H[buf[i] & 0x0f]) return 0;
+    }
+    return hex[len * 2] == '\0';
+}
 
 typedef struct {
     int passed;
