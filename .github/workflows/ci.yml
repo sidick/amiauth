@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 jobs:
@@ -19,6 +19,9 @@ jobs:
   m68k-build:
     name: m68k Amiga build
     runs-on: ubuntu-latest
+    # Slower job (container pull): only on PRs and post-merge on main, not on
+    # every feature-branch change. Host tests are the fast per-push signal.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     container: stefanreinauer/amiga-gcc:latest
     steps:
       - uses: actions/checkout@v4
