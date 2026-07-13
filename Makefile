@@ -3,8 +3,9 @@
 #   make test    build and run the host-side vector/unit tests (default)
 #   make cli     build the CLI natively (local dev convenience)
 #   make smoke   build the CLI and run the end-to-end CLI smoke test
-#   make diff    build and run the OpenSSL differential fuzz harness (opt-in)
-#   make m68k    cross-build the Amiga CLI binary (needs amiga-gcc)
+#   make diff        build and run the OpenSSL differential fuzz harness (opt-in)
+#   make m68k        cross-build the Amiga binary (needs amiga-gcc on PATH)
+#   make m68k-docker cross-build inside the CI container (no local toolchain)
 #   make clean
 #
 # The core is portable C, so `test` and `cli` build with any host compiler.
@@ -18,6 +19,10 @@ CObjINC := -Isrc/core
 # --- m68k cross toolchain (Amiga build) ---
 M68K_CC     ?= m68k-amigaos-gcc
 M68K_CFLAGS ?= -std=c99 -O2 -Wall -m68000 -noixemul $(CObjINC)
+
+# Containerised cross-build: same image as CI, so local m68k builds match.
+DOCKER          ?= docker
+AMIGA_GCC_IMAGE ?= stefanreinauer/amiga-gcc:latest
 
 CORE_SRCS := $(wildcard src/core/*.c)
 TEST_SRCS := $(wildcard tests/*.c)
@@ -33,7 +38,7 @@ DIFF_ITERS ?= 5000
 
 BUILD := build
 
-.PHONY: all test cli smoke diff m68k clean
+.PHONY: all test cli smoke diff m68k m68k-docker clean
 
 all: test cli
 
@@ -62,9 +67,14 @@ $(BUILD)/run-diff: $(CORE_SRCS) $(DIFF_SRCS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CObjINC) $(OPENSSL_CFLAGS) $(CORE_SRCS) $(DIFF_SRCS) \
 		$(OPENSSL_LIBS) -o $@
 
-# --- m68k: Amiga CLI binary ---
+# --- m68k: Amiga CLI binary (amiga-gcc on PATH) ---
 m68k: | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(CLI_SRCS) -o $(BUILD)/AmiAuth
+
+# --- m68k via the CI container: no local toolchain needed, matches CI exactly ---
+m68k-docker:
+	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make m68k'
 
 $(BUILD):
 	mkdir -p $(BUILD)
