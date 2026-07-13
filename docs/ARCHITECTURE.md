@@ -54,7 +54,8 @@ those live in the Amiga front-end; see [STORAGE.md](STORAGE.md) for where the
 vault and settings are kept and why. See also [SECURITY.md](SECURITY.md).
 
 ### `clock.c` — time resolution
-Resolves corrected UTC without touching the system clock, in priority order:
+Resolves corrected UTC without touching the system clock (full design in
+[CLOCK.md](CLOCK.md)), in priority order:
 1. **SNTP** — a single UDP exchange over `bsdsocket` if a TCP/IP stack is up;
    compute offset vs system clock, use corrected time, display measured offset.
 2. **Explicit UTC offset** — user-stated offset for offline machines.

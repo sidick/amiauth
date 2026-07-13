@@ -38,10 +38,17 @@ PBKDF2, ChaCha20, encrypted account store, `otpauth://` import. CLI complete.
 ## Phase 3 — Clock (1–2 weekends)
 SNTP query, offset model, manual adjustment.
 
-- [ ] `clock.c` offset-resolution model (SNTP → explicit offset → manual nudge)
-- [ ] SNTP client over `bsdsocket` (single UDP exchange, configurable server)
-- [ ] Corrected-time path used by `otp.c` (no system-clock side effects)
-- [ ] Offset display / clock-status state (synced / manual / unverified)
+- [x] `clock.c` offset-resolution model (SNTP → explicit offset → manual nudge)
+- [x] Portable SNTP packet build/parse + offset computation (host-tested;
+      RFC epoch conversion, request/echo round trip, kiss-o'-death rejection)
+- [x] Corrected-time path used by `otp.c` (no system-clock side effects) —
+      via `clock_now_utc`, already used by the CLI
+- [x] Clock-status state (synced / manual / unverified)
+- [ ] SNTP transport over `bsdsocket` (single UDP exchange) — thin Amiga glue,
+      lands with the front-end (Phase 4); calls the portable helpers above
+- [ ] Offset/status persistence (ENVARC:) + display — front-end (Phase 4)
+
+See [CLOCK.md](CLOCK.md) for the full layered time-resolution design.
 
 ## Phase 4 — GUI + commodity (≈2 weekends)
 ClassAct GUI with account list, live codes, countdown bars, clipboard copy.
@@ -50,6 +57,9 @@ Commodity shell.
 - [ ] ReAction window: `listbrowser` list, large code display, `fuelgauge` bar
 - [ ] Clipboard copy (clipboard.device, FTXT)
 - [ ] Clock-status indicator (green/amber/red)
+- [ ] SNTP transport (`bsdsocket`) + `locale.library` timezone auto-offset as
+      an amber first-guess default (mind DST / local-vs-UTC RTC / sign) — see
+      [CLOCK.md](CLOCK.md)
 - [ ] CxBroker setup, hotkey filter, popup/hide window lifecycle
 - [ ] Exchange messages (show/hide/kill), auto-lock timer
 - [ ] WBStartup-friendly tooltypes (`DONOTWAIT`, `CX_POPUP=NO`), passphrase flow
