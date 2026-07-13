@@ -48,6 +48,8 @@ SNTP query, offset model, manual adjustment.
       lands with the front-end (Phase 4); calls the portable helpers above
 - [ ] Offset/status persistence (ENVARC:) + display — front-end (Phase 4)
 
+See [CLOCK.md](CLOCK.md) for the full layered time-resolution design.
+
 ## Phase 4 — GUI + commodity (≈2 weekends)
 ClassAct GUI with account list, live codes, countdown bars, clipboard copy.
 Commodity shell.
@@ -55,6 +57,9 @@ Commodity shell.
 - [ ] ReAction window: `listbrowser` list, large code display, `fuelgauge` bar
 - [ ] Clipboard copy (clipboard.device, FTXT)
 - [ ] Clock-status indicator (green/amber/red)
+- [ ] SNTP transport (`bsdsocket`) + `locale.library` timezone auto-offset as
+      an amber first-guess default (mind DST / local-vs-UTC RTC / sign) — see
+      [CLOCK.md](CLOCK.md)
 - [ ] CxBroker setup, hotkey filter, popup/hide window lifecycle
 - [ ] Exchange messages (show/hide/kill), auto-lock timer
 - [ ] WBStartup-friendly tooltypes (`DONOTWAIT`, `CX_POPUP=NO`), passphrase flow
