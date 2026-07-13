@@ -19,8 +19,8 @@ jobs:
   m68k-build:
     name: m68k Amiga build
     runs-on: ubuntu-latest
-    container: amigadev/crosstools:m68k-amigaos
+    container: stefanreinauer/amiga-gcc:latest
     steps:
       - uses: actions/checkout@v4
       - name: Cross-build CLI for 68000
-        run: make m68k M68K_CC=m68k-amigaos-gcc
+        run: PATH="/opt/amiga/bin:$PATH" make m68k M68K_CC=m68k-amigaos-gcc
