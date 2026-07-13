@@ -44,8 +44,8 @@ SNTP query, offset model, manual adjustment.
 - [x] Corrected-time path used by `otp.c` (no system-clock side effects) —
       via `clock_now_utc`, already used by the CLI
 - [x] Clock-status state (synced / manual / unverified)
-- [ ] SNTP transport over `bsdsocket` (single UDP exchange) — thin Amiga glue,
-      lands with the front-end (Phase 4); calls the portable helpers above
+- [x] SNTP transport over `bsdsocket` (single UDP exchange) — `src/amiga/sntp.c`;
+      CLI `SYNC` command; verified on OS 3.2 under Amiberry (green, true UTC)
 - [ ] Offset/status persistence (ENVARC:) + display — front-end (Phase 4)
 
 See [CLOCK.md](CLOCK.md) for the full layered time-resolution design.

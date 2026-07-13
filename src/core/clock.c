@@ -93,13 +93,12 @@ void clock_apply_offset(clock_ctx *c, uint64_t t1, uint64_t t2,
     c->state = CLOCK_SYNCED;
 }
 
+#ifndef __amigaos__
+/* Portable/host build has no UDP transport. The AmigaOS implementation lives in
+ * src/amiga/sntp.c (bsdsocket) and is linked only into the Amiga build. */
 int clock_sntp_sync(clock_ctx *c, const char *server)
 {
     (void)c; (void)server;
-    /* Amiga front-end (Phase 4): record t1, send clock_ntp_build_request over a
-     * bsdsocket UDP socket, receive 48 bytes, record t4, parse with
-     * clock_ntp_parse_response (validating originate == t1), then
-     * clock_apply_offset(c, t1, t2, t3, t4). The portable build has no
-     * transport and reports failure. */
     return -1;
 }
+#endif
