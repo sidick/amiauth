@@ -24,10 +24,12 @@ M68K_CFLAGS ?= -std=c99 -O2 -Wall -m68000 -noixemul $(CObjINC)
 DOCKER          ?= docker
 AMIGA_GCC_IMAGE ?= stefanreinauer/amiga-gcc:latest
 
-CORE_SRCS := $(wildcard src/core/*.c)
-TEST_SRCS := $(wildcard tests/*.c)
-CLI_SRCS  := src/cli/main.c
-DIFF_SRCS := tests/diff/diff_main.c
+CORE_SRCS  := $(wildcard src/core/*.c)
+TEST_SRCS  := $(wildcard tests/*.c)
+CLI_SRCS   := src/cli/main.c
+DIFF_SRCS  := tests/diff/diff_main.c
+# AmigaOS-only front-end glue (bsdsocket SNTP, ...); m68k build only.
+AMIGA_SRCS := $(wildcard src/amiga/*.c)
 
 # OpenSSL flags for the differential harness (pkg-config, with a plain fallback).
 OPENSSL_CFLAGS ?= $(shell pkg-config --cflags libcrypto 2>/dev/null)
@@ -69,7 +71,7 @@ $(BUILD)/run-diff: $(CORE_SRCS) $(DIFF_SRCS) | $(BUILD)
 
 # --- m68k: Amiga CLI binary (amiga-gcc on PATH) ---
 m68k: | $(BUILD)
-	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(CLI_SRCS) -o $(BUILD)/AmiAuth
+	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) -o $(BUILD)/AmiAuth
 
 # --- m68k via the CI container: no local toolchain needed, matches CI exactly ---
 m68k-docker:

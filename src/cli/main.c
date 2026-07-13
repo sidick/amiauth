@@ -243,29 +243,46 @@ static int cmd_code(const char *secret_b32, const char *digits_s, const char *pe
     return 0;
 }
 
-static int cmd_clock(void)
+static void print_clock(const clock_ctx *c)
 {
-    clock_ctx c;
-    uint64_t utc;
-    time_t t;
-    struct tm *tm;
-    const char *status;
+    uint64_t utc = clock_now_utc(c);
+    time_t t = (time_t)utc;
+    struct tm *tm = gmtime(&t);
+    const char *status = c->state == CLOCK_SYNCED ? "synced (green)"
+                       : c->state == CLOCK_MANUAL ? "offset applied (amber)"
+                       :                            "unverified (red)";
 
-    cli_clock_init(&c);
-    utc = clock_now_utc(&c);
-    status = c.state == CLOCK_SYNCED ? "synced (green)"
-           : c.state == CLOCK_MANUAL ? "offset applied (amber)"
-           :                           "unverified (red)";
-
-    printf("UTC offset : %+ld seconds (%+ld min)\n", c.offset_seconds,
-           c.offset_seconds / 60);
+    printf("UTC offset : %+ld seconds (%+ld min)\n", c->offset_seconds,
+           c->offset_seconds / 60);
     printf("status     : %s\n", status);
-    t = (time_t)utc;
-    tm = gmtime(&t);
     if (tm)
         printf("corrected  : %04d-%02d-%02d %02d:%02d:%02d UTC\n",
                tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
                tm->tm_hour, tm->tm_min, tm->tm_sec);
+}
+
+static int cmd_clock(void)
+{
+    clock_ctx c;
+    cli_clock_init(&c);
+    print_clock(&c);
+    return 0;
+}
+
+static int cmd_sync(const char *server)
+{
+    clock_ctx c;
+    if (!server) server = "pool.ntp.org";
+
+    cli_clock_init(&c);                 /* locale baseline, overridden on success */
+    printf("Querying %s ...\n", server);
+    if (clock_sntp_sync(&c, server) != 0) {
+        fprintf(stderr,
+            "AmiAuth: SNTP sync failed (no TCP/IP stack, or no response from %s)\n",
+            server);
+        return 2;
+    }
+    print_clock(&c);
     return 0;
 }
 
@@ -439,11 +456,12 @@ static int usage(const char *argv0)
         "  %s GET <account>                            Print an account's code\n"
         "  %s REMOVE <account>                         Delete an account\n"
         "  %s CLOCK                                    Show the UTC offset and status\n"
+        "  %s SYNC [server]                            SNTP-sync (default pool.ntp.org)\n"
         "  %s HELP\n"
         "\n"
         "Options: -v/--vault PATH (or AMIAUTH_VAULT). Default: %s\n"
         "An encrypted vault prompts for its passphrase on the terminal.\n",
-        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, DEFAULT_VAULT);
+        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, DEFAULT_VAULT);
     return 1;
 }
 
@@ -475,6 +493,7 @@ int main(int argc, char **argv)
     if (ci_streq(pos[0], "GET"))    return npos >= 2 ? cmd_get(vpath, pos[1]) : usage(argv[0]);
     if (ci_streq(pos[0], "REMOVE")) return npos >= 2 ? cmd_remove(vpath, pos[1]) : usage(argv[0]);
     if (ci_streq(pos[0], "CLOCK"))  return cmd_clock();
+    if (ci_streq(pos[0], "SYNC"))   return cmd_sync(npos > 1 ? pos[1] : NULL);
     if (ci_streq(pos[0], "HELP"))   { usage(argv[0]); return 0; }
 
     return usage(argv[0]);
