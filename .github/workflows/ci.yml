@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  host-tests:
+    name: Host vector tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run tests
+        run: make test
+      - name: Build native CLI
+        run: make cli
+
+  m68k-build:
+    name: m68k Amiga build
+    runs-on: ubuntu-latest
+    container: amigadev/crosstools:m68k-amigaos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cross-build CLI for 68000
+        run: make m68k M68K_CC=m68k-amigaos-gcc

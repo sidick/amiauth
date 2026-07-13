@@ -1,0 +1,7 @@
+# Editor (clangd) config. The Makefile passes these include paths; mirror them
+# here so clangd resolves headers without a compile_commands.json.
+CompileFlags:
+  Add:
+    - "-std=c99"
+    - "-Isrc/core"
+    - "-Itests"

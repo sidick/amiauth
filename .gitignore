@@ -1,0 +1,12 @@
+# Build output
+/build/
+*.o
+*.a
+
+# Amiga binary / debug artifacts
+AmiAuth
+*.debug
+
+# Editor / OS cruft
+.cache/
+.DS_Store
