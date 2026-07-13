@@ -26,8 +26,9 @@ PBKDF2, ChaCha20, encrypted account store, `otpauth://` import. CLI complete.
       ChaCha20, PBKDF2) against an OpenSSL reference oracle. Separate opt-in
       target/CI job; default suite stays dependency-free RFC vectors. (Host-only
       test dependency — the shipped binary stays dependency-free.)
-- [ ] `uri.c` — `otpauth://` parsing + import
-- [ ] CLI: add/list/remove accounts, `GET <account>`
+- [x] `uri.c` — `otpauth://` parsing + import
+- [x] CLI: `INIT`/`ADD`/`LIST`/`GET`/`REMOVE` (+ `CODE`); interactive-TTY
+      passphrase for encrypted vaults, always-unlocked for scripting
 - [ ] Iteration calibration + cap (deferred to Phase 4 front-end; `vault.c`
       takes an explicit count and the default is `VAULT_DEFAULT_ITERATIONS`).
       See [SECURITY.md](SECURITY.md) "KDF cost across the hardware range".
