@@ -2,6 +2,7 @@
 # here so clangd resolves headers without a compile_commands.json.
 CompileFlags:
   Add:
+    - "-xc"          # treat headers as C (not Objective-C++) so -std=c99 applies
     - "-std=c99"
     - "-Isrc/core"
     - "-Itests"
