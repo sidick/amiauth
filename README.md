@@ -8,8 +8,11 @@ for the platform — solves the accurate-time problem that TOTP depends on. Smal
 self-contained, and designed to run on anything from a stock 68000 A500 up to an
 accelerated or emulated machine.
 
-> **Status:** early development. This repository currently holds design docs and
-> the initial project scaffold. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Status:** in development. The portable core (crypto, OTP, vault, `otpauth://`
+> import) and a working **CLI** are complete and RFC-verified, and cross-build to a
+> real AmigaOS binary — validated on OS 3.2 under Amiberry, including SNTP time
+> sync. The ReAction **GUI** and commodity are the remaining work. See
+> [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Why
 
@@ -17,26 +20,34 @@ No TOTP tool exists for classic AmigaOS. Anyone using an Amiga day-to-day still
 reaches for a phone to log into GitHub, forge sites, or their own services.
 AmiAuth aims to make "my A1200 is my 2FA device" a real, daily-useful thing.
 
-## Features (planned for v1)
+## Features (v1)
 
-- **TOTP & HOTP** — SHA-1, 6/8-digit codes, configurable period (30s default)
+✅ = implemented in the core/CLI · 🚧 = in progress (Amiga front-end)
+
+- ✅ **TOTP & HOTP** — SHA-1, 6/8-digit codes, configurable period (30s default)
   and T0, validated against the official RFC test vectors.
-- **Easy secret entry** — padding/whitespace/case-tolerant Base32 decoding and
+- ✅ **Easy secret entry** — padding/whitespace/case-tolerant Base32 decoding and
   `otpauth://` URI parsing, so secrets from another authenticator paste directly.
-- **Multi-account store** — issuer/label per account, ordered list.
-- **Encrypted vault** — accounts encrypted at rest with a master passphrase
+- ✅ **Multi-account store** — issuer/label per account, ordered list.
+- ✅ **Encrypted vault** — accounts encrypted at rest with a master passphrase
   (PBKDF2 + ChaCha20, encrypt-then-MAC). Optional always-unlocked mode for
-  single-user or headless machines.
-- **Accurate time without a working clock** — optional SNTP sync over bsdsocket,
-  an explicit UTC-offset setting, and a manual nudge, layered so it works with
+  single-user or headless machines. (On-Amiga encrypted-vault creation awaits the
+  CSPRNG; always-unlocked works everywhere.)
+- ✅ **Accurate time without a working clock** — SNTP sync over `bsdsocket`, a
+  `locale.library` offset, and a manual offset/nudge, layered so it works with
   zero config on a networked machine and degrades gracefully to a floppy-booted
-  A500.
-- **GUI + CLI** — a ClassAct/ReAction GUI that runs as a proper commodity
-  (resident, hotkey popup, Exchange integration), plus a dependency-free CLI
-  (`AmiAuth GET github`) that works down to OS 2.x.
+  A500. (GUI status indicator is 🚧.)
+- ✅ **CLI** — dependency-free, works down to OS 2.x:
+  `CODE`, `INIT`, `ADD`, `LIST`, `GET`, `REMOVE`, `CLOCK`, `SYNC`.
+- 🚧 **GUI + commodity** — a ClassAct/ReAction GUI that runs as a proper commodity
+  (resident, hotkey popup, Exchange integration).
 
 ## Design principles
 
+- **68000 is the baseline target** — everything builds and runs on a plain
+  68000 (`-m68000`), so AmiAuth works on stock hardware. Requiring 020+ needs a
+  very good reason; anything that does (an optional AmiSSL or hand-written-asm
+  crypto provider) is opt-in via runtime CPU dispatch, never the minimum.
 - **Zero mandatory dependencies** beyond the OS — all crypto is vendored; no
   AmiSSL requirement. `bsdsocket` is used only opportunistically for SNTP.
 - **Portable, testable core** — the OTP and crypto code is plain C with a
@@ -45,17 +56,32 @@ AmiAuth aims to make "my A1200 is my 2FA device" a real, daily-useful thing.
   protects secrets at rest; it does not defend against a compromised running OS
   (AmigaOS has no memory protection). See [`docs/SECURITY.md`](docs/SECURITY.md).
 
+## Building
+
+    make test         # host unit + RFC-vector tests
+    make cli          # native CLI  -> build/amiauth
+    make smoke        # end-to-end CLI smoke test
+    make diff         # differential fuzz vs OpenSSL (opt-in; needs libcrypto)
+    make m68k-docker  # AmigaOS binary via the amiga-gcc container -> build/AmiAuth
+
+The core is portable C, so `test`/`cli` build with any host compiler. Example:
+`build/amiauth CODE JBSWY3DPEHPK3PXP` prints a code.
+
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — module layout and build targets.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased delivery plan and v2 candidates.
 - [`docs/SECURITY.md`](docs/SECURITY.md) — threat model and the honest security note.
+- [`docs/VAULT_FORMAT.md`](docs/VAULT_FORMAT.md) — the frozen on-disk vault format.
+- [`docs/CLOCK.md`](docs/CLOCK.md) — layered time-resolution design (SNTP/locale/manual).
+- [`docs/STORAGE.md`](docs/STORAGE.md) — where the vault and settings live on AmigaOS.
 
 ## Toolchain
 
-C via `amiga-gcc`, GitHub Actions CI running host-side RFC vector tests plus an
-m68k build, Aminet packaging via `aminet-release-action`. The core tool targets
-plain 68000 to maximise the audience.
+C via `amiga-gcc`, GitHub Actions CI running host-side RFC vector tests, a CLI
+smoke test, an OpenSSL differential fuzz job, and an m68k build; Aminet packaging
+via `aminet-release-action`. The core tool targets plain 68000 to maximise the
+audience.
 
 ## License
 

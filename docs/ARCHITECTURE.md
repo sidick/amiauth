@@ -64,7 +64,9 @@ Resolves corrected UTC without touching the system clock (full design in
 ## Front-ends
 
 - **CLI** — no GUI dependency at all; retains full code-generation on OS 2.x and
-  floppy-booted machines. Example: `AmiAuth GET github`.
+  floppy-booted machines. Commands: `CODE`, `INIT`, `ADD`, `LIST`, `GET`,
+  `REMOVE`, `CLOCK`, `SYNC`. Amiga-only front-end glue (bsdsocket SNTP, ...) lives
+  in `src/amiga/` and is linked into the m68k build only; the host build stubs it.
 - **GUI (ClassAct/ReAction)** — `listbrowser.gadget` account list, large code
   display, `fuelgauge.gadget` countdown, clipboard copy (clipboard.device, FTXT).
   Uses only classes common to ClassAct 3.3 and ReAction; ClassAct classes bundled
@@ -78,8 +80,11 @@ Resolves corrected UTC without touching the system clock (full design in
 
 - **Host** — portable core compiled natively for CI. Runs RFC 6238 Appendix B
   and RFC 4226 Appendix D vectors without an emulator.
-- **m68k** — `amiga-gcc`, targeting plain 68000 for the core tool to maximise
-  audience reach.
+- **m68k** — `amiga-gcc`. **Plain 68000 (`-m68000`) is the baseline target**:
+  all code (CLI and GUI) must build and run on a stock 68000 to maximise reach.
+  Requiring 020+ needs a very good reason; the only 020+ code is the *optional*
+  AmiSSL/hand-asm crypto providers below, selected by runtime CPU detection and
+  never required.
 
 ## Planned optimisation (post-vectors)
 
