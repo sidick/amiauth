@@ -24,6 +24,10 @@ PBKDF2, ChaCha20, encrypted account store, `otpauth://` import. CLI complete.
 - [ ] Always-unlocked mode (cipher `none`), convertible both directions
 - [ ] `uri.c` — `otpauth://` parsing + import
 - [ ] CLI: add/list/remove accounts, `GET <account>`
+- [ ] Differential test harness: fuzz all crypto primitives (SHA-1, HMAC,
+      ChaCha20, PBKDF2) against an OpenSSL reference oracle. Separate opt-in
+      target/CI job; default suite stays dependency-free RFC vectors. (Host-only
+      test dependency — the shipped binary stays dependency-free.)
 
 ## Phase 3 — Clock (1–2 weekends)
 SNTP query, offset model, manual adjustment.
