@@ -12,6 +12,7 @@ void run_pbkdf2_tests(void);
 void run_uri_tests(void);
 void run_vault_tests(void);
 void run_clock_tests(void);
+void run_prefs_tests(void);
 
 int main(void)
 {
@@ -24,6 +25,7 @@ int main(void)
     run_uri_tests();
     run_vault_tests();
     run_clock_tests();
+    run_prefs_tests();
 
     printf("\n%d passed, %d failed, %d pending\n",
            g_test.passed, g_test.failed, g_test.pending);

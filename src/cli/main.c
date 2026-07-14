@@ -26,6 +26,7 @@
 #include "base32.h"
 #include "clock.h"
 #include "vault.h"
+#include "prefs.h"
 
 #if defined(__unix__) || defined(__APPLE__) || defined(__linux__)
 #  include <unistd.h>
@@ -92,12 +93,18 @@ static long cli_utc_offset(void)
 #endif
 }
 
-/* Initialise a clock context and apply the platform UTC offset. */
+/* Initialise a clock context and apply the best available UTC offset:
+ * a persisted offset (from SYNC or OFFSET) wins over the locale first-guess. */
 static void cli_clock_init(clock_ctx *c)
 {
-    long off = cli_utc_offset();
+    long off;
     clock_init(c);
-    if (off) clock_set_offset(c, off);   /* -> CLOCK_MANUAL (amber) */
+    if (prefs_get_long("offset", &off) == 0) {
+        clock_set_offset(c, off);        /* stored offset, not freshly verified */
+    } else {
+        off = cli_utc_offset();          /* locale first-guess */
+        if (off) clock_set_offset(c, off);
+    }
 }
 
 static void strip_eol(char *s)
@@ -272,9 +279,15 @@ static int cmd_clock(void)
 static int cmd_sync(const char *server)
 {
     clock_ctx c;
-    if (!server) server = "pool.ntp.org";
+    char cfg[128];
 
-    cli_clock_init(&c);                 /* locale baseline, overridden on success */
+    /* server arg > saved server > default */
+    if (!server) {
+        if (prefs_get("server", cfg, sizeof(cfg)) == 0 && cfg[0]) server = cfg;
+        else server = "pool.ntp.org";
+    }
+
+    cli_clock_init(&c);                 /* baseline, overridden on success */
     printf("Querying %s ...\n", server);
     if (clock_sntp_sync(&c, server) != 0) {
         fprintf(stderr,
@@ -282,6 +295,21 @@ static int cmd_sync(const char *server)
             server);
         return 2;
     }
+    /* Persist so GET/CODE use the corrected time without a per-call sync. */
+    prefs_set("server", server);
+    prefs_set_long("offset", c.offset_seconds);
+    print_clock(&c);
+    return 0;
+}
+
+static int cmd_offset(const char *arg)
+{
+    clock_ctx c;
+    if (prefs_set_long("offset", atol(arg)) != 0) {
+        fprintf(stderr, "AmiAuth: could not save the offset\n");
+        return 2;
+    }
+    cli_clock_init(&c);
     print_clock(&c);
     return 0;
 }
@@ -456,12 +484,14 @@ static int usage(const char *argv0)
         "  %s GET <account>                            Print an account's code\n"
         "  %s REMOVE <account>                         Delete an account\n"
         "  %s CLOCK                                    Show the UTC offset and status\n"
-        "  %s SYNC [server]                            SNTP-sync (default pool.ntp.org)\n"
+        "  %s SYNC [server]                            SNTP-sync + save (default pool.ntp.org)\n"
+        "  %s OFFSET <seconds>                         Set+save a manual UTC offset\n"
         "  %s HELP\n"
         "\n"
         "Options: -v/--vault PATH (or AMIAUTH_VAULT). Default: %s\n"
         "An encrypted vault prompts for its passphrase on the terminal.\n",
-        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, DEFAULT_VAULT);
+        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0,
+        DEFAULT_VAULT);
     return 1;
 }
 
@@ -494,6 +524,7 @@ int main(int argc, char **argv)
     if (ci_streq(pos[0], "REMOVE")) return npos >= 2 ? cmd_remove(vpath, pos[1]) : usage(argv[0]);
     if (ci_streq(pos[0], "CLOCK"))  return cmd_clock();
     if (ci_streq(pos[0], "SYNC"))   return cmd_sync(npos > 1 ? pos[1] : NULL);
+    if (ci_streq(pos[0], "OFFSET")) return npos >= 2 ? cmd_offset(pos[1]) : usage(argv[0]);
     if (ci_streq(pos[0], "HELP"))   { usage(argv[0]); return 0; }
 
     return usage(argv[0]);
