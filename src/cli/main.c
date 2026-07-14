@@ -321,7 +321,7 @@ static int cmd_offset(const char *arg)
 
 static int cmd_init(const char *path, int always_unlocked)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc;
     char pass[256];
     FILE *exists;
@@ -383,7 +383,7 @@ static int cmd_init(const char *path, int always_unlocked)
 
 static int cmd_add(const char *path, const char *uri)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     otp_account acct;
     vault_result rc;
 
@@ -410,7 +410,7 @@ static int cmd_add(const char *path, const char *uri)
 
 static int cmd_list(const char *path)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc = open_vault(&v, path);
     size_t i;
     if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
@@ -426,7 +426,7 @@ static int cmd_list(const char *path)
 
 static int cmd_get(const char *path, const char *account)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc = open_vault(&v, path);
     int idx;
     otp_account *a;
@@ -460,7 +460,7 @@ static int cmd_get(const char *path, const char *account)
 
 static int cmd_remove(const char *path, const char *account)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc = open_vault(&v, path);
     int idx;
     if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
