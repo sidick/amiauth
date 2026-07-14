@@ -43,47 +43,36 @@ jobs:
   copperline-smoke:
     name: Copperline on-target smoke test (AROS)
     runs-on: ubuntu-latest
-    # Slower job (builds Copperline from source); gate like the m68k build.
+    # Gate like the m68k build (pulls the amiga-gcc image to build the harness).
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     env:
-      # Pin Copperline for reproducible builds; bump to adopt upstream changes.
-      COPPERLINE_REF: 8a1ae27569672d89bb37cc27d789ec49bb150ca9
+      # Pin the Copperline release; bump to adopt upstream changes.
+      COPPERLINE_VERSION: "0.11.0"
     steps:
       - uses: actions/checkout@v7
 
-      # Copperline ships the emulator and a redistributable AROS Kickstart
-      # replacement (assets/aros), so no licensed ROM is needed.
-      - name: Check out Copperline
-        uses: actions/checkout@v7
-        with:
-          repository: LinuxJedi/Copperline
-          ref: ${{ env.COPPERLINE_REF }}
-          path: copperline
+      # Software Vulkan (lavapipe), in case the emulator initialises wgpu at
+      # start-up; the test itself runs windowless via --benchmark-until.
+      - name: Install runtime deps
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
 
-      # libasound2-dev/libudev-dev: build deps (cpal, gilrs). mesa-vulkan-drivers:
-      # software Vulkan, in case the emulator initialises wgpu at start-up (the
-      # test runs windowless via --benchmark-until; drop if it proves unneeded).
-      - name: Install Copperline build/runtime deps
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config mesa-vulkan-drivers
+      # Use the prebuilt AppImage instead of compiling from source — a ~9 MB
+      # download vs a multi-minute cargo build. It bundles the emulator, its
+      # libs, and the redistributable AROS Kickstart replacement (no licensed
+      # ROM needed). Extracted (no FUSE on runners) and put on PATH.
+      - name: Install Copperline (prebuilt AppImage)
+        run: |
+          url="https://github.com/LinuxJedi/Copperline/releases/download/v${COPPERLINE_VERSION}/Copperline-${COPPERLINE_VERSION}-x86_64.AppImage"
+          curl -fsSL "$url" -o copperline.AppImage
+          chmod +x copperline.AppImage
+          ./copperline.AppImage --appimage-extract >/dev/null
+          ln -sf "$PWD/squashfs-root/AppRun" "$HOME/.local/bin/copperline"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # Point at the AppImage's bundled AROS explicitly, so resolution
+          # doesn't depend on the extracted layout.
+          aros_bin=$(find "$PWD/squashfs-root" -name aros-amiga-m68k-rom.bin | head -1)
+          [ -n "$aros_bin" ] && echo "COPPERLINE_AROS_DIR=$(dirname "$aros_bin")" >> "$GITHUB_ENV"
 
-      - name: Cache cargo + Copperline build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            copperline/target
-          key: copperline-${{ runner.os }}-${{ env.COPPERLINE_REF }}
-
-      - name: Build Copperline
-        run: cargo build --release --manifest-path copperline/Cargo.toml --bin copperline
-
-      - name: Add copperline to PATH
-        run: echo "$GITHUB_WORKSPACE/copperline/target/release" >> "$GITHUB_PATH"
-
-      # No KICK set -> run.sh boots the bundled AROS; COPPERLINE_AROS_DIR points
-      # the from-source binary at Copperline's AROS blobs.
+      # No KICK set -> run.sh boots the bundled AROS (no ROM needed).
       - name: On-target smoke test
-        env:
-          COPPERLINE_AROS_DIR: ${{ github.workspace }}/copperline/assets/aros
         run: make copperline-smoke

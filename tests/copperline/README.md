@@ -34,7 +34,7 @@ AROS), `SERIALTEST_M68K=`, `BENCH=` (emulated seconds to run).
 ## CI status
 
 Wired in as the `copperline-smoke` job in `.github/workflows/ci.yml`, gated to
-PRs and pushes to `main`. It builds Copperline from a pinned source checkout and
+PRs and pushes to `main`. It downloads a pinned prebuilt Copperline AppImage and
 boots its bundled **AROS** Kickstart replacement — redistributable, so no
 licensed ROM or secret is needed. Locally, `make copperline-smoke` uses your
 installed `copperline` and also defaults to AROS (set `KICK=` for a real
