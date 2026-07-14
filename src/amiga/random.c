@@ -56,30 +56,47 @@ void amiga_entropy_stir(const void *p, size_t n)
     sha1_update(&g_pool, p, n);
 }
 
-/* Open timer.device UNIT_ECLOCK (sets TimerBase). Returns the request or NULL. */
-static struct timerequest *timer_open(struct MsgPort **port_out)
+/* timer.device UNIT_ECLOCK, opened once and kept for the process lifetime (the
+ * OS reclaims it at exit). Shared by the entropy gatherer and amiga_millis, so
+ * TimerBase stays valid throughout — hence no per-call open/close. */
+static struct MsgPort     *g_tport;
+static struct timerequest *g_treq;
+static int                 g_timer_tried;
+
+static int timer_ready(void)
 {
-    struct MsgPort *port = CreateMsgPort();
-    struct timerequest *tr;
-    if (!port) return NULL;
-    tr = (struct timerequest *)CreateIORequest(port, sizeof *tr);
-    if (!tr) { DeleteMsgPort(port); return NULL; }
-    if (OpenDevice((STRPTR)TIMERNAME, UNIT_ECLOCK, (struct IORequest *)tr, 0) != 0) {
-        DeleteIORequest((struct IORequest *)tr);
-        DeleteMsgPort(port);
-        return NULL;
+    if (!g_timer_tried) {
+        struct MsgPort *port = CreateMsgPort();
+        g_timer_tried = 1;
+        if (port) {
+            struct timerequest *tr =
+                (struct timerequest *)CreateIORequest(port, sizeof *tr);
+            if (tr && OpenDevice((STRPTR)TIMERNAME, UNIT_ECLOCK,
+                                 (struct IORequest *)tr, 0) == 0) {
+                TimerBase = tr->tr_node.io_Device;
+                g_tport = port;
+                g_treq = tr;
+            } else {
+                if (tr) DeleteIORequest((struct IORequest *)tr);
+                DeleteMsgPort(port);
+            }
+        }
     }
-    TimerBase = tr->tr_node.io_Device;
-    *port_out = port;
-    return tr;
+    return g_treq != NULL;
 }
 
-static void timer_close(struct timerequest *tr, struct MsgPort *port)
+/* Milliseconds from the E-clock, monotonic (wraps ~every 49 days). 0 if no
+ * timer — the caller then falls back to the default iteration count. */
+uint32_t amiga_millis(void)
 {
-    CloseDevice((struct IORequest *)tr);
-    DeleteIORequest((struct IORequest *)tr);
-    DeleteMsgPort(port);
-    TimerBase = NULL;
+    struct EClockVal ev;
+    ULONG freq;
+    uint64_t ticks;
+    if (!timer_ready()) return 0;
+    freq = ReadEClock(&ev);
+    if (!freq) return 0;
+    ticks = ((uint64_t)ev.ev_hi << 32) | ev.ev_lo;
+    return (uint32_t)(ticks * 1000u / freq);
 }
 
 /* Fold a fresh EClock reading into the pool (TimerBase must be valid). */
@@ -122,8 +139,6 @@ static void stir_system_state(void)
 
 int amiga_random(uint8_t *buf, size_t n)
 {
-    struct MsgPort *port = NULL;
-    struct timerequest *tr;
     sha1_ctx snap;
     uint8_t seed[SHA1_DIGEST_SIZE];
 
@@ -134,14 +149,12 @@ int amiga_random(uint8_t *buf, size_t n)
     stir_system_state();
 
     /* EClock jitter: rapid reads with a little work between them. */
-    tr = timer_open(&port);
-    if (tr) {
+    if (timer_ready()) {
         int i;
         for (i = 0; i < 96; i++) {
             stir_eclock();
             (void)AvailMem(MEMF_ANY);           /* perturb timing slightly */
         }
-        timer_close(tr, port);
     }
 
     /* Whiten/expand: seed (first call) or reseed (later) the DRBG from a
@@ -159,11 +172,9 @@ int amiga_random(uint8_t *buf, size_t n)
 
 int amiga_read_passphrase(const char *prompt, char *buf, size_t cap)
 {
-    struct MsgPort *port = NULL;
-    struct timerequest *tr;
     BPTR in = Input(), out = Output();
     size_t len = 0;
-    int raw_ok;
+    int raw_ok, have_timer;
 
     if (cap == 0) return -1;
     if (!IsInteractive(in)) return -1;          /* encrypted vaults need a console */
@@ -171,14 +182,14 @@ int amiga_read_passphrase(const char *prompt, char *buf, size_t cap)
     pool_ensure();
     if (prompt) Write(out, (APTR)prompt, (LONG)strlen(prompt));
 
-    tr = timer_open(&port);                     /* per-keystroke timing source */
+    have_timer = timer_ready();                 /* per-keystroke timing source */
     raw_ok = (SetMode(in, 1) != 0);             /* 1 = RAW (unbuffered, no echo) */
 
     for (;;) {
         char c;
         if (Read(in, &c, 1) <= 0) break;        /* EOF/error ends input */
         if (c == '\n' || c == '\r') break;
-        if (tr) stir_eclock();                  /* inter-keystroke jitter */
+        if (have_timer) stir_eclock();          /* inter-keystroke jitter */
         if (c == '\b' || c == 0x7f) {           /* backspace / delete */
             if (len) { len--; Write(out, (APTR)"\b \b", 3); }
             continue;
@@ -190,7 +201,38 @@ int amiga_read_passphrase(const char *prompt, char *buf, size_t cap)
 
     if (raw_ok) SetMode(in, 0);                 /* restore cooked mode */
     Write(out, (APTR)"\n", 1);
-    if (tr) timer_close(tr, port);
+    return 0;
+}
+
+int amiga_read_line(const char *prompt, char *buf, size_t cap)
+{
+    BPTR in = Input(), out = Output();
+    size_t len = 0;
+    int raw_ok;
+
+    if (cap == 0) return -1;
+    if (!IsInteractive(in)) return -1;          /* prompts are interactive-only */
+    if (prompt) Write(out, (APTR)prompt, (LONG)strlen(prompt));
+
+    /* Read char-by-char in RAW mode (with echo). Not FGets: this handle is also
+     * read unbuffered via Read() for the passphrase, and mixing buffered FGets
+     * with unbuffered Read() makes FGets return EOF immediately. */
+    raw_ok = (SetMode(in, 1) != 0);
+    for (;;) {
+        char c;
+        if (Read(in, &c, 1) <= 0) break;
+        if (c == '\n' || c == '\r') break;
+        if (c == '\b' || c == 0x7f) {           /* backspace / delete */
+            if (len) { len--; Write(out, (APTR)"\b \b", 3); }
+            continue;
+        }
+        if ((unsigned char)c < 0x20) continue;
+        if (len < cap - 1) { buf[len++] = c; Write(out, &c, 1); }   /* echo */
+    }
+    buf[len] = '\0';
+
+    if (raw_ok) SetMode(in, 0);
+    Write(out, (APTR)"\n", 1);
     return 0;
 }
 

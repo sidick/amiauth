@@ -27,6 +27,7 @@
 #include "base32.h"
 #include "clock.h"
 #include "vault.h"
+#include "pbkdf2.h"
 #include "prefs.h"
 
 #if defined(__unix__) || defined(__APPLE__) || defined(__linux__)
@@ -45,6 +46,10 @@
 #else
 #  define DEFAULT_VAULT "AmiAuth.vault"
 #endif
+
+/* --no-rekey suppresses the adaptive re-key prompts for a single run (the
+ * ENVARC:AmiAuth/rekey pref silences them permanently). */
+static int g_no_rekey;
 
 /* ---- platform hooks ---- */
 
@@ -68,6 +73,49 @@ static int cli_random(uint8_t *buf, size_t n)
     (void)buf; (void)n;
     return -1;
 #endif
+}
+
+/* Monotonic-ish milliseconds, for timing PBKDF2 during KDF calibration. On the
+ * host, clock() (CPU time) tracks wall time closely for a compute-bound probe.
+ * Returns 0 where no timer is available -> the caller uses the default count. */
+static uint32_t cli_millis(void)
+{
+#ifdef AMIAUTH_POSIX
+    return (uint32_t)((uint64_t)clock() * 1000u / CLOCKS_PER_SEC);
+#elif defined(AMIAUTH_AMIGA)
+    return amiga_millis();
+#else
+    return 0;
+#endif
+}
+
+/* Pick the PBKDF2 iteration count for a new vault. An explicit count (>0, from
+ * --iterations) wins; otherwise probe local speed and calibrate to ~1s here.
+ * The probe grows x4 until it is long enough to time; on a stock 68000 the first
+ * tiny probe already exceeds the resolution floor (~14 iters/s), so it stays a
+ * second or two. Falls back to the default if no timer is available. */
+static uint32_t cli_calibrate(long explicit_iters)
+{
+    static const uint8_t salt[16] = { 0 };
+    uint8_t dk[64];
+    uint32_t probe = 4, t0, ms;
+
+    if (explicit_iters > 0) return (uint32_t)explicit_iters;
+
+    for (;;) {
+        t0 = cli_millis();
+        pbkdf2_hmac_sha1((const uint8_t *)"calibration", 11, salt, sizeof salt,
+                         probe, dk, sizeof dk);
+        ms = cli_millis() - t0;
+        if (ms >= 50) break;                       /* enough to extrapolate */
+        if (probe >= KDF_MAX_ITERATIONS) {         /* can't get resolution... */
+            if (ms == 0) { memset(dk, 0, sizeof dk); return VAULT_DEFAULT_ITERATIONS; }
+            break;                                 /* ...just very fast; use it */
+        }
+        probe *= 4;
+    }
+    memset(dk, 0, sizeof dk);
+    return vault_calibrate_iterations(probe, ms);
 }
 
 /* Seconds to add to the system clock to obtain UTC. On the host, time() is
@@ -151,6 +199,30 @@ static int read_passphrase(const char *prompt, char *buf, size_t cap)
 #endif
 }
 
+/* Prompt and read a line with normal echo, for interactive re-key confirmations.
+ * Returns 0 on success, -1 if there is no terminal/console or on EOF. */
+static int cli_readline(const char *prompt, char *buf, size_t cap)
+{
+#ifdef AMIAUTH_POSIX
+    FILE *tty = fopen("/dev/tty", "r+");
+    int ok;
+    if (!tty) return -1;
+    fputs(prompt, tty); fflush(tty);
+    ok = fgets(buf, (int)cap, tty) != NULL;
+    fclose(tty);
+    if (!ok) return -1;
+    strip_eol(buf);
+    return 0;
+#elif defined(AMIAUTH_AMIGA)
+    return amiga_read_line(prompt, buf, cap);
+#else
+    (void)prompt;
+    if (!fgets(buf, (int)cap, stdin)) return -1;
+    strip_eol(buf);
+    return 0;
+#endif
+}
+
 /* ---- helpers ---- */
 
 static int ci_streq(const char *a, const char *b)
@@ -178,19 +250,81 @@ static const char *vault_err(vault_result rc)
     }
 }
 
+static vault_result save_vault(const vault *v, const char *path);
+
+/* After a successful unlock we know the stored iteration count and how long the
+ * KDF took, so we can tell whether this machine is much faster or slower than the
+ * one that secured the vault, and offer to re-key (recalibrate to ~1s here and
+ * re-save). Interactive encrypted vaults only; --no-rekey or ENVARC:AmiAuth/rekey
+ * = off silences it. The 8x threshold is generous so emulator/warp variance never
+ * nags — only a clear hardware-class jump does. */
+static void maybe_rekey(vault *v, const char *path, const char *pass, uint32_t unlock_ms)
+{
+    uint32_t ideal;
+    char prefbuf[8], line[16];
+
+    if (v->cipher != VAULT_CIPHER_CHACHA20) return;   /* encrypted only */
+    if (g_no_rekey || unlock_ms == 0) return;         /* opted out / no timer */
+    if (prefs_get("rekey", prefbuf, sizeof prefbuf) == 0 && ci_streq(prefbuf, "off"))
+        return;
+
+    ideal = vault_calibrate_iterations(v->iterations, unlock_ms);
+
+    if (unlock_ms < KDF_TARGET_MS / 8 && ideal > v->iterations) {
+        /* Much faster machine -> offer to strengthen (safe; one confirm). */
+        int c;
+        if (cli_readline("This machine is much faster than the one that secured "
+                "this vault.\nStrengthen it now? [(y)es/(N)o/ne(v)er ask here] ",
+                line, sizeof line) != 0)
+            return;
+        c = line[0] | 0x20;
+        if (c == 'v') { prefs_set("rekey", "off"); return; }
+        if (c != 'y') return;
+    } else if (unlock_ms > KDF_TARGET_MS * 8) {
+        /* Much slower machine -> offer to speed up, but this weakens it: friction. */
+        fprintf(stderr, "AmiAuth: unlock took ~%lus; this vault was tuned for "
+                "faster hardware.\n", (unsigned long)((unlock_ms + 500) / 1000));
+        if (cli_readline("Re-key LOWER for quicker unlocks here? This REDUCES "
+                "security. [y/N] ", line, sizeof line) != 0
+            || (line[0] | 0x20) != 'y')
+            return;
+        if (cli_readline("Type 'yes' to confirm: ", line, sizeof line) != 0
+            || !ci_streq(line, "yes"))
+            return;
+    } else {
+        return;                                       /* within range; nothing to do */
+    }
+
+    {   /* Shared re-key: fresh salt + calibrated count, same passphrase. */
+        uint8_t salt[VAULT_SALT_SIZE];
+        if (cli_random(salt, sizeof salt) == 0
+            && vault_set_passphrase(v, pass, ideal, salt) == VAULT_OK
+            && save_vault(v, path) == VAULT_OK)
+            fprintf(stderr, "AmiAuth: re-keyed to %lu iterations\n", (unsigned long)ideal);
+        else
+            fprintf(stderr, "AmiAuth: re-key failed; vault left unchanged\n");
+        memset(salt, 0, sizeof salt);
+    }
+}
+
 /* Load a vault, prompting for the passphrase if it is encrypted. */
 static vault_result open_vault(vault *v, const char *path)
 {
     vault_result rc = vault_load(v, path, NULL);
     if (rc == VAULT_ERR_LOCKED) {
         char pass[256];
+        uint32_t t0, unlock_ms;
         if (read_passphrase("Passphrase: ", pass, sizeof(pass)) != 0) {
             fprintf(stderr,
                 "AmiAuth: this vault is encrypted; run from an interactive "
                 "terminal, or use an always-unlocked vault for scripting\n");
             return VAULT_ERR_AUTH;
         }
+        t0 = cli_millis();
         rc = vault_load(v, path, pass);
+        unlock_ms = cli_millis() - t0;
+        if (rc == VAULT_OK)
+            maybe_rekey(v, path, pass, unlock_ms);
         memset(pass, 0, sizeof(pass));
     }
     return rc;
@@ -319,7 +453,7 @@ static int cmd_offset(const char *arg)
     return 0;
 }
 
-static int cmd_init(const char *path, int always_unlocked)
+static int cmd_init(const char *path, int always_unlocked, long iterations)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc;
@@ -363,7 +497,11 @@ static int cmd_init(const char *path, int always_unlocked)
                     "(Phase 4); create an always-unlocked vault with 'INIT --open'\n");
                 return 2;
             }
-            rc = vault_create(&v, pass, 0, salt);
+            {
+                uint32_t iters = cli_calibrate(iterations);
+                fprintf(stderr, "AmiAuth: KDF iterations = %lu\n", (unsigned long)iters);
+                rc = vault_create(&v, pass, iters, salt);
+            }
             memset(salt, 0, sizeof(salt));
         }
         memset(pass, 0, sizeof(pass));
@@ -494,6 +632,8 @@ static int usage(const char *argv0)
         "  %s HELP\n"
         "\n"
         "Options: -v/--vault PATH (or AMIAUTH_VAULT). Default: %s\n"
+        "         --iterations N   INIT: set the PBKDF2 count (default: calibrated)\n"
+        "         --no-rekey       don't suggest re-keying on faster/slower machines\n"
         "An encrypted vault prompts for its passphrase on the terminal.\n",
         argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0,
         DEFAULT_VAULT);
@@ -505,6 +645,7 @@ int main(int argc, char **argv)
     const char *vpath = getenv("AMIAUTH_VAULT");
     const char *pos[8];
     int npos = 0, i, open_flag = 0;
+    long iterations = -1;               /* -1 = auto-calibrate; >0 = explicit */
 
     for (i = 1; i < argc; i++) {
         if ((strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--vault") == 0) && i + 1 < argc)
@@ -513,6 +654,13 @@ int main(int argc, char **argv)
             vpath = argv[i] + 8;
         else if (strcmp(argv[i], "--open") == 0)
             open_flag = 1;
+        else if ((strcmp(argv[i], "--iterations") == 0 || strcmp(argv[i], "-i") == 0)
+                 && i + 1 < argc)
+            iterations = atol(argv[++i]);
+        else if (strncmp(argv[i], "--iterations=", 13) == 0)
+            iterations = atol(argv[i] + 13);
+        else if (strcmp(argv[i], "--no-rekey") == 0)
+            g_no_rekey = 1;
         else if (npos < (int)(sizeof(pos) / sizeof(pos[0])))
             pos[npos++] = argv[i];
     }
@@ -522,7 +670,7 @@ int main(int argc, char **argv)
     if (ci_streq(pos[0], "CODE"))
         return npos >= 2 ? cmd_code(pos[1], npos > 2 ? pos[2] : NULL,
                                     npos > 3 ? pos[3] : NULL) : usage(argv[0]);
-    if (ci_streq(pos[0], "INIT"))   return cmd_init(vpath, open_flag);
+    if (ci_streq(pos[0], "INIT"))   return cmd_init(vpath, open_flag, iterations);
     if (ci_streq(pos[0], "ADD"))    return npos >= 2 ? cmd_add(vpath, pos[1]) : usage(argv[0]);
     if (ci_streq(pos[0], "LIST"))   return cmd_list(vpath);
     if (ci_streq(pos[0], "GET"))    return npos >= 2 ? cmd_get(vpath, pos[1]) : usage(argv[0]);

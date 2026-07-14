@@ -21,4 +21,12 @@ void amiga_entropy_stir(const void *p, size_t n);
  * success, -1 if there is no interactive console or on error. */
 int amiga_read_passphrase(const char *prompt, char *buf, size_t cap);
 
+/* Monotonic milliseconds from timer.device E-clock (for KDF calibration).
+ * Returns 0 if no timer is available. */
+uint32_t amiga_millis(void);
+
+/* Prompt and read a line with normal echo (for y/N re-key confirmations).
+ * Returns 0 on success, -1 if there is no interactive console or on EOF. */
+int amiga_read_line(const char *prompt, char *buf, size_t cap);
+
 #endif /* AMIAUTH_AMIGA_ENTROPY_H */

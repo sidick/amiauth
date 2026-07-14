@@ -29,6 +29,16 @@
 #define MAC_OFFSET      HEADER_SIZE
 #define CIPHERTEXT_OFFSET (HEADER_SIZE + VAULT_MAC_SIZE)   /* 64 */
 
+uint32_t vault_calibrate_iterations(uint32_t probe_iters, uint32_t probe_ms)
+{
+    uint64_t count;
+    if (probe_ms == 0) return KDF_MAX_ITERATIONS;      /* too fast to time */
+    count = (uint64_t)probe_iters * KDF_TARGET_MS / probe_ms;
+    if (count < KDF_MIN_ITERATIONS) count = KDF_MIN_ITERATIONS;
+    if (count > KDF_MAX_ITERATIONS) count = KDF_MAX_ITERATIONS;
+    return (uint32_t)count;
+}
+
 static const uint8_t VAULT_MAGIC[4] = { 'A', 'A', 'V', 'T' };
 
 /* Worst-case payload: count + max per-account record, times max accounts. */

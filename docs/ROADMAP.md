@@ -65,9 +65,11 @@ status command are done and verified on OS 3.2. Remaining Phase 4 work:
 - [x] **CSPRNG** for salt/nonce (Amiga entropy → HMAC-DRBG, incl. interactive
       keystroke timing and RAW no-echo passphrase input) — encrypted vaults now
       work on hardware. See docs/SECURITY.md "Randomness".
-- [ ] **PBKDF2 iteration calibration + cap** — measure local speed, bound
-      worst-case unlock on slow hardware (see [SECURITY.md](SECURITY.md) "KDF
-      cost across the hardware range")
+- [x] **PBKDF2 iteration calibration + adaptive re-key** — calibrate the count to
+      ~1s on the creating machine (`--iterations` to override), and offer to
+      strengthen/speed-up re-key when a vault is opened on much faster/slower
+      hardware (silence via `--no-rekey` / `ENVARC:AmiAuth/rekey`). Measured: a
+      stock 68000 does ~14 PBKDF2/s (`make pbkdf2-bench`). See docs/SECURITY.md.
 - [ ] ReAction window: `listbrowser` list, large code display, `fuelgauge` bar
 - [ ] Clipboard copy (clipboard.device, FTXT)
 - [ ] Clock-status **indicator** in the GUI (green/amber/red)

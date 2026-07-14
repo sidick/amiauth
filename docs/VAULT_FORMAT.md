@@ -68,12 +68,12 @@ machine can open the vault regardless of where it was made.
 
 The count is a **front-end policy decision, not a value `vault.c` measures**:
 `vault.c` takes an explicit iteration count and stays deterministic (so the golden
-fixture is byte-exact). Because vaults are portable across a 100–1000× CPU range,
-the policy uses a conservative default and a cap rather than raw "1s here"
-calibration — a vault calibrated to ~1s on a fast machine could take minutes to
-unlock on a 68000. See [SECURITY.md](SECURITY.md) "KDF cost across the hardware
-range". The default is `VAULT_DEFAULT_ITERATIONS` (a named constant in vault.h);
-calibration/capping to the local CPU is a front-end feature (Phase 4).
+fixture is byte-exact). The front-end calibrates it to ~1s on the
+creating machine and adaptively re-keys as the vault migrates to faster or slower
+hardware (a stock 68000 does only ~14 PBKDF2/s, so the count is per-machine). See
+[SECURITY.md](SECURITY.md) "KDF cost across the hardware range".
+`VAULT_DEFAULT_ITERATIONS` (vault.h) is now just the fallback when no timer is
+available; `vault_calibrate_iterations` provides the (host-tested) policy math.
 
 > **On SHA-1:** HMAC-SHA1 and PBKDF2-HMAC-SHA1 remain cryptographically sound as
 > a MAC and a KDF — SHA-1's collision weaknesses do not translate into attacks on
