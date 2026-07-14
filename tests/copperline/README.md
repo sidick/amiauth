@@ -31,6 +31,14 @@ make copperline-smoke     # builds serialtest (docker), boots, checks vectors
 Overridable env: `KICK=` (512 KiB Kickstart 3.1 ROM), `SERIALTEST_M68K=`,
 `BENCH=` (emulated seconds to run). Defaults point at the local Amiberry ROM dir.
 
+## CI status
+
+Not yet wired into CI — run it locally for now. It's flagged as a future
+addition in `.github/workflows/ci.yml`. Enabling it needs two things on the
+runner: a Copperline build (Rust; not packaged) and a 512 KiB Kickstart 3.1
+ROM, which is non-redistributable and would have to be provisioned from a
+licensed source (e.g. Cloanto/Amiga Forever) via a repo secret.
+
 ## Files
 
 | File | Purpose |
