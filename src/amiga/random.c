@@ -207,15 +207,32 @@ int amiga_read_passphrase(const char *prompt, char *buf, size_t cap)
 int amiga_read_line(const char *prompt, char *buf, size_t cap)
 {
     BPTR in = Input(), out = Output();
-    size_t l;
+    size_t len = 0;
+    int raw_ok;
 
     if (cap == 0) return -1;
     if (!IsInteractive(in)) return -1;          /* prompts are interactive-only */
     if (prompt) Write(out, (APTR)prompt, (LONG)strlen(prompt));
 
-    if (!FGets(in, (STRPTR)buf, (LONG)cap)) { buf[0] = '\0'; return -1; }
-    l = strlen(buf);
-    while (l && (buf[l - 1] == '\n' || buf[l - 1] == '\r')) buf[--l] = '\0';
+    /* Read char-by-char in RAW mode (with echo). Not FGets: this handle is also
+     * read unbuffered via Read() for the passphrase, and mixing buffered FGets
+     * with unbuffered Read() makes FGets return EOF immediately. */
+    raw_ok = (SetMode(in, 1) != 0);
+    for (;;) {
+        char c;
+        if (Read(in, &c, 1) <= 0) break;
+        if (c == '\n' || c == '\r') break;
+        if (c == '\b' || c == 0x7f) {           /* backspace / delete */
+            if (len) { len--; Write(out, (APTR)"\b \b", 3); }
+            continue;
+        }
+        if ((unsigned char)c < 0x20) continue;
+        if (len < cap - 1) { buf[len++] = c; Write(out, &c, 1); }   /* echo */
+    }
+    buf[len] = '\0';
+
+    if (raw_ok) SetMode(in, 0);
+    Write(out, (APTR)"\n", 1);
     return 0;
 }
 
