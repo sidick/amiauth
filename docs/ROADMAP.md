@@ -58,8 +58,9 @@ Clock groundwork already landed in the CLI (see Phase 3): the **SNTP transport**
 (`src/amiga/sntp.c`, `SYNC`) and the **`locale.library` amber offset** + `CLOCK`
 status command are done and verified on OS 3.2. Remaining Phase 4 work:
 
-- [ ] Offset/status **persistence** (`ENVARC:`) so `GET`/`CODE` auto-use the
-      SNTP-synced offset + a configurable server (ties the clock work together)
+- [x] Settings **persistence** (`ENVARC:` via GetVar/SetVar; host directory
+      store) — `SYNC` saves the offset + server, `GET`/`CODE`/`CLOCK` auto-use
+      them, `OFFSET` sets a manual one. Verified on OS 3.2 (UTC-correct codes)
 - [ ] **CSPRNG** for salt/nonce (Amiga entropy) — unblocks encrypted vaults on
       hardware; PBKDF2 iteration calibration + cap (see [SECURITY.md](SECURITY.md))
 - [ ] ReAction window: `listbrowser` list, large code display, `fuelgauge` bar

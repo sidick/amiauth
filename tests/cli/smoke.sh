@@ -10,6 +10,7 @@ BIN="${AMIAUTH_BIN:-build/amiauth}"
 SECRET="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 TMP="$(mktemp -d)"
 VAULT="$TMP/smoke.vault"
+export AMIAUTH_PREFS_DIR="$TMP/prefs"
 trap 'rm -rf "$TMP"' EXIT
 
 fail() { echo "SMOKE FAIL: $1" >&2; exit 1; }
@@ -43,5 +44,9 @@ if ! "$BIN" -v "$VAULT" REMOVE github >/dev/null; then fail "REMOVE"; fi
 LIST="$("$BIN" -v "$VAULT" LIST)"
 if echo "$LIST" | grep -qi 'github';      then fail "REMOVE did not remove the account"; fi
 if ! echo "$LIST" | grep -q '^Acme:bob$'; then fail "REMOVE removed the wrong account"; fi
+
+# Prefs persistence: a manual offset set in one run is read back in another.
+if ! "$BIN" OFFSET 3600 >/dev/null;                     then fail "OFFSET"; fi
+if ! "$BIN" CLOCK | grep -q '^UTC offset : +3600 seconds'; then fail "CLOCK did not read the persisted offset"; fi
 
 echo "CLI smoke: OK"
