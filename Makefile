@@ -53,14 +53,16 @@ $(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CObjINC) -Itests $(CORE_SRCS) $(TEST_SRCS) -o $@
 
 # --- Host: native CLI (for local development) ---
-cli: $(BUILD)/amiauth
+# Named distinctly from the m68k 'AmiAuth' binary so the two don't collide on a
+# case-insensitive filesystem (macOS).
+cli: $(BUILD)/amiauth-host
 
-$(BUILD)/amiauth: $(CORE_SRCS) $(CLI_SRCS) | $(BUILD)
+$(BUILD)/amiauth-host: $(CORE_SRCS) $(CLI_SRCS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CObjINC) $(CORE_SRCS) $(CLI_SRCS) -o $@
 
 # --- Host: end-to-end CLI smoke test (always-unlocked round trip) ---
-smoke: $(BUILD)/amiauth
-	AMIAUTH_BIN=$(BUILD)/amiauth sh tests/cli/smoke.sh
+smoke: $(BUILD)/amiauth-host
+	AMIAUTH_BIN=$(BUILD)/amiauth-host sh tests/cli/smoke.sh
 
 # --- Host: differential fuzz harness vs OpenSSL (opt-in; needs libcrypto) ---
 diff: $(BUILD)/run-diff
