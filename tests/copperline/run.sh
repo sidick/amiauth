@@ -9,26 +9,27 @@
 # No Workbench files, handlers, or Mounts are needed — RawPutChar is the ROM
 # debug path straight to the Paula serial registers.
 #
-# Prereqs (referenced by path, never committed — same policy as the ROM):
+# Prereqs:
 #   - copperline on PATH (brew install copperline)
-#   - a 512 KiB Kickstart 3.1 ROM               KICK=
 #   - the cross-built harness                    SERIALTEST_M68K= (default build/serialtest)
+#   - KICK= (optional): a 512 KiB Kickstart ROM. If unset, boots Copperline's
+#     bundled AROS Kickstart replacement — redistributable, so CI needs no ROM.
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 
-KICK=${KICK:-/Users/simond/Documents/Amiberry/Roms/amiga-os-310-a600.rom}
+KICK=${KICK:-}            # empty => bundled AROS (no licensed ROM needed)
 BIN=${SERIALTEST_M68K:-$ROOT/build/serialtest}
-BENCH=${BENCH:-20}        # emulated seconds to run (boot + emit finish well before)
+BENCH=${BENCH:-40}        # emulated seconds to run; enough for the slower AROS boot
 
 # RFC 4226 Appendix D: 6-digit HOTP for secret "12345678901234567890".
 VECTORS="0=755224 1=287082 2=359152 3=969429 4=338314 5=254676 6=287922 7=162583 8=399871 9=520489"
 
-for f in "$KICK" "$BIN"; do
-    [ -e "$f" ] || { echo "FAIL: missing $f" >&2; exit 2; }
-done
+[ -e "$BIN" ] || { echo "FAIL: missing $BIN" >&2; exit 2; }
+[ -z "$KICK" ] || [ -e "$KICK" ] || { echo "FAIL: KICK set but missing: $KICK" >&2; exit 2; }
 command -v copperline >/dev/null || { echo "FAIL: copperline not on PATH" >&2; exit 2; }
+[ -n "$KICK" ] && echo "ROM: $KICK" || echo "ROM: bundled AROS"
 
 # --- stage the boot volume (just the harness binary) -------------------------
 mkdir -p "$HERE/sys/C"
@@ -41,9 +42,11 @@ trap cleanup EXIT INT TERM
 # --- boot windowless, serial -> our stdout (logs to stderr) ------------------
 # --benchmark-until runs with no window until the given emulated time, then
 # exits; boot + serialtest finish well before then. cd so `path = "sys"` in
-# machine.toml resolves relative to this directory.
-( cd "$HERE" && copperline --config machine.toml --noaudio --serial stdout \
-    --benchmark-until "$BENCH" "$KICK" ) >"$OUT" 2>/dev/null \
+# machine.toml resolves relative to this directory. A ROM arg overrides the
+# config's (absent) rom; with none, Copperline boots its bundled AROS.
+set -- --config machine.toml --noaudio --serial stdout --benchmark-until "$BENCH"
+[ -n "$KICK" ] && set -- "$@" "$KICK"
+( cd "$HERE" && copperline "$@" ) >"$OUT" 2>/dev/null \
     || { echo "FAIL: copperline exited non-zero" >&2; cat "$OUT" >&2; exit 3; }
 
 tr -d '\r' <"$OUT" >"$OUT.n" && mv "$OUT.n" "$OUT"   # serial sends CRLF; drop CR
