@@ -6,7 +6,7 @@
 # by the vault unit tests, not here.
 set -eu
 
-BIN="${AMIAUTH_BIN:-build/amiauth}"
+BIN="${AMIAUTH_BIN:-build/amiauth-host}"
 SECRET="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 TMP="$(mktemp -d)"
 VAULT="$TMP/smoke.vault"

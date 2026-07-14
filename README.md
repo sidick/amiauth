@@ -61,13 +61,13 @@ AmiAuth aims to make "my A1200 is my 2FA device" a real, daily-useful thing.
 ## Building
 
     make test         # host unit + RFC-vector tests
-    make cli          # native CLI  -> build/amiauth
+    make cli          # native CLI  -> build/amiauth-host
     make smoke        # end-to-end CLI smoke test
     make diff         # differential fuzz vs OpenSSL (opt-in; needs libcrypto)
     make m68k-docker  # AmigaOS binary via the amiga-gcc container -> build/AmiAuth
 
 The core is portable C, so `test`/`cli` build with any host compiler. Example:
-`build/amiauth CODE JBSWY3DPEHPK3PXP` prints a code.
+`build/amiauth-host CODE JBSWY3DPEHPK3PXP` prints a code.
 
 ## Documentation
 
