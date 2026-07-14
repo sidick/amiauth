@@ -1,0 +1,2 @@
+# The Makefile stages the cross-built AmiAuth binary here as C:AmiAuth before
+# launching Copperline. Kept empty in git; the binary itself is .gitignore'd.

@@ -1,0 +1,3 @@
+; AmiAuth Copperline smoke boot. Runs the on-target core test, which emits the
+; RFC 4226 HOTP vectors over serial via RawPutChar (no handler/Mount needed).
+serialtest

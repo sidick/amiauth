@@ -40,7 +40,7 @@ DIFF_ITERS ?= 5000
 
 BUILD := build
 
-.PHONY: all test cli smoke diff m68k m68k-docker clean
+.PHONY: all test cli smoke diff m68k m68k-docker serialtest-m68k serialtest-m68k-docker copperline-smoke clean
 
 all: test cli
 
@@ -78,6 +78,22 @@ m68k: | $(BUILD)
 m68k-docker:
 	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make m68k'
+
+# --- Copperline: headless on-target core smoke test (spike) ------------------
+# Boots a stock A500/68000 under Copperline, runs the RFC 4226 HOTP vectors on
+# real m68k, and checks the codes it emits over serial. See tests/copperline.
+# Only the OTP core chain (hotp_sha1 -> hmac -> sha1); no vault/prefs/front-end.
+SERIALTEST_SRCS := src/core/otp.c src/core/hmac.c src/core/sha1.c tests/copperline/serialtest.c
+
+serialtest-m68k: | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) $(SERIALTEST_SRCS) -o $(BUILD)/serialtest
+
+serialtest-m68k-docker:
+	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make serialtest-m68k'
+
+copperline-smoke: serialtest-m68k-docker
+	sh tests/copperline/run.sh
 
 $(BUILD):
 	mkdir -p $(BUILD)
