@@ -66,5 +66,13 @@ for v in $VECTORS; do
     fi
 done
 
+# --- verify the HMAC-DRBG known-answer (same vector as tests/test_drbg.c) -----
+DRBG_EXPECT=be491355307bb821bf72d7f115d91156
+if ! grep -q "^DRBG=${DRBG_EXPECT}$" "$OUT"; then
+    got=$(sed -n 's/^DRBG=//p' "$OUT" | head -1)
+    echo "FAIL: DRBG known-answer expected $DRBG_EXPECT, got '${got:-<none>}'" >&2
+    fails=$((fails + 1))
+fi
+
 [ "$fails" -eq 0 ] || exit 1
-echo "PASS: all 10 RFC 4226 HOTP vectors correct on 68000 (via serial/RawPutChar)"
+echo "PASS: 10 RFC 4226 HOTP vectors + HMAC-DRBG KAT correct on 68000 (via serial)"

@@ -9,6 +9,7 @@ void run_otp_tests(void);
 void run_base32_tests(void);
 void run_chacha20_tests(void);
 void run_pbkdf2_tests(void);
+void run_drbg_tests(void);
 void run_uri_tests(void);
 void run_vault_tests(void);
 void run_clock_tests(void);
@@ -22,6 +23,7 @@ int main(void)
     run_base32_tests();
     run_chacha20_tests();
     run_pbkdf2_tests();
+    run_drbg_tests();
     run_uri_tests();
     run_vault_tests();
     run_clock_tests();

@@ -11,6 +11,7 @@
  * the host tests can't cover. Counters are fixed, so no clock is involved. */
 
 #include "otp.h"
+#include "drbg.h"
 
 /* exec RawPutChar: char in d0, SysBase (absolute 4) in a6, LVO -516. */
 static void raw_put(char c)
@@ -45,6 +46,17 @@ static void raw_u32(uint32_t v, int width)
         raw_put(buf[--n]);
 }
 
+/* Emit n bytes as lower-case hex. */
+static void raw_hex(const uint8_t *p, int n)
+{
+    static const char H[] = "0123456789abcdef";
+    int i;
+    for (i = 0; i < n; i++) {
+        raw_put(H[p[i] >> 4]);
+        raw_put(H[p[i] & 0x0f]);
+    }
+}
+
 int main(void)
 {
     /* RFC 4226 test key: ASCII "12345678901234567890". */
@@ -62,6 +74,21 @@ int main(void)
         raw_u32(hotp_sha1(key, sizeof key, counter, 6), 6);
         raw_str("\r\n");
     }
+
+    /* HMAC-DRBG known-answer on the 68000 (seed = 00 01 .. 1f; first 16 bytes).
+     * Same vector as tests/test_drbg.c, so codegen of drbg.c is checked here. */
+    {
+        drbg_state st;
+        uint8_t seed[32], out[16];
+        int i;
+        for (i = 0; i < 32; i++) seed[i] = (uint8_t)i;
+        drbg_init(&st, seed, sizeof seed);
+        drbg_generate(&st, out, sizeof out);
+        raw_str("DRBG=");
+        raw_hex(out, 16);
+        raw_str("\r\n");
+    }
+
     raw_str("END\r\n");
     return 0;
 }

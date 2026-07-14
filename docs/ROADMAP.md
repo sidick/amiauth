@@ -32,8 +32,9 @@ PBKDF2, ChaCha20, encrypted account store, `otpauth://` import. CLI complete.
 - [ ] Iteration calibration + cap (deferred to Phase 4 front-end; `vault.c`
       takes an explicit count and the default is `VAULT_DEFAULT_ITERATIONS`).
       See [SECURITY.md](SECURITY.md) "KDF cost across the hardware range".
-- [ ] CSPRNG for salt/nonce (Amiga front-end entropy source; core takes them
-      as parameters — flagged in VAULT_FORMAT.md implementation notes)
+- [x] CSPRNG for salt/nonce (Amiga front-end entropy source; core takes them
+      as parameters) — HMAC-DRBG seeded from EClock jitter, volatile system
+      state, and interactive keystroke timing. See docs/SECURITY.md "Randomness".
 
 ## Phase 3 — Clock (1–2 weekends)
 SNTP query, offset model, manual adjustment.
@@ -61,8 +62,12 @@ status command are done and verified on OS 3.2. Remaining Phase 4 work:
 - [x] Settings **persistence** (`ENVARC:` via GetVar/SetVar; host directory
       store) — `SYNC` saves the offset + server, `GET`/`CODE`/`CLOCK` auto-use
       them, `OFFSET` sets a manual one. Verified on OS 3.2 (UTC-correct codes)
-- [ ] **CSPRNG** for salt/nonce (Amiga entropy) — unblocks encrypted vaults on
-      hardware; PBKDF2 iteration calibration + cap (see [SECURITY.md](SECURITY.md))
+- [x] **CSPRNG** for salt/nonce (Amiga entropy → HMAC-DRBG, incl. interactive
+      keystroke timing and RAW no-echo passphrase input) — encrypted vaults now
+      work on hardware. See docs/SECURITY.md "Randomness".
+- [ ] **PBKDF2 iteration calibration + cap** — measure local speed, bound
+      worst-case unlock on slow hardware (see [SECURITY.md](SECURITY.md) "KDF
+      cost across the hardware range")
 - [ ] ReAction window: `listbrowser` list, large code display, `fuelgauge` bar
 - [ ] Clipboard copy (clipboard.device, FTXT)
 - [ ] Clock-status **indicator** in the GUI (green/amber/red)

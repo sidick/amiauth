@@ -18,7 +18,7 @@ CObjINC := -Isrc/core
 
 # --- m68k cross toolchain (Amiga build) ---
 M68K_CC     ?= m68k-amigaos-gcc
-M68K_CFLAGS ?= -std=c99 -O2 -Wall -m68000 -noixemul $(CObjINC)
+M68K_CFLAGS ?= -std=c99 -O2 -Wall -m68000 -noixemul $(CObjINC) -Isrc/amiga
 
 # Containerised cross-build: same image as CI, so local m68k builds match.
 DOCKER          ?= docker
@@ -82,8 +82,9 @@ m68k-docker:
 # --- Copperline: headless on-target core smoke test (spike) ------------------
 # Boots a stock A500/68000 under Copperline, runs the RFC 4226 HOTP vectors on
 # real m68k, and checks the codes it emits over serial. See tests/copperline.
-# Only the OTP core chain (hotp_sha1 -> hmac -> sha1); no vault/prefs/front-end.
-SERIALTEST_SRCS := src/core/otp.c src/core/hmac.c src/core/sha1.c tests/copperline/serialtest.c
+# OTP core chain (hotp_sha1 -> hmac -> sha1) + the DRBG; no vault/prefs/front-end.
+SERIALTEST_SRCS := src/core/otp.c src/core/hmac.c src/core/sha1.c src/core/drbg.c \
+                   tests/copperline/serialtest.c
 
 serialtest-m68k: | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(SERIALTEST_SRCS) -o $(BUILD)/serialtest
