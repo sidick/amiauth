@@ -28,16 +28,17 @@ This exercises HMAC-SHA1, the big-endian counter packing, and dynamic truncation
 make copperline-smoke     # builds serialtest (docker), boots, checks vectors
 ```
 
-Overridable env: `KICK=` (512 KiB Kickstart 3.1 ROM), `SERIALTEST_M68K=`,
-`BENCH=` (emulated seconds to run). Defaults point at the local Amiberry ROM dir.
+Overridable env: `KICK=` (a 512 KiB Kickstart ROM; if unset, boots the bundled
+AROS), `SERIALTEST_M68K=`, `BENCH=` (emulated seconds to run).
 
 ## CI status
 
-Not yet wired into CI — run it locally for now. It's flagged as a future
-addition in `.github/workflows/ci.yml`. Enabling it needs two things on the
-runner: a Copperline build (Rust; not packaged) and a 512 KiB Kickstart 3.1
-ROM, which is non-redistributable and would have to be provisioned from a
-licensed source (e.g. Cloanto/Amiga Forever) via a repo secret.
+Wired in as the `copperline-smoke` job in `.github/workflows/ci.yml`, gated to
+PRs and pushes to `main`. It builds Copperline from a pinned source checkout and
+boots its bundled **AROS** Kickstart replacement — redistributable, so no
+licensed ROM or secret is needed. Locally, `make copperline-smoke` uses your
+installed `copperline` and also defaults to AROS (set `KICK=` for a real
+Kickstart).
 
 ## Files
 
