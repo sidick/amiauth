@@ -26,6 +26,20 @@
  * calibrate-and-cap to the local machine (Phase 4). See SECURITY.md. */
 #define VAULT_DEFAULT_ITERATIONS 10000u
 
+/* KDF calibration policy. The front-end measures local PBKDF2 speed and calls
+ * vault_calibrate_iterations to pick a per-machine count (~KDF_TARGET_MS unlock);
+ * MIN/MAX are only guards, not the policy — a stock 68000 (~14 iters/s) honestly
+ * lands near MIN and relies on the passphrase (see docs/SECURITY.md). */
+#define KDF_TARGET_MS       1000u      /* aim ~1s unlock on the creating machine */
+#define KDF_MIN_ITERATIONS  1u         /* guard against a bad measurement */
+#define KDF_MAX_ITERATIONS  4000000u   /* anti-pathological ceiling */
+
+/* Iteration count that would take ~KDF_TARGET_MS, extrapolated from a probe of
+ * `probe_iters` rounds measured at `probe_ms` ms; `probe_ms == 0` (too fast to
+ * time) yields KDF_MAX_ITERATIONS. Clamped to [MIN, MAX]. Pure and deterministic
+ * (host-testable); the timing itself is a front-end concern. */
+uint32_t vault_calibrate_iterations(uint32_t probe_iters, uint32_t probe_ms);
+
 typedef enum {
     VAULT_CIPHER_NONE     = 0,   /* always-unlocked mode: stored in the clear */
     VAULT_CIPHER_CHACHA20 = 1

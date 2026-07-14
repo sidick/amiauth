@@ -21,28 +21,41 @@ HD image, a backup, a shared machine's disk.
 
 ## KDF cost across the hardware range
 
-The iteration count is frozen into the vault when it is created, but AmiAuth
-vaults are meant to travel — copy the drawer to migrate machines (see
-[STORAGE.md](STORAGE.md)). Those machines can differ in CPU speed by two to three
-orders of magnitude, from a stock 7MHz 68000 to a Vampire/68080 or an emulated
-machine on a modern host. Two honest consequences follow:
+The iteration count is stored in the vault, but AmiAuth vaults are meant to
+travel — copy the drawer to migrate machines (see [STORAGE.md](STORAGE.md)).
+Those machines differ in CPU speed by two to three orders of magnitude, and
+PBKDF2 is *brutally* slow on the low end: measured on a stock 68000 (7 MHz A500,
+`make pbkdf2-bench`), AmiAuth manages only about **14 PBKDF2 iterations per
+second** (dkLen=64). A fixed high count is therefore impossible — 10,000
+iterations, a modest desktop figure, would take about **12 minutes** to unlock
+on a 68000.
 
-1. **A vault created on a fast machine can be slow to unlock on a slow one.** A
-   count calibrated to ~1s under emulation could take *minutes* on a real 68000.
-   Because unlock is on the critical path of a login, AmiAuth therefore does not
-   calibrate aggressively to the local CPU: it uses a conservative default and
-   **caps** the count so worst-case unlock on the slow end stays bounded (a few
-   seconds). A user on fast hardware may opt into a higher count, accepting slower
-   portability; re-tuning is a one-step re-encrypt (change passphrase / re-key),
-   since the count travels with the vault, not the machine.
+So AmiAuth **calibrates the count to the machine that creates the vault** (aiming
+~1 s unlock there), and **adapts** as the vault moves:
 
-2. **On slow hardware the iteration count is modest, so passphrase strength is
-   what actually protects you.** A full second of PBKDF2 on a 68000 is only a few
-   thousand iterations — far below modern guidance (which is in the millions). No
-   single stored count can be both strong on fast machines and usable on slow
-   ones. Against an attacker who copies your vault and runs an *offline* guessing
-   attack on fast hardware, the iteration count buys only a small factor; a long,
-   unpredictable passphrase is the real defence. Choose one accordingly.
+- **At creation** it times PBKDF2 locally and picks a count for ~1 s on that CPU
+  (override with `--iterations N`). A fast machine gets a large count; a 68000
+  honestly gets only ~14.
+- **At unlock** it times the KDF. If the current machine is *much* faster than
+  the stored count assumes, it offers to **strengthen** the vault — re-key to a
+  higher, freshly-calibrated count (one confirmation; the passphrase is already
+  in hand). If *much* slower (e.g. a vault made on an accelerator, opened on a
+  stock 68000), it offers to **speed up** by re-keying lower, behind a security
+  warning and a typed confirmation, since that weakens protection. The threshold
+  is deliberately generous (~8×) so ordinary variation — emulator warp speed
+  included — never nags; only a clear hardware-class change does. Silence the
+  prompts with `--no-rekey` or by setting `ENVARC:AmiAuth/rekey` to `off`.
+
+Two honest consequences remain:
+
+1. **A vault is only as strong as the machine that last (re-)keyed it.** A
+   68000-created vault carries a tiny count; strengthening it means opening it on
+   faster hardware and accepting the re-key.
+2. **On slow hardware the count is negligible, so the passphrase is what actually
+   protects you.** ~14 iterations buys essentially nothing against an offline
+   attacker on fast hardware. No stored count can be both strong on fast machines
+   and usable on slow ones, so a long, unpredictable **passphrase** is the real
+   defence — choose one accordingly.
 
 ## Randomness (salt and nonce)
 

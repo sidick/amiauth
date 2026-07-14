@@ -40,7 +40,7 @@ DIFF_ITERS ?= 5000
 
 BUILD := build
 
-.PHONY: all test cli smoke diff m68k m68k-docker serialtest-m68k serialtest-m68k-docker copperline-smoke clean
+.PHONY: all test cli smoke diff m68k m68k-docker serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench clean
 
 all: test cli
 
@@ -95,6 +95,11 @@ serialtest-m68k-docker:
 
 copperline-smoke: serialtest-m68k-docker
 	sh tests/copperline/run.sh
+
+# Measure PBKDF2 throughput on a stock 68000 (informs the KDF policy). Dev-only:
+# needs a Kickstart ROM (timer.device EClock isn't available under AROS).
+pbkdf2-bench:
+	sh tests/copperline/bench.sh
 
 $(BUILD):
 	mkdir -p $(BUILD)
