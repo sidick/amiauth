@@ -7,6 +7,9 @@
 AmiAuth
 *.debug
 
+# Copperline smoke test: cross-built harness staged into the boot volume.
+tests/copperline/sys/C/serialtest
+
 # Editor / OS cruft
 .cache/
 .DS_Store

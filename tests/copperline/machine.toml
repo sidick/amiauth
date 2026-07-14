@@ -1,0 +1,34 @@
+# Copperline machine profile for AmiAuth's headless on-target smoke test.
+#
+# A stock A500 (OCS Agnus/Denise, plain 68000, 1 MB) — AmiAuth's baseline
+# target, so if the CLI runs here it runs on the floor of what we support.
+#
+# The Kickstart ROM is passed as a positional CLI arg (which overrides `rom`
+# here), so this file stays portable across machines. See ../../Makefile
+# `copperline-smoke` and ./run.sh.
+
+[machine]
+profile = "A500"
+
+[cpu]
+model = "68000"
+
+[memory]
+chip = "512K"
+slow = "512K"        # 1 MB total — ample for the CLI
+
+[floppy]
+drives = 1           # DF0 wired but left empty; we boot from a host directory
+
+# Boot straight from a host directory. Copperline builds a RAM FFS volume from
+# this tree at start-up and discards writes on exit, so `sys/` is effectively a
+# read-only boot disk — exactly the "drop the binary in a folder" workflow.
+# The Makefile stages the freshly cross-built binary into sys/C/AmiAuth first.
+[[filesys]]
+path = "sys"         # resolved relative to this config file's directory
+volume = "AmiAuthTest"
+bootpri = 10         # outranks the (empty) floppy, so this is the boot volume
+
+[emulation]
+power_on = true
+warp_speed = "max"   # boot + run as fast as the host allows; this is a batch test

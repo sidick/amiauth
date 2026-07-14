@@ -39,3 +39,15 @@ jobs:
       - uses: actions/checkout@v7
       - name: Cross-build CLI for 68000
         run: PATH="/opt/amiga/bin:$PATH" make m68k M68K_CC=m68k-amigaos-gcc
+
+  # TODO (future): on-target smoke test under the Copperline emulator
+  # (`make copperline-smoke`, see tests/copperline/). It boots a stock 68000
+  # headless and checks the RFC 4226 vectors emitted over serial. Working
+  # locally, but left out of CI for now because the runner would need:
+  #   - a Copperline build (Rust; not packaged), and
+  #   - a 512 KiB Kickstart 3.1 ROM, which is non-redistributable (would need a
+  #     licensed ROM provisioned via secrets, e.g. Cloanto/Amiga Forever).
+  # copperline-smoke:
+  #   name: Copperline on-target smoke test
+  #   runs-on: ubuntu-latest
+  #   steps: ...
