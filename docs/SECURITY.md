@@ -44,6 +44,34 @@ machine on a modern host. Two honest consequences follow:
    attack on fast hardware, the iteration count buys only a small factor; a long,
    unpredictable passphrase is the real defence. Choose one accordingly.
 
+## Randomness (salt and nonce)
+
+The vault's salt (per vault) and ChaCha20 nonce (per save) must be
+unpredictable, and the nonce must **never repeat** under a fixed key — a repeated
+nonce breaks confidentiality outright. The core takes both as parameters and
+stays deterministic; generating them is a front-end job.
+
+- **Host CLI:** `/dev/urandom`.
+- **AmigaOS:** there is no strong system RNG, so AmiAuth gathers entropy itself
+  (`src/amiga/random.c`) and whitens it through an HMAC-DRBG (`src/core/drbg.c`,
+  reusing the SHA-1 already in the binary). Sources: timer.device `EClock` timing
+  jitter sampled in a tight loop, `DateStamp`, free-memory figures, task and
+  allocation addresses plus a fresh allocation's residual bytes, and — when
+  creating or unlocking an encrypted vault — the **timing of the user's
+  keystrokes** as the passphrase is typed (RAW-mode, no echo).
+
+Be honest about the ceiling: on a quiescent 68000 the passive sources yield
+little entropy, and under a deterministic emulator they yield almost none. The
+interactive keystroke timing is therefore the main real source at the moment it
+matters (vault creation), and — as everywhere in this document — a long,
+unpredictable **passphrase** is what actually protects an encrypted vault, not
+the salt's entropy.
+
+To keep the nonce safe even when entropy is thin, every request also folds in
+`DateStamp` and a monotonic counter, so successive nonces are *distinct*
+regardless of entropy quality; real entropy additionally makes them
+*unpredictable*.
+
 ## What the vault does NOT protect against
 
 It does **not** defend against a compromised running OS. AmigaOS has no memory

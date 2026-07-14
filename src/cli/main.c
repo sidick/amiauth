@@ -13,9 +13,10 @@
  *
  * Passphrase policy (see docs/SECURITY.md): an encrypted vault is unlocked by an
  * interactive terminal prompt only — no env/file hatch. Non-interactive use is
- * served by always-unlocked vaults. Proper AmigaOS no-echo input and a CSPRNG
- * for salt/nonce are Phase 4; this interim uses POSIX /dev/tty and /dev/urandom
- * and cleanly refuses encrypted create/save where no secure RNG is available. */
+ * served by always-unlocked vaults. No-echo passphrase input and random
+ * salt/nonce come from POSIX /dev/tty + /dev/urandom on the host, and from the
+ * AmigaOS RAW console + entropy source (src/amiga/random.c) on hardware; where
+ * no secure RNG exists, encrypted create/save is cleanly refused. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,7 @@
 #  include <proto/locale.h>
 #  define AMIAUTH_AMIGA 1
 #  define DEFAULT_VAULT "PROGDIR:AmiAuth.vault"
+#  include "entropy.h"          /* amiga_random / amiga_read_passphrase */
 #else
 #  define DEFAULT_VAULT "AmiAuth.vault"
 #endif
@@ -60,9 +62,11 @@ static int cli_random(uint8_t *buf, size_t n)
     }
     close(fd);
     return 0;
+#elif defined(AMIAUTH_AMIGA)
+    return amiga_random(buf, n);
 #else
     (void)buf; (void)n;
-    return -1;   /* TODO(Phase 4): AmigaOS CSPRNG */
+    return -1;
 #endif
 }
 
@@ -107,11 +111,13 @@ static void cli_clock_init(clock_ctx *c)
     }
 }
 
-static void strip_eol(char *s)
+#ifndef AMIAUTH_AMIGA
+static void strip_eol(char *s)      /* only the fgets-based paths need this */
 {
     size_t l = strlen(s);
     while (l && (s[l - 1] == '\n' || s[l - 1] == '\r')) s[--l] = '\0';
 }
+#endif
 
 /* Prompt on the controlling terminal and read a passphrase without echo.
  * Returns 0 on success, -1 if there is no terminal or on error. */
@@ -135,11 +141,10 @@ static int read_passphrase(const char *prompt, char *buf, size_t cap)
     if (!ok) return -1;
     strip_eol(buf);
     return 0;
+#elif defined(AMIAUTH_AMIGA)
+    return amiga_read_passphrase(prompt, buf, cap);
 #else
-    /* TODO(Phase 4): AmigaOS RAW-mode no-echo input. Interim: visible echo. */
-    fputs(prompt, stdout);
-    fputs("(visible) ", stdout);
-    fflush(stdout);
+    (void)prompt;
     if (!fgets(buf, (int)cap, stdin)) return -1;
     strip_eol(buf);
     return 0;
@@ -316,7 +321,7 @@ static int cmd_offset(const char *arg)
 
 static int cmd_init(const char *path, int always_unlocked)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc;
     char pass[256];
     FILE *exists;
@@ -378,7 +383,7 @@ static int cmd_init(const char *path, int always_unlocked)
 
 static int cmd_add(const char *path, const char *uri)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     otp_account acct;
     vault_result rc;
 
@@ -405,7 +410,7 @@ static int cmd_add(const char *path, const char *uri)
 
 static int cmd_list(const char *path)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc = open_vault(&v, path);
     size_t i;
     if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
@@ -421,7 +426,7 @@ static int cmd_list(const char *path)
 
 static int cmd_get(const char *path, const char *account)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc = open_vault(&v, path);
     int idx;
     otp_account *a;
@@ -455,7 +460,7 @@ static int cmd_get(const char *path, const char *account)
 
 static int cmd_remove(const char *path, const char *account)
 {
-    vault v;
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc = open_vault(&v, path);
     int idx;
     if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }

@@ -206,10 +206,14 @@ always-unlocked) is the ordered account list:
 ## Implementation notes (not part of the format)
 
 - **Randomness is security-critical.** Salt and, especially, the per-save nonce
-  must come from a good CSPRNG. AmigaOS has no strong built-in source, so the
-  implementation must gather entropy (e.g. `EClock`/`VBlank` timing, input
-  events, uninitialised chip RAM) and run it through a DRBG. A repeated nonce
-  under a fixed key breaks confidentiality. This is tracked as a Phase 2 task.
+  must come from a good CSPRNG (a repeated nonce under a fixed key breaks
+  confidentiality). AmigaOS has no strong built-in source, so the front-end
+  (`src/amiga/random.c`) gathers entropy — `EClock` timing jitter, volatile
+  system state, and interactive keystroke timing — and whitens it through an
+  HMAC-DRBG (`src/core/drbg.c`); each request also folds a counter/timestamp so
+  the nonce never repeats under a fixed key. The core takes salt/nonce as
+  parameters and stays deterministic. See [SECURITY.md](SECURITY.md)
+  "Randomness" for the sources and honest limits.
 - **Key hygiene:** `enc_key`/`mac_key` are zeroed on lock and quit (see
   `vault_lock`). The resident-key exposure window is covered in SECURITY.md.
 - **`vault` struct impact:** the resident state needs `enc_key[32]` and
