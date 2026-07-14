@@ -66,6 +66,7 @@ jobs:
           curl -fsSL "$url" -o copperline.AppImage
           chmod +x copperline.AppImage
           ./copperline.AppImage --appimage-extract >/dev/null
+          mkdir -p "$HOME/.local/bin"
           ln -sf "$PWD/squashfs-root/AppRun" "$HOME/.local/bin/copperline"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           # Point at the AppImage's bundled AROS explicitly, so resolution
