@@ -39,8 +39,8 @@ AmiAuth aims to make "my A1200 is my 2FA device" a real, daily-useful thing.
   A500. (GUI status indicator is 🚧.)
 - ✅ **CLI** — dependency-free, works down to OS 2.x:
   `CODE`, `INIT`, `ADD`, `LIST`, `GET`, `REMOVE`, `CLOCK`, `SYNC`. On Amiga it uses
-  standard `ReadArgs` keyword syntax (`AmiAuth GET ACCOUNT GitHub`; `AmiAuth ?`
-  for the template); `HELP` prints the full command list.
+  standard `ReadArgs` parsing (`AmiAuth GET GitHub`, options as keywords like
+  `VAULT`/`ITERATIONS`; `AmiAuth ?` for the template, `HELP` for the command list).
 - 🚧 **GUI + commodity** — a ClassAct/ReAction GUI that runs as a proper commodity
   (resident, hotkey popup, Exchange integration).
 
