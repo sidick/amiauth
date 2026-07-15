@@ -61,17 +61,15 @@ static const char *g_prog = "AmiAuth";
  * when absent; iterations is -1 for auto-calibrate. */
 typedef struct {
     const char *command;
-    const char *secret;      /* CODE */
-    const char *digits;      /* CODE */
-    const char *period;      /* CODE */
-    const char *uri;         /* ADD */
-    const char *account;     /* GET / REMOVE */
-    const char *server;      /* SYNC (NULL = default pool) */
-    const char *seconds;     /* OFFSET */
-    const char *vault;       /* -v / VAULT (NULL = env/default) */
-    int         open;        /* --open / OPEN */
-    long        iterations;  /* --iterations / ITERATIONS (-1 = auto) */
-    int         no_rekey;    /* --no-rekey / NOREKEY */
+    const char *value;       /* the command's positional argument: CODE secret,
+                              * ADD uri, GET/REMOVE account, SYNC server,
+                              * OFFSET seconds */
+    const char *digits;      /* CODE (2nd positional) */
+    const char *period;      /* CODE (3rd positional) */
+    const char *vault;       /* VAULT / -v (NULL = env / pref / default) */
+    int         open;        /* OPEN / --open */
+    long        iterations;  /* ITERATIONS / --iterations (-1 = auto) */
+    int         no_rekey;    /* NOREKEY / --no-rekey */
 } cli_args;
 
 /* ---- platform hooks ---- */
@@ -643,70 +641,82 @@ static int usage(void)
     fprintf(stderr,
         "AmiAuth - TOTP/HOTP authenticator for AmigaOS\n"
         "\n"
-        "Commands:\n"
-        "  %s CODE   <base32-secret> [digits] [period]  Print a code (no vault)\n"
-        "  %s INIT                                       Create a vault\n"
-        "  %s ADD    <otpauth://...>                     Import an account\n"
-        "  %s LIST                                       List account names\n"
-        "  %s GET    <account>                           Print an account's code\n"
-        "  %s REMOVE <account>                           Delete an account\n"
-        "  %s CLOCK                                      Show the UTC offset and status\n"
-        "  %s SYNC   [server]                            SNTP-sync + save (default pool.ntp.org)\n"
-        "  %s OFFSET <seconds>                           Set+save a manual UTC offset\n"
-        "  %s HELP\n\n",
-        p, p, p, p, p, p, p, p, p, p);
+        "Run as '%s <COMMAND> ...'  ('%s ?' shows the arg template):\n"
+        "  CODE   <secret> [digits] [period]  Print a code (no vault)\n"
+        "  INIT   [OPEN]                      Create a vault\n"
+        "  ADD    \"<otpauth://...>\"           Import an account\n"
+        "  LIST                               List account names\n"
+        "  GET    <account>                   Print an account's code\n"
+        "  REMOVE <account>                   Delete an account\n"
+        "  CLOCK                              Show UTC offset + status\n"
+        "  SYNC   [server]                    SNTP sync + save\n"
+        "  OFFSET <seconds>                   Set + save a UTC offset\n"
+        "  HELP\n"
+        "\n",
+        p, p);
 #ifdef AMIAUTH_AMIGA
     fprintf(stderr,
-        "Arguments are Amiga keywords; '%s ?' shows the template. Examples:\n"
-        "  %s GET ACCOUNT GitHub VAULT %s\n"
-        "  %s ADD URI \"otpauth://...\"   (quote URIs - they contain '?')\n"
-        "Keywords: SECRET DIGITS PERIOD URI ACCOUNT SERVER SECONDS VAULT (all /K),\n"
-        "          OPEN/S, ITERATIONS/N/K (INIT), NOREKEY/S.\n",
-        p, p, DEFAULT_VAULT, p);
+        "Options: VAULT <path>  OPEN/S  ITERATIONS/N/K (INIT)  NOREKEY/S\n"
+        "Quote URIs (they contain '?'). Default vault (first set wins):\n"
+        "  VAULT <path>; env AMIAUTH_VAULT; pref AmiAuth/vault\n"
+        "  (SetEnv SAVE AmiAuth/vault <path>); else %s\n",
+        DEFAULT_VAULT);
 #else
     fprintf(stderr,
-        "Options: -v/--vault PATH (or AMIAUTH_VAULT, default %s)\n"
-        "         --iterations N   INIT: set the PBKDF2 count (default: calibrated)\n"
-        "         --no-rekey       don't suggest re-keying on faster/slower machines\n",
+        "Options: -v/--vault PATH  --iterations N  --no-rekey\n"
+        "Default vault: -v, else $AMIAUTH_VAULT, else the 'vault' pref, else %s\n",
         DEFAULT_VAULT);
 #endif
-    fprintf(stderr, "An encrypted vault prompts for its passphrase on the terminal.\n");
+    fprintf(stderr, "Encrypted vaults prompt for the passphrase on the terminal.\n");
     return 1;
+}
+
+/* Resolve the vault path: explicit VAULT/-v, else env, else the saved 'vault'
+ * pref (ENVARC:AmiAuth/vault), else the built-in default. */
+static const char *resolve_vault(const cli_args *a)
+{
+    static char pref[256];
+    if (a->vault) return a->vault;
+    {
+        const char *env = getenv("AMIAUTH_VAULT");
+        if (env && env[0]) return env;
+    }
+    if (prefs_get("vault", pref, sizeof pref) == 0 && pref[0]) return pref;
+    return DEFAULT_VAULT;
 }
 
 /* Run the parsed command. Shared by both parser backends. */
 static int dispatch(const cli_args *a)
 {
-    const char *vault = a->vault ? a->vault : getenv("AMIAUTH_VAULT");
-    if (!vault) vault = DEFAULT_VAULT;
+    const char *vault = resolve_vault(a);
     g_no_rekey = a->no_rekey;
 
     if (!a->command)                    return usage();
     if (ci_streq(a->command, "CODE"))
-        return a->secret ? cmd_code(a->secret, a->digits, a->period) : usage();
+        return a->value ? cmd_code(a->value, a->digits, a->period) : usage();
     if (ci_streq(a->command, "INIT"))   return cmd_init(vault, a->open, a->iterations);
-    if (ci_streq(a->command, "ADD"))    return a->uri ? cmd_add(vault, a->uri) : usage();
+    if (ci_streq(a->command, "ADD"))    return a->value ? cmd_add(vault, a->value) : usage();
     if (ci_streq(a->command, "LIST"))   return cmd_list(vault);
-    if (ci_streq(a->command, "GET"))    return a->account ? cmd_get(vault, a->account) : usage();
-    if (ci_streq(a->command, "REMOVE")) return a->account ? cmd_remove(vault, a->account) : usage();
+    if (ci_streq(a->command, "GET"))    return a->value ? cmd_get(vault, a->value) : usage();
+    if (ci_streq(a->command, "REMOVE")) return a->value ? cmd_remove(vault, a->value) : usage();
     if (ci_streq(a->command, "CLOCK"))  return cmd_clock();
-    if (ci_streq(a->command, "SYNC"))   return cmd_sync(a->server);
-    if (ci_streq(a->command, "OFFSET")) return a->seconds ? cmd_offset(a->seconds) : usage();
+    if (ci_streq(a->command, "SYNC"))   return cmd_sync(a->value);   /* NULL = default pool */
+    if (ci_streq(a->command, "OFFSET")) return a->value ? cmd_offset(a->value) : usage();
     if (ci_streq(a->command, "HELP"))   { usage(); return 0; }
     return usage();
 }
 
 #ifdef AMIAUTH_AMIGA
 
-/* AmigaOS: parse the whole command line with dos.library ReadArgs. Idiomatic
- * keywords, `?` template help and quoting come for free. */
+/* AmigaOS: parse the whole command line with dos.library ReadArgs. The command's
+ * argument is positional (GET GitHub); options are keywords. `?` template help
+ * and quoting come for free. */
 int main(int argc, char **argv)
 {
     static const char TMPL[] =
-        "COMMAND,SECRET/K,DIGITS/K,PERIOD/K,URI/K,ACCOUNT/K,SERVER/K,"
-        "SECONDS/K,VAULT/K,OPEN/S,ITERATIONS/N/K,NOREKEY/S";
-    enum { P_COMMAND, P_SECRET, P_DIGITS, P_PERIOD, P_URI, P_ACCOUNT, P_SERVER,
-           P_SECONDS, P_VAULT, P_OPEN, P_ITERATIONS, P_NOREKEY, P_N };
+        "COMMAND,VALUE,DIGITS,PERIOD,VAULT/K,OPEN/S,ITERATIONS/N/K,NOREKEY/S";
+    enum { P_COMMAND, P_VALUE, P_DIGITS, P_PERIOD, P_VAULT, P_OPEN,
+           P_ITERATIONS, P_NOREKEY, P_N };
     LONG opt[P_N];
     struct RDArgs *rda;
     cli_args a;
@@ -719,13 +729,9 @@ int main(int argc, char **argv)
 
     memset(&a, 0, sizeof a);
     a.command    = (const char *)opt[P_COMMAND];
-    a.secret     = (const char *)opt[P_SECRET];
+    a.value      = (const char *)opt[P_VALUE];
     a.digits     = (const char *)opt[P_DIGITS];
     a.period     = (const char *)opt[P_PERIOD];
-    a.uri        = (const char *)opt[P_URI];
-    a.account    = (const char *)opt[P_ACCOUNT];
-    a.server     = (const char *)opt[P_SERVER];
-    a.seconds    = (const char *)opt[P_SECONDS];
     a.vault      = (const char *)opt[P_VAULT];
     a.open       = opt[P_OPEN] ? 1 : 0;
     a.iterations = opt[P_ITERATIONS] ? *(LONG *)opt[P_ITERATIONS] : -1;
@@ -768,17 +774,9 @@ int main(int argc, char **argv)
     }
 
     a.command = npos > 0 ? pos[0] : NULL;
-    if (a.command) {                               /* map positionals per command */
-        const char *p1 = npos > 1 ? pos[1] : NULL;
-        const char *p2 = npos > 2 ? pos[2] : NULL;
-        const char *p3 = npos > 3 ? pos[3] : NULL;
-        if (ci_streq(a.command, "CODE"))       { a.secret = p1; a.digits = p2; a.period = p3; }
-        else if (ci_streq(a.command, "ADD"))     a.uri = p1;
-        else if (ci_streq(a.command, "GET") ||
-                 ci_streq(a.command, "REMOVE"))  a.account = p1;
-        else if (ci_streq(a.command, "SYNC"))    a.server = p1;
-        else if (ci_streq(a.command, "OFFSET"))  a.seconds = p1;
-    }
+    a.value   = npos > 1 ? pos[1] : NULL;   /* the command's positional argument */
+    a.digits  = npos > 2 ? pos[2] : NULL;   /* CODE only */
+    a.period  = npos > 3 ? pos[3] : NULL;   /* CODE only */
     return dispatch(&a);
 }
 
