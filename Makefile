@@ -40,7 +40,7 @@ DIFF_ITERS ?= 5000
 
 BUILD := build
 
-.PHONY: all test cli smoke diff m68k m68k-docker serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench clean
+.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench clean
 
 all: test cli
 
@@ -75,6 +75,16 @@ $(BUILD)/run-diff: $(CORE_SRCS) $(DIFF_SRCS) | $(BUILD)
 # --- m68k: Amiga CLI binary (amiga-gcc on PATH) ---
 m68k: | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) -o $(BUILD)/AmiAuth
+
+# --- m68k: ReAction GUI binary (Amiga only; needs intuition + ReAction classes) ---
+GUI_SRCS := src/gui/main.c
+
+gui: | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) -lamiga -o $(BUILD)/AmiAuthGUI
+
+gui-docker:
+	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make gui'
 
 # --- m68k via the CI container: no local toolchain needed, matches CI exactly ---
 m68k-docker:
