@@ -1,0 +1,32 @@
+# AmiAuth GUI test harness: docker-amiberry (amiberry + KasmVNC) running an
+# A1200/OS 3.2, driven from a browser at http://localhost:8443.
+#
+# The amiauth config ships with use_gui=no, so the stock container's `amiberry`
+# boots it straight into emulation — no container or command-line changes. The
+# config is seeded in as default.uae (the config amiberry loads on launch) by
+# `make seed`; `make up` does that then starts the container.
+#
+# Three host paths (repo, Workbench 3.2 hard drive, kickstart ROM) are
+# machine-specific and copyrighted (the ROM), so they are NOT committed: set
+# them in a local .env (copy .env.example).
+services:
+  amiberry:
+    image: ghcr.io/sidick/amiberry:latest
+    container_name: amiauth-gui
+    ports:
+      - "8443:8443"
+    environment:
+      VNC_GEOMETRY: "1280x960"
+      VNC_DEPTH: "24"
+      VNC_USER: "amiberry"
+      VNC_PASSWORD: "amiberry"
+    volumes:
+      # The amiberry user's HOME: KasmVNC state + the Amiberry/ tree (configs,
+      # ROMs). A host dir (gitignored), seeded by `make seed`; on macOS Docker
+      # Desktop its ownership maps transparently so the container can write it.
+      - ./config-home:/config
+      # SRC:AmiAuth -> the repo, so build/AmiAuthGUI and build/*.vault show up.
+      - ${AMIAUTH_SRC}:/amiauth
+      # DH0:Workbench -> a bootable Workbench 3.2 install (with ReAction).
+      - ${AMIAUTH_WB_HDD}:/workbench
+    shm_size: "512m"

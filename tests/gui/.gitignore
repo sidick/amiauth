@@ -1,0 +1,5 @@
+# Machine-specific host paths (and the copyrighted ROM path). Never commit.
+.env
+
+# The container's /config home (KasmVNC state, seeded ROM, WB metadata).
+config-home/
