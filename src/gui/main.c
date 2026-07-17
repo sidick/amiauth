@@ -432,6 +432,7 @@ int main(void)
             LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
             LAYOUT_SpaceOuter,  TRUE,
             LAYOUT_AddChild,    (ULONG)listobj,
+            CHILD_MinWidth,     220,            /* keep the window a usable width */
             LAYOUT_AddChild,    (ULONG)codeobj,
             CHILD_WeightedHeight, 0,
             LAYOUT_AddChild,    (ULONG)gaugeobj,
