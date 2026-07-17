@@ -1,18 +1,22 @@
-/* main.c — AmiAuth GUI, Stage 1: a read-only ReAction viewer.
+/* main.c — AmiAuth GUI: a ReAction viewer for the account vault.
  *
- * Opens an always-unlocked vault and shows its accounts in a listbrowser; the
- * selected account's live TOTP/HOTP code and a countdown to the next code update
- * once a second. m68k/AmigaOS only (needs intuition + ReAction/ClassAct). The
- * passphrase flow, clipboard, and the commodity come in later stages.
+ * Opens the vault (prompting for the passphrase if it is encrypted) and shows
+ * its accounts in a listbrowser; the selected account's live TOTP/HOTP code and
+ * a countdown to the next code update once a second, with a "Copy" button (and
+ * double-click) that puts the code on the clipboard. m68k/AmigaOS only (needs
+ * intuition + ReAction/ClassAct). The commodity shell comes in a later stage.
  */
 #include <exec/types.h>
 #include <exec/memory.h>
+#include <exec/io.h>
 #include <dos/dos.h>
 #include <devices/timer.h>
+#include <devices/clipboard.h>
 #include <intuition/intuition.h>
 #include <intuition/gadgetclass.h>
 #include <intuition/icclass.h>
 #include <libraries/locale.h>
+#include <libraries/iffparse.h>
 
 #include <classes/window.h>
 #include <gadgets/layout.h>
@@ -25,6 +29,7 @@
 #include <proto/intuition.h>
 #include <proto/utility.h>
 #include <proto/locale.h>
+#include <proto/iffparse.h>
 #include <proto/window.h>
 #include <proto/layout.h>
 #include <proto/listbrowser.h>
@@ -51,12 +56,22 @@ struct Library       *LayoutBase      = NULL;   /* gadgets/layout.gadget */
 struct Library       *ListBrowserBase = NULL;   /* listbrowser.gadget    */
 struct Library       *FuelGaugeBase   = NULL;   /* fuelgauge.gadget      */
 struct Library       *ButtonBase      = NULL;   /* button.gadget         */
+struct Library       *IFFParseBase    = NULL;   /* iffparse.library (optional) */
 
 /* timer.device, for the once-a-second refresh */
 static struct MsgPort     *g_tport;
 static struct timerequest *g_treq;
 
-enum { GID_LIST = 1, GID_CODE, GID_GAUGE };
+/* clipboard (PRIMARY_CLIP) via iffparse.library, for "copy code" */
+static struct ClipboardHandle *g_clip;
+static struct IFFHandle        *g_iff;
+
+#define ID_FTXT MAKE_ID('F','T','X','T')
+#define ID_CHRS MAKE_ID('C','H','R','S')
+
+#define CLIP_CLEAR_SECS 30      /* wipe our copied code off the clipboard after this */
+
+enum { GID_LIST = 1, GID_CODE, GID_GAUGE, GID_COPY };
 enum { PWID_OK = 1, PWID_CANCEL };      /* passphrase requester gadgets */
 
 #define VAULT_PATH_DEFAULT "PROGDIR:AmiAuth.vault"
@@ -65,6 +80,7 @@ enum { PWID_OK = 1, PWID_CANCEL };      /* passphrase requester gadgets */
 
 static void close_libs(void)
 {
+    if (IFFParseBase)    CloseLibrary(IFFParseBase);
     if (ButtonBase)      CloseLibrary(ButtonBase);
     if (FuelGaugeBase)   CloseLibrary(FuelGaugeBase);
     if (ListBrowserBase) CloseLibrary(ListBrowserBase);
@@ -83,6 +99,7 @@ static const char *open_libs(void)
     ListBrowserBase = OpenLibrary((STRPTR)"gadgets/listbrowser.gadget", 0);
     FuelGaugeBase   = OpenLibrary((STRPTR)"gadgets/fuelgauge.gadget", 0);
     ButtonBase      = OpenLibrary((STRPTR)"gadgets/button.gadget", 0);
+    IFFParseBase    = OpenLibrary((STRPTR)"iffparse.library", 37);  /* optional: clipboard copy */
     if (!IntuitionBase || !UtilityBase)
         return "needs intuition.library / utility.library v37+ (OS 2.04)";
     if (!WindowBase || !LayoutBase || !ListBrowserBase || !FuelGaugeBase || !ButtonBase)
@@ -117,6 +134,65 @@ static void timer_arm(ULONG secs)
     g_treq->tr_time.tv_secs  = secs;
     g_treq->tr_time.tv_micro = 0;
     SendIO((struct IORequest *)g_treq);
+}
+
+/* --- clipboard: put the current code on the primary clipboard as IFF FTXT,
+ * via iffparse.library (the OS-standard IFF path). All best-effort: if
+ * iffparse or the clipboard is unavailable, clip_open() returns 0 and the copy
+ * feature is simply disabled. --- */
+static int clip_open(void)
+{
+    if (!IFFParseBase) return 0;
+    g_clip = OpenClipboard(PRIMARY_CLIP);
+    if (!g_clip) return 0;
+    g_iff = AllocIFF();
+    if (!g_iff) return 0;
+    g_iff->iff_Stream = (ULONG)g_clip;
+    InitIFFasClip(g_iff);
+    return 1;
+}
+
+static void clip_close(void)
+{
+    if (g_iff)  FreeIFF(g_iff);
+    if (g_clip) CloseClipboard(g_clip);
+}
+
+/* The clip ID of the most recent clipboard write (0 if unavailable). Advances
+ * whenever anyone posts, so it tells us whether our clip is still the current
+ * one. Reuses the IOClipReq embedded in the iffparse ClipboardHandle. */
+static ULONG clip_write_id(void)
+{
+    if (!g_clip) return 0;
+    g_clip->cbh_Req.io_Command = CBD_CURRENTWRITEID;
+    DoIO((struct IORequest *)&g_clip->cbh_Req);
+    return (ULONG)g_clip->cbh_Req.io_ClipID;
+}
+
+/* Put `text` on the clipboard as an IFF FORM FTXT with one CHRS chunk (empty
+ * text -> an empty FTXT, which clears the clip). Returns the resulting write ID
+ * so the caller can later tell whether the clip is still ours; 0 on failure. */
+static ULONG clip_write_text(const char *text)
+{
+    ULONG len = (ULONG)strlen(text);
+    if (!g_iff) return 0;
+    if (OpenIFF(g_iff, IFFF_WRITE) != 0) return 0;
+    if (PushChunk(g_iff, ID_FTXT, ID_FORM, IFFSIZE_UNKNOWN) == 0) {
+        if (len && PushChunk(g_iff, 0, ID_CHRS, IFFSIZE_UNKNOWN) == 0) {
+            WriteChunkBytes(g_iff, (APTR)text, (LONG)len);  /* iffparse pads/sizes */
+            PopChunk(g_iff);                                /* CHRS */
+        }
+        PopChunk(g_iff);                                    /* FORM */
+    }
+    CloseIFF(g_iff);
+    return clip_write_id();
+}
+
+/* Overwrite the clipboard with an empty FTXT, wiping our copied code. Called
+ * only when the clip is still ours (see the auto-clear countdown). */
+static void clip_clear(void)
+{
+    clip_write_text("");
 }
 
 /* --- clock: corrected UTC via the saved offset, else locale, mirroring the CLI --- */
@@ -263,14 +339,17 @@ int main(void)
     static vault v;                     /* ~19 KB: keep it off the stack */
     static char pass[128];              /* passphrase buffer; off the stack, scrubbed after use */
     struct List lblist;
-    Object *winobj = NULL, *codeobj = NULL, *gaugeobj = NULL, *listobj = NULL;
+    Object *winobj = NULL, *codeobj = NULL, *gaugeobj = NULL, *listobj = NULL, *copyobj = NULL;
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
-    ULONG winsig = 0, timersig, sel = 0;
-    int have_timer = 0, running = 1;
+    ULONG winsig = 0, timersig, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0;
+    int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0;
+    char curcode[16];
     size_t i;
     vault_result rc;
+
+    curcode[0] = '\0';
 
     NewList(&lblist);
 
@@ -318,6 +397,7 @@ int main(void)
     }
 
     have_timer = timer_open();
+    have_clip  = clip_open();
 
     /* Build the gadgets explicitly (the ReAction *Object/End builder macros rely
      * on NewObject not being a function-like macro, which it is here). */
@@ -341,6 +421,12 @@ int main(void)
         FUELGAUGE_Percent, FALSE,
         FUELGAUGE_Ticks,   0,
         TAG_END);
+    copyobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_COPY,
+        GA_RelVerify, TRUE,
+        GA_Disabled,  !have_clip,           /* no clipboard.device -> greyed out */
+        GA_Text,      (ULONG)"Copy",
+        TAG_END);
     {
         Object *layoutobj = NewObject(LAYOUT_GetClass(), NULL,
             LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
@@ -349,6 +435,8 @@ int main(void)
             LAYOUT_AddChild,    (ULONG)codeobj,
             CHILD_WeightedHeight, 0,
             LAYOUT_AddChild,    (ULONG)gaugeobj,
+            CHILD_WeightedHeight, 0,
+            LAYOUT_AddChild,    (ULONG)copyobj,
             CHILD_WeightedHeight, 0,
             TAG_END);
         winobj = NewObject(WINDOW_GetClass(), NULL,
@@ -386,6 +474,13 @@ int main(void)
 
         if (have_timer && (sigs & timersig)) {
             WaitIO((struct IORequest *)g_treq);   /* consume the request */
+            if (copied > 0 && --copied == 0)      /* revert the "Copied" flash */
+                SetGadgetAttrs((struct Gadget *)copyobj, win, NULL,
+                               GA_Text, (ULONG)"Copy", TAG_END);
+            /* auto-clear our copied code once it has sat ~30s, but only if the
+             * clipboard is still ours (don't clobber something copied since). */
+            if (clear_secs > 0 && --clear_secs == 0 && clip_write_id() == our_clipid)
+                clip_clear();
             /* recompute + refresh below, then re-arm */
             timer_arm(1);
         }
@@ -393,16 +488,35 @@ int main(void)
         if (sigs & winsig) {
             ULONG result;
             UWORD code;
+            int docopy = 0;
             while ((result = DoMethod(winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
                 switch (result & WMHI_CLASSMASK) {
                     case WMHI_CLOSEWINDOW:
                         running = 0;
                         break;
                     case WMHI_GADGETUP:
-                        if ((result & WMHI_GADGETMASK) == GID_LIST)
-                            GetAttr(LISTBROWSER_Selected, listobj, &sel);
+                        switch (result & WMHI_GADGETMASK) {
+                            case GID_LIST: {
+                                ULONG cs = 0, cm = 0;
+                                GetAttr(LISTBROWSER_Selected, listobj, &sel);
+                                CurrentTime(&cs, &cm);       /* a quick second click = copy */
+                                if (DoubleClick(lastsec, lastmic, cs, cm)) docopy = 1;
+                                lastsec = cs; lastmic = cm;
+                                break;
+                            }
+                            case GID_COPY:
+                                docopy = 1;
+                                break;
+                        }
                         break;
                 }
+            }
+            if (docopy && have_clip && curcode[0]) {
+                our_clipid = clip_write_text(curcode);
+                clear_secs = CLIP_CLEAR_SECS;         /* start/reset auto-clear */
+                SetGadgetAttrs((struct Gadget *)copyobj, win, NULL,
+                               GA_Text, (ULONG)"Copied", TAG_END);
+                copied = 2;                           /* revert after ~2 ticks */
             }
         }
 
@@ -420,6 +534,7 @@ int main(void)
             /* libnix sprintf lacks '*' width, so build "%06lu"/"%08lu". */
             sprintf(fmt, "%%0%dlu", (int)a->digits);
             sprintf(buf, fmt, (unsigned long)code);
+            strcpy(curcode, buf);              /* remember it for "copy" */
             SetGadgetAttrs((struct Gadget *)codeobj, win, NULL,
                            GA_Text, (ULONG)buf, TAG_END);
             SetGadgetAttrs((struct Gadget *)gaugeobj, win, NULL,
@@ -435,6 +550,7 @@ cleanup:
         struct Node *n;
         while ((n = RemHead(&lblist)) != NULL) FreeListBrowserNode(n);
     }
+    if (have_clip) clip_close();
     if (have_timer) timer_close();
     vault_lock(&v);
     close_libs();
