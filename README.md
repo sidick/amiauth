@@ -14,6 +14,21 @@ accelerated or emulated machine.
 > sync. The ReAction **GUI** and commodity are the remaining work. See
 > [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
+## AI-assisted development
+
+Be aware: **AmiAuth was written largely by an AI coding agent** (Anthropic's
+Claude, via Claude Code), working under human direction. The scope, design
+decisions, and on-hardware testing were human-directed and reviewed; most of the
+code itself was AI-generated.
+
+Because this is a security tool, that disclosure matters — please weigh your
+trust accordingly rather than taking it on faith. To make the code auditable
+instead of asking for blind trust, the cryptographic primitives (SHA-1, HMAC,
+PBKDF2, ChaCha20) are checked against their published RFC test vectors and
+differentially fuzzed against OpenSSL in CI, and the entire source is
+BSD-licensed and open for review. Read [`docs/SECURITY.md`](docs/SECURITY.md)
+and judge it for yourself.
+
 ## Why
 
 No TOTP tool exists for classic AmigaOS. Anyone using an Amiga day-to-day still

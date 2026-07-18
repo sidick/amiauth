@@ -63,6 +63,15 @@ Quick start (CLI)
   AmiAuth GET GitHub                            print the current code
   AmiAuth CODE JBSWY3DPEHPK3PXP                 one-shot code, no vault
 
+AI disclosure
+-------------
+  Be aware: AmiAuth was written largely by an AI coding agent (Anthropic's Claude
+  / Claude Code), under human direction, review and on-hardware testing. As this
+  is a security tool that disclosure matters - so rather than asking for blind
+  trust, the crypto primitives are verified against their RFC test vectors and
+  fuzzed against OpenSSL, and the full source is open (BSD) for you to review and
+  judge for yourself.
+
 Security
 --------
   The vault passphrase is only ever entered interactively (never on the command
