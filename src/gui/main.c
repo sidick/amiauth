@@ -41,6 +41,7 @@
 #include <proto/layout.h>
 #include <proto/listbrowser.h>
 #include <proto/fuelgauge.h>
+#include <proto/string.h>       /* STRING_GetClass */
 
 #include <string.h>
 #include <stdio.h>
@@ -87,11 +88,12 @@ static struct IFFHandle        *g_iff;
 
 #define CLIP_CLEAR_SECS 30      /* wipe our copied code off the clipboard after this */
 
-enum { GID_LIST = 1, GID_CODE, GID_GAUGE, GID_COPY, GID_ADD, GID_REMOVE };
+enum { GID_LIST = 1, GID_CODE, GID_GAUGE, GID_COPY, GID_ADD, GID_EDIT, GID_REMOVE };
 enum { PWID_OK = 1, PWID_CANCEL, PWID_STR };   /* modal-requester gadgets */
+enum { EDID_ISSUER = 1, EDID_LABEL, EDID_DIGITS, EDID_PERIOD, EDID_OK, EDID_CANCEL };  /* edit form */
 
 /* menu / button command ids */
-enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_REMOVE, CMD_QUIT };
+enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_EDIT, CMD_REMOVE, CMD_QUIT };
 
 #define VAULT_PATH_DEFAULT "PROGDIR:AmiAuth.vault"
 #define DEFAULT_IDLE_LOCK  120      /* seconds of inactivity before an encrypted vault re-locks */
@@ -116,6 +118,7 @@ static struct NewMenu g_menu[] = {
     { NM_TITLE, (STRPTR)"Account", NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Add from clipboard",  (STRPTR)"V", 0, 0, (APTR)CMD_ADD_CLIP },
     { NM_ITEM,  (STRPTR)"Add (type URI)...",   (STRPTR)"A", 0, 0, (APTR)CMD_ADD_TYPE },
+    { NM_ITEM,  (STRPTR)"Edit selected...",    (STRPTR)"E", 0, 0, (APTR)CMD_EDIT },
     { NM_ITEM,  NM_BARLABEL,       NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Remove selected...",  (STRPTR)"R", 0, 0, (APTR)CMD_REMOVE },
     { NM_END,   NULL, NULL, 0, 0, NULL }
@@ -551,11 +554,11 @@ static int uri_request(char *buf, size_t cap)
     if (!StringBase || cap == 0) return 0;
     buf[0] = '\0';
 
-    strobj = NewObject(NULL, (STRPTR)"string.gadget",
+    strobj = NewObject(STRING_GetClass(), NULL,
         GA_ID,            PWID_STR,
         GA_RelVerify,     TRUE,
+        STRINGA_Buffer,   (ULONG)buf,          /* the gadget edits into buf */
         STRINGA_MaxChars, (ULONG)(cap - 1),
-        STRINGA_TextVal,  (ULONG)"",
         TAG_END);
     okobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID, PWID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"OK",     TAG_END);
@@ -624,6 +627,128 @@ static int uri_request(char *buf, size_t cap)
     return done == 1 ? 1 : 0;
 }
 
+/* A "<label>  [gadget]" row for the edit form (fixed-width label so they align). */
+static Object *labeled_row(const char *lbl, Object *gad)
+{
+    Object *l = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ReadOnly, TRUE, GA_Text, (ULONG)lbl, TAG_END);
+    return NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_AddChild, (ULONG)l,
+        CHILD_WeightedWidth, 0,
+        CHILD_MinWidth, 64,
+        LAYOUT_AddChild, (ULONG)gad,
+        TAG_END);
+}
+
+/* Modal form to edit the selected account's issuer/label/digits/period. Returns
+ * 1 if applied (written back into *acct), 0 on cancel. The secret/type/algorithm
+ * are preserved. Needs string.gadget; returns 0 if unavailable. */
+static int edit_request(otp_account *acct)
+{
+    Object *win, *layoutobj, *issuerg, *labelg, *digitsg, *periodg, *okobj, *cancelobj, *buttons;
+    struct Window *w;
+    ULONG sig = 0;
+    int done = -1;
+    /* Writable buffers the string gadgets edit into (a string.gadget needs a
+     * STRINGA_Buffer or OM_NEW fails). Off the stack; prefilled with the field. */
+    static char ibuf[OTP_MAX_ISSUER], lbuf[OTP_MAX_LABEL], dbuf[8], pbuf[12];
+
+    if (!StringBase) return 0;
+    strcpy(ibuf, acct->issuer);
+    strcpy(lbuf, acct->label);
+    sprintf(dbuf, "%lu", (unsigned long)acct->digits);   /* libnix mishandles %d */
+    sprintf(pbuf, "%lu", (unsigned long)acct->period);
+
+    issuerg = NewObject(STRING_GetClass(), NULL, GA_ID, EDID_ISSUER, GA_RelVerify, TRUE,
+        STRINGA_Buffer, (ULONG)ibuf, STRINGA_MaxChars, OTP_MAX_ISSUER - 1, TAG_END);
+    labelg  = NewObject(STRING_GetClass(), NULL, GA_ID, EDID_LABEL, GA_RelVerify, TRUE,
+        STRINGA_Buffer, (ULONG)lbuf, STRINGA_MaxChars, OTP_MAX_LABEL - 1, TAG_END);
+    digitsg = NewObject(STRING_GetClass(), NULL, GA_ID, EDID_DIGITS, GA_RelVerify, TRUE,
+        STRINGA_Buffer, (ULONG)dbuf, STRINGA_MaxChars, 2, TAG_END);
+    periodg = NewObject(STRING_GetClass(), NULL, GA_ID, EDID_PERIOD, GA_RelVerify, TRUE,
+        STRINGA_Buffer, (ULONG)pbuf, STRINGA_MaxChars, 6, TAG_END);
+    okobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID, EDID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"OK",     TAG_END);
+    cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID, EDID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)"Cancel", TAG_END);
+    buttons = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_AddChild, (ULONG)okobj,
+        LAYOUT_AddChild, (ULONG)cancelobj,
+        TAG_END);
+    layoutobj = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
+        LAYOUT_SpaceOuter, TRUE,
+        LAYOUT_AddChild, (ULONG)labeled_row("Issuer:", issuerg), CHILD_WeightedHeight, 0, CHILD_MinWidth, 300,
+        LAYOUT_AddChild, (ULONG)labeled_row("Label:",  labelg),  CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)labeled_row("Digits:", digitsg), CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)labeled_row("Period:", periodg), CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)buttons,                         CHILD_WeightedHeight, 0,
+        TAG_END);
+    win = NewObject(WINDOW_GetClass(), NULL,
+        WA_Title,        (ULONG)"AmiAuth - Edit account",
+        WA_Activate,     TRUE,
+        WA_CloseGadget,  TRUE,
+        WA_DragBar,      TRUE,
+        WA_DepthGadget,  TRUE,
+        WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_VANILLAKEY,
+        WINDOW_Position, WPOS_CENTERSCREEN,
+        WINDOW_Layout,   (ULONG)layoutobj,
+        TAG_END);
+    if (!win) return 0;
+
+    w = (struct Window *)DoMethod(win, WM_OPEN, NULL);
+    if (!w) { DisposeObject(win); return 0; }
+    GetAttr(WINDOW_SigMask, win, &sig);
+    ActivateLayoutGadget((struct Gadget *)layoutobj, w, NULL, EDID_ISSUER);
+
+    while (done < 0) {
+        ULONG got = Wait(sig | SIGBREAKF_CTRL_C);
+        ULONG r;
+        UWORD code;
+        if (got & SIGBREAKF_CTRL_C) { done = 0; break; }
+        while ((r = DoMethod(win, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
+            ULONG gid = r & WMHI_GADGETMASK;
+            switch (r & WMHI_CLASSMASK) {
+                case WMHI_CLOSEWINDOW: done = 0; break;
+                case WMHI_VANILLAKEY:  if (code == 0x1B) done = 0; break;
+                case WMHI_GADGETUP:
+                    if (gid == EDID_CANCEL) done = 0;
+                    else if (gid == EDID_OK || gid == EDID_ISSUER || gid == EDID_LABEL ||
+                             gid == EDID_DIGITS || gid == EDID_PERIOD) {   /* OK, or Enter in any field */
+                        STRPTR t = NULL;
+                        char issuer[OTP_MAX_ISSUER], label[OTP_MAX_LABEL];
+                        int d; long p;
+                        issuer[0] = label[0] = '\0';
+                        GetAttr(STRINGA_TextVal, issuerg, (ULONG *)&t);
+                        if (t) { strncpy(issuer, (char *)t, OTP_MAX_ISSUER - 1); issuer[OTP_MAX_ISSUER - 1] = '\0'; }
+                        GetAttr(STRINGA_TextVal, labelg, (ULONG *)&t);
+                        if (t) { strncpy(label, (char *)t, OTP_MAX_LABEL - 1); label[OTP_MAX_LABEL - 1] = '\0'; }
+                        GetAttr(STRINGA_TextVal, digitsg, (ULONG *)&t); d = t ? atoi((char *)t) : 0;
+                        GetAttr(STRINGA_TextVal, periodg, (ULONG *)&t); p = t ? atol((char *)t) : 0;
+                        if (label[0] && d >= 6 && d <= 8 && p > 0 && p <= 86400) {
+                            strcpy(acct->issuer, issuer);
+                            strcpy(acct->label, label);
+                            acct->digits = d;
+                            acct->period = (uint32_t)p;
+                            done = 1;
+                        } else {
+                            gui_requester(w, "Label is required; digits must be 6-8, period 1-86400.",
+                                          "OK", NULL);           /* stay open to fix */
+                        }
+                    }
+                    break;
+            }
+            if (done >= 0) break;
+        }
+    }
+
+    DoMethod(win, WM_CLOSE, NULL);
+    DisposeObject(win);
+    return done == 1 ? 1 : 0;
+}
+
 /* ------------------------------------------------------------------ */
 
 int main(void)
@@ -632,7 +757,7 @@ int main(void)
     static char pass[128];              /* passphrase buffer; off the stack, scrubbed after use */
     struct List lblist;
     Object *winobj = NULL, *codeobj = NULL, *gaugeobj = NULL, *listobj = NULL, *copyobj = NULL;
-    Object *statobj = NULL, *addobj = NULL, *removeobj = NULL;
+    Object *statobj = NULL, *addobj = NULL, *editobj = NULL, *removeobj = NULL;
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
@@ -719,6 +844,12 @@ int main(void)
         GA_Disabled,  !StringBase,          /* typed-URI requester needs string.gadget */
         GA_Text,      (ULONG)"Add",
         TAG_END);
+    editobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_EDIT,
+        GA_RelVerify, TRUE,
+        GA_Disabled,  (!StringBase || v.count == 0),
+        GA_Text,      (ULONG)"Edit",
+        TAG_END);
     removeobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_REMOVE,
         GA_RelVerify, TRUE,
@@ -743,6 +874,7 @@ int main(void)
         Object *btnrow = NewObject(LAYOUT_GetClass(), NULL,
             LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
             LAYOUT_AddChild, (ULONG)addobj,
+            LAYOUT_AddChild, (ULONG)editobj,
             LAYOUT_AddChild, (ULONG)removeobj,
             LAYOUT_AddChild, (ULONG)copyobj,
             TAG_END);
@@ -834,7 +966,7 @@ int main(void)
         if (sigs & winsig) {
             ULONG result;
             UWORD code;
-            int docopy = 0, doadd_clip = 0, doadd_type = 0, doremove = 0, changed = 0;
+            int docopy = 0, doadd_clip = 0, doadd_type = 0, doedit = 0, doremove = 0, changed = 0;
             idle_secs = 0;                          /* any window input = activity */
             while ((result = DoMethod(winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
                 switch (result & WMHI_CLASSMASK) {
@@ -853,6 +985,7 @@ int main(void)
                             }
                             case GID_COPY:   docopy = 1;     break;
                             case GID_ADD:    doadd_type = 1; break;
+                            case GID_EDIT:   doedit = 1;     break;
                             case GID_REMOVE: doremove = 1;   break;
                         }
                         break;
@@ -866,6 +999,7 @@ int main(void)
                             switch ((ULONG)GTMENUITEM_USERDATA(it)) {
                                 case CMD_ADD_CLIP: doadd_clip = 1; break;
                                 case CMD_ADD_TYPE: doadd_type = 1; break;
+                                case CMD_EDIT:     doedit     = 1; break;
                                 case CMD_REMOVE:   doremove   = 1; break;
                                 case CMD_QUIT:     running    = 0; break;
                             }
@@ -904,6 +1038,21 @@ int main(void)
                 memset(uribuf, 0, sizeof uribuf);
             }
 
+            /* --- Edit selected (issuer/label/digits/period; secret kept) --- */
+            if (doedit && v.count > 0) {
+                otp_account acct;
+                if (sel >= v.count) sel = 0;
+                acct = v.accounts[sel];               /* copy preserves the secret */
+                if (edit_request(&acct)) {
+                    v.accounts[sel] = acct;           /* apply the edits */
+                    changed = 1;
+                    rc = gui_save(&v, path);
+                    if (rc != VAULT_OK)
+                        gui_requester(win, "Could not save the vault.", "OK", NULL);
+                }
+                memset(&acct, 0, sizeof acct);
+            }
+
             /* --- Remove selected (with confirmation) --- */
             if (doremove && v.count > 0) {
                 char name[OTP_MAX_ISSUER + OTP_MAX_LABEL + 2];
@@ -930,6 +1079,8 @@ int main(void)
                 if (sel >= v.count) sel = v.count ? v.count - 1 : 0;
                 curcode[0] = '\0';
                 SetGadgetAttrs((struct Gadget *)removeobj, win, NULL, GA_Disabled, (v.count == 0), TAG_END);
+                SetGadgetAttrs((struct Gadget *)editobj,   win, NULL,
+                               GA_Disabled, (!StringBase || v.count == 0), TAG_END);
                 SetGadgetAttrs((struct Gadget *)copyobj,   win, NULL,
                                GA_Disabled, (!have_clip || v.count == 0), TAG_END);
             }
