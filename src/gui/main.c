@@ -465,6 +465,62 @@ static void build_nodes(struct List *lblist, const vault *v)
     }
 }
 
+/* Adaptive re-key after a successful unlock (mirrors the CLI maybe_rekey): the
+ * stored iteration count and how long the KDF took reveal whether this machine
+ * is much faster or slower than the one that secured the vault, so we can offer
+ * to recalibrate the PBKDF2 count to ~KDF_TARGET_MS and re-save. Encrypted
+ * vaults only; the ENVARC:AmiAuth/rekey = off pref (shared with the CLI)
+ * silences it. `win` may be NULL — this runs before the main window opens, so
+ * the requesters go to the Workbench screen. The 8x thresholds are generous so
+ * emulator/warp variance never nags, only a clear hardware-class jump. */
+static void gui_maybe_rekey(struct Window *win, vault *v, const char *path,
+                            const char *pass, uint32_t unlock_ms)
+{
+    uint32_t ideal;
+    char prefbuf[8];
+
+    if (v->cipher != VAULT_CIPHER_CHACHA20) return;   /* encrypted only */
+    if (unlock_ms == 0) return;                       /* no usable timer */
+    if (prefs_get("rekey", prefbuf, sizeof prefbuf) == 0 &&
+        Stricmp((STRPTR)prefbuf, (STRPTR)"off") == 0)
+        return;
+
+    ideal = vault_calibrate_iterations(v->iterations, unlock_ms);
+
+    if (unlock_ms < KDF_TARGET_MS / 8 && ideal > v->iterations) {
+        /* Much faster machine -> offer to strengthen (safe; one confirm). */
+        LONG r = gui_requester(win,
+            "This machine is much faster than the one that secured this vault.\n"
+            "Strengthen it now (re-key to more PBKDF2 iterations)?",
+            "Strengthen|Not now|Never here", NULL);
+        if (r == 0) { prefs_set("rekey", "off"); return; }   /* Never (rightmost) */
+        if (r != 1) return;                                  /* Not now */
+    } else if (unlock_ms > KDF_TARGET_MS * 8) {
+        /* Much slower machine -> offer to speed up, but this weakens it: two
+         * confirms, mirroring the CLI's typed "yes". */
+        char msg[136];
+        sprintf(msg, "Unlock took about %lu seconds; this vault was tuned for "
+                "faster hardware.\nRe-key LOWER for quicker unlocks here? "
+                "This REDUCES security.", (unsigned long)((unlock_ms + 500) / 1000));
+        if (gui_requester(win, msg, "Re-key lower|Cancel", NULL) != 1) return;
+        if (gui_requester(win, "Really reduce this vault's security?",
+                          "Reduce|Cancel", NULL) != 1) return;
+    } else {
+        return;                                       /* within range; nothing to do */
+    }
+
+    {   /* Re-key: fresh salt + calibrated count, same passphrase, then save. */
+        uint8_t salt[VAULT_SALT_SIZE];
+        if (amiga_random(salt, sizeof salt) == 0 &&
+            vault_set_passphrase(v, pass, ideal, salt) == VAULT_OK &&
+            gui_save(v, path) == VAULT_OK)
+            gui_requester(win, "Vault re-keyed for this machine.", "OK", NULL);
+        else
+            gui_requester(win, "Re-key failed; the vault is unchanged.", "OK", NULL);
+        memset(salt, 0, sizeof salt);
+    }
+}
+
 /* Parse an otpauth:// URI, add it to the vault and save. Returns 1 if the vault
  * changed, else 0 (reporting the reason). Shared by the clipboard/typed add and
  * the QR-image add so all three behave identically. */
@@ -906,7 +962,12 @@ int main(void)
                 close_libs();              /* user cancelled — a clean exit */
                 return 0;
             }
-            rc = vault_load(&v, path, pass);
+            {   /* time the KDF so we can offer an adaptive re-key (below) */
+                uint32_t t0 = amiga_millis();
+                rc = vault_load(&v, path, pass);
+                if (rc == VAULT_OK)                    /* window not open yet: NULL */
+                    gui_maybe_rekey(NULL, &v, path, pass, amiga_millis() - t0);
+            }
             memset(pass, 0, sizeof pass);  /* scrub the passphrase immediately */
             if (rc == VAULT_OK) break;
             if (rc == VAULT_ERR_AUTH) { msg = "Wrong passphrase - try again:"; continue; }
