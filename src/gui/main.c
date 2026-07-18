@@ -76,6 +76,19 @@ enum { PWID_OK = 1, PWID_CANCEL };      /* passphrase requester gadgets */
 
 #define VAULT_PATH_DEFAULT "PROGDIR:AmiAuth.vault"
 
+/* Multi-column account list: name | live code | seconds-left. The code/left
+ * cells change every second, so the nodes point at these persistent buffers
+ * (LBNCA_CopyText FALSE) and we rewrite them in place; kept off the Amiga
+ * stack. Weighted column widths (CIF_RIGHT/CENTER are V47, below our baseline).*/
+static char g_code[VAULT_MAX_ACCOUNTS][12];
+static char g_left[VAULT_MAX_ACCOUNTS][8];
+static struct ColumnInfo g_columns[] = {
+    { 50, (STRPTR)"Account", CIF_WEIGHTED },
+    { 34, (STRPTR)"Code",    CIF_WEIGHTED },
+    { 16, (STRPTR)"Left",    CIF_WEIGHTED },
+    { -1, NULL, 0 }
+};
+
 /* ------------------------------------------------------------------ */
 
 static void close_libs(void)
@@ -383,15 +396,20 @@ int main(void)
 
     clock_setup(&clk);
 
-    /* Build the account list (issuer:label per row). */
+    /* Build the account list: [name | code | left]. Column 0 (name) is copied
+     * into the node; columns 1/2 point at g_code[i]/g_left[i], refreshed live. */
     for (i = 0; i < v.count; i++) {
         const otp_account *a = &v.accounts[i];
         char label[OTP_MAX_ISSUER + OTP_MAX_LABEL + 2];
         struct Node *node;
         if (a->issuer[0]) { strcpy(label, a->issuer); strcat(label, ":"); strcat(label, a->label); }
         else              strcpy(label, a->label);
-        node = (struct Node *)AllocListBrowserNode(1,
+        strcpy(g_code[i], "------");
+        g_left[i][0] = '\0';
+        node = (struct Node *)AllocListBrowserNode(3,
             LBNA_Column, 0, LBNCA_CopyText, TRUE, LBNCA_Text, (ULONG)label,
+            LBNA_Column, 1, LBNCA_Text, (ULONG)g_code[i],
+            LBNA_Column, 2, LBNCA_Text, (ULONG)g_left[i],
             TAG_END);
         if (node) AddTail(&lblist, node);
     }
@@ -404,6 +422,8 @@ int main(void)
     listobj = NewObject(LISTBROWSER_GetClass(), NULL,
         GA_ID,                    GID_LIST,
         GA_RelVerify,             TRUE,
+        LISTBROWSER_ColumnInfo,   (ULONG)g_columns,
+        LISTBROWSER_ColumnTitles, TRUE,
         LISTBROWSER_Labels,       (ULONG)&lblist,
         LISTBROWSER_ShowSelected, TRUE,
         LISTBROWSER_Selected,     0,
@@ -432,7 +452,8 @@ int main(void)
             LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
             LAYOUT_SpaceOuter,  TRUE,
             LAYOUT_AddChild,    (ULONG)listobj,
-            CHILD_MinWidth,     220,            /* keep the window a usable width */
+            CHILD_MinWidth,     320,            /* room for three columns + titles */
+            CHILD_MinHeight,    100,            /* show several accounts at once */
             LAYOUT_AddChild,    (ULONG)codeobj,
             CHILD_WeightedHeight, 0,
             LAYOUT_AddChild,    (ULONG)gaugeobj,
@@ -521,25 +542,36 @@ int main(void)
             }
         }
 
-        /* Refresh the selected account's code + countdown. */
+        /* Refresh every account's code + countdown in the list, and drive the
+         * detail pane (big code + gauge) from the selected row. */
         if (running && v.count > 0) {
-            const otp_account *a;
             uint64_t now = clock_now_utc(&clk);
-            char buf[16], fmt[8];
-            uint32_t code, remaining, period;
+            uint32_t sel_period = OTP_DEFAULT_PERIOD, sel_rem = 0;
+            char fmt[8];
             if (sel >= v.count) sel = 0;
-            a = &v.accounts[sel];
-            period = a->period ? a->period : OTP_DEFAULT_PERIOD;
-            code = totp_sha1(a->secret, a->secret_len, now, 0, period, a->digits);
-            remaining = totp_seconds_remaining(now, 0, period);
-            /* libnix sprintf lacks '*' width, so build "%06lu"/"%08lu". */
-            sprintf(fmt, "%%0%dlu", (int)a->digits);
-            sprintf(buf, fmt, (unsigned long)code);
-            strcpy(curcode, buf);              /* remember it for "copy" */
+            for (i = 0; i < v.count; i++) {
+                const otp_account *a = &v.accounts[i];
+                uint32_t period = a->period ? a->period : OTP_DEFAULT_PERIOD;
+                uint32_t code = totp_sha1(a->secret, a->secret_len, now, 0, period, a->digits);
+                uint32_t rem  = totp_seconds_remaining(now, 0, period);
+                /* libnix sprintf lacks '*' width, so build "%06lu"/"%08lu". */
+                sprintf(fmt, "%%0%dlu", (int)a->digits);
+                sprintf(g_code[i], fmt, (unsigned long)code);
+                /* fixed 2-digit field so the text never shrinks (a shrinking
+                 * cell leaves stale pixels the listbrowser doesn't clear). */
+                sprintf(g_left[i], "%2lus", (unsigned long)rem);
+                if (i == sel) { sel_period = period; sel_rem = rem; }
+            }
+            /* The nodes point at g_code[]/g_left[]; re-set Labels to repaint.
+             * Cell text is fixed-width (codes and the "NNs" countdown), so no
+             * stale pixels are left behind. */
+            SetGadgetAttrs((struct Gadget *)listobj, win, NULL,
+                           LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
+            strcpy(curcode, g_code[sel]);      /* selected row -> detail + copy */
             SetGadgetAttrs((struct Gadget *)codeobj, win, NULL,
-                           GA_Text, (ULONG)buf, TAG_END);
+                           GA_Text, (ULONG)curcode, TAG_END);
             SetGadgetAttrs((struct Gadget *)gaugeobj, win, NULL,
-                           FUELGAUGE_Max, period, FUELGAUGE_Level, remaining, TAG_END);
+                           FUELGAUGE_Max, sel_period, FUELGAUGE_Level, sel_rem, TAG_END);
         }
     }
 
