@@ -17,6 +17,8 @@
 #include <intuition/icclass.h>
 #include <libraries/locale.h>
 #include <libraries/iffparse.h>
+#include <graphics/gfxbase.h>
+#include <graphics/view.h>          /* struct ColorMap, OBP_*, PRECISION_* */
 
 #include <classes/window.h>
 #include <gadgets/layout.h>
@@ -30,6 +32,7 @@
 #include <proto/utility.h>
 #include <proto/locale.h>
 #include <proto/iffparse.h>
+#include <proto/graphics.h>
 #include <proto/window.h>
 #include <proto/layout.h>
 #include <proto/listbrowser.h>
@@ -57,6 +60,10 @@ struct Library       *ListBrowserBase = NULL;   /* listbrowser.gadget    */
 struct Library       *FuelGaugeBase   = NULL;   /* fuelgauge.gadget      */
 struct Library       *ButtonBase      = NULL;   /* button.gadget         */
 struct Library       *IFFParseBase    = NULL;   /* iffparse.library (optional) */
+struct GfxBase       *GfxBase         = NULL;   /* graphics.library (LED)  */
+
+/* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none) */
+static LONG g_ledpen[3] = { -1, -1, -1 };
 
 /* timer.device, for the once-a-second refresh */
 static struct MsgPort     *g_tport;
@@ -93,6 +100,7 @@ static struct ColumnInfo g_columns[] = {
 
 static void close_libs(void)
 {
+    if (GfxBase)         CloseLibrary((struct Library *)GfxBase);
     if (IFFParseBase)    CloseLibrary(IFFParseBase);
     if (ButtonBase)      CloseLibrary(ButtonBase);
     if (FuelGaugeBase)   CloseLibrary(FuelGaugeBase);
@@ -113,6 +121,7 @@ static const char *open_libs(void)
     FuelGaugeBase   = OpenLibrary((STRPTR)"gadgets/fuelgauge.gadget", 0);
     ButtonBase      = OpenLibrary((STRPTR)"gadgets/button.gadget", 0);
     IFFParseBase    = OpenLibrary((STRPTR)"iffparse.library", 37);  /* optional: clipboard copy */
+    GfxBase         = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 37);
     if (!IntuitionBase || !UtilityBase)
         return "needs intuition.library / utility.library v37+ (OS 2.04)";
     if (!WindowBase || !LayoutBase || !ListBrowserBase || !FuelGaugeBase || !ButtonBase)
@@ -147,6 +156,67 @@ static void timer_arm(ULONG secs)
     g_treq->tr_time.tv_secs  = secs;
     g_treq->tr_time.tv_micro = 0;
     SendIO((struct IORequest *)g_treq);
+}
+
+/* --- clock-status LED + text ------------------------------------------- */
+static void clock_status_text(const clock_ctx *c, char *buf)
+{
+    long off = c->offset_seconds;
+    const char *sign = off < 0 ? "-" : "+";     /* %s, not %c (libnix sprintf) */
+    unsigned long a = (unsigned long)(off < 0 ? -off : off);
+    const char *word = c->state == CLOCK_SYNCED ? "synced"
+                     : c->state == CLOCK_MANUAL ? "manual"
+                     : "unverified";
+    if (c->state == CLOCK_UNVERIFIED)
+        sprintf(buf, "Clock: %s", word);
+    else
+        sprintf(buf, "Clock: %s %s%lu:%02lu", word, sign, a / 3600, (a % 3600) / 60);
+}
+
+/* Allocate the red/amber/green pens from the window's screen (best-effort). */
+static void led_pens_alloc(struct Window *win)
+{
+    static const ULONG rgb[3][3] = {
+        { 0xFFFFFFFFUL, 0x00000000UL, 0x00000000UL },   /* red   - unverified */
+        { 0xFFFFFFFFUL, 0xAAAAAAAAUL, 0x00000000UL },   /* amber - manual     */
+        { 0x00000000UL, 0xCCCCCCCCUL, 0x00000000UL }    /* green - synced     */
+    };
+    struct TagItem tags[] = { { OBP_Precision, PRECISION_GUI }, { TAG_END, 0 } };
+    struct ColorMap *cm;
+    int i;
+    if (!GfxBase || !win || !win->WScreen) return;
+    cm = win->WScreen->ViewPort.ColorMap;
+    if (!cm) return;
+    for (i = 0; i < 3; i++)
+        g_ledpen[i] = ObtainBestPenA(cm, rgb[i][0], rgb[i][1], rgb[i][2], tags);
+}
+
+static void led_pens_free(struct Window *win)
+{
+    struct ColorMap *cm;
+    int i;
+    if (!GfxBase || !win || !win->WScreen) return;
+    cm = win->WScreen->ViewPort.ColorMap;
+    for (i = 0; i < 3; i++)
+        if (g_ledpen[i] != -1) { ReleasePen(cm, (ULONG)g_ledpen[i]); g_ledpen[i] = -1; }
+}
+
+/* Draw a small red/amber/green LED square in the left margin of the status
+ * label gadget (its text is centred, so the left is clear). Uses the gadget's
+ * laid-out bounds, so it needs no layout sizing of its own. */
+static void led_draw(struct Window *win, Object *labelobj, int state)
+{
+    struct Gadget *g = (struct Gadget *)labelobj;
+    LONG pen, x, y, s = 10;
+    if (!GfxBase || !labelobj || state < 0 || state > 2) return;
+    if (g->Width <= s + 6 || g->Height <= s) return;   /* not laid out yet */
+    pen = g_ledpen[state] >= 0 ? g_ledpen[state] : 1;   /* fallback: visible */
+    x = g->LeftEdge + 4;
+    y = g->TopEdge + (g->Height - s) / 2;
+    SetAPen(win->RPort, 1);                             /* black bezel */
+    RectFill(win->RPort, x, y, x + s - 1, y + s - 1);
+    SetAPen(win->RPort, (ULONG)pen);                    /* colour */
+    RectFill(win->RPort, x + 1, y + 1, x + s - 2, y + s - 2);
 }
 
 /* --- clipboard: put the current code on the primary clipboard as IFF FTXT,
@@ -353,12 +423,13 @@ int main(void)
     static char pass[128];              /* passphrase buffer; off the stack, scrubbed after use */
     struct List lblist;
     Object *winobj = NULL, *codeobj = NULL, *gaugeobj = NULL, *listobj = NULL, *copyobj = NULL;
+    Object *statobj = NULL;
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
     ULONG winsig = 0, timersig, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0;
     int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0;
-    char curcode[16];
+    char curcode[16], statbuf[48];
     size_t i;
     vault_result rc;
 
@@ -447,6 +518,14 @@ int main(void)
         GA_Disabled,  !have_clip,           /* no clipboard.device -> greyed out */
         GA_Text,      (ULONG)"Copy",
         TAG_END);
+    /* Clock-status label (a full-width read-only field). It states the trust
+     * level + offset in words; we draw a small red/amber/green LED into its
+     * left margin ourselves (led_draw) — the centred text clears the far left. */
+    clock_status_text(&clk, statbuf);
+    statobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ReadOnly, TRUE,
+        GA_Text,     (ULONG)statbuf,
+        TAG_END);
     {
         Object *layoutobj = NewObject(LAYOUT_GetClass(), NULL,
             LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
@@ -459,6 +538,8 @@ int main(void)
             LAYOUT_AddChild,    (ULONG)gaugeobj,
             CHILD_WeightedHeight, 0,
             LAYOUT_AddChild,    (ULONG)copyobj,
+            CHILD_WeightedHeight, 0,
+            LAYOUT_AddChild,    (ULONG)statobj,
             CHILD_WeightedHeight, 0,
             TAG_END);
         winobj = NewObject(WINDOW_GetClass(), NULL,
@@ -488,6 +569,9 @@ int main(void)
     GetAttr(WINDOW_SigMask, winobj, &winsig);
     timersig = have_timer ? (1UL << g_tport->mp_SigBit) : 0;
     if (have_timer) timer_arm(1);
+
+    led_pens_alloc(win);                      /* red/amber/green from the screen */
+    led_draw(win, statobj, clk.state);        /* initial LED */
 
     while (running) {
         ULONG sigs = Wait(winsig | timersig | SIGBREAKF_CTRL_C);
@@ -573,9 +657,12 @@ int main(void)
             SetGadgetAttrs((struct Gadget *)gaugeobj, win, NULL,
                            FUELGAUGE_Max, sel_period, FUELGAUGE_Level, sel_rem, TAG_END);
         }
+
+        if (running) led_draw(win, statobj, clk.state);  /* keep the LED lit */
     }
 
 cleanup:
+    led_pens_free(win);                       /* while the screen is still valid */
     if (win) DoMethod(winobj, WM_CLOSE, NULL);
     if (winobj) DisposeObject(winobj);
     /* free the listbrowser nodes */
