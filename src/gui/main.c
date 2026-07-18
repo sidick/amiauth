@@ -82,6 +82,7 @@ enum { GID_LIST = 1, GID_CODE, GID_GAUGE, GID_COPY };
 enum { PWID_OK = 1, PWID_CANCEL };      /* passphrase requester gadgets */
 
 #define VAULT_PATH_DEFAULT "PROGDIR:AmiAuth.vault"
+#define DEFAULT_IDLE_LOCK  120      /* seconds of inactivity before an encrypted vault re-locks */
 
 /* Multi-column account list: name | live code | seconds-left. The code/left
  * cells change every second, so the nodes point at these persistent buffers
@@ -427,10 +428,11 @@ int main(void)
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
-    ULONG winsig = 0, timersig, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0;
-    int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0;
+    ULONG winsig = 0, timersig, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0, idle_secs = 0;
+    int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0, encrypted = 0;
+    long idle_limit = 0;
+    size_t i, naccounts = 0;
     char curcode[16], statbuf[48];
-    size_t i;
     vault_result rc;
 
     curcode[0] = '\0';
@@ -447,6 +449,7 @@ int main(void)
     rc = vault_load(&v, path, NULL);
     if (rc == VAULT_ERR_LOCKED) {
         const char *msg = "Enter passphrase:";
+        encrypted = 1;                     /* enables idle auto-lock */
         for (;;) {
             if (!passphrase_request(msg, pass, sizeof pass)) {
                 close_libs();              /* user cancelled — a clean exit */
@@ -466,6 +469,11 @@ int main(void)
     }
 
     clock_setup(&clk);
+    naccounts = v.count;
+    /* Idle auto-lock (encrypted vaults only): scrub + re-prompt after this many
+     * idle seconds. Pref "idlelock" overrides; 0 disables. */
+    if (prefs_get_long("idlelock", &idle_limit) != 0)
+        idle_limit = DEFAULT_IDLE_LOCK;
 
     /* Build the account list: [name | code | left]. Column 0 (name) is copied
      * into the node; columns 1/2 point at g_code[i]/g_left[i], refreshed live. */
@@ -587,6 +595,26 @@ int main(void)
              * clipboard is still ours (don't clobber something copied since). */
             if (clear_secs > 0 && --clear_secs == 0 && clip_write_id() == our_clipid)
                 clip_clear();
+            /* idle auto-lock: after enough inactivity, scrub an encrypted vault
+             * and re-prompt for the passphrase. Cancel/error quits cleanly. */
+            if (encrypted && idle_limit > 0 && (long)(++idle_secs) >= idle_limit) {
+                const char *msg = "Locked - enter passphrase:";
+                vault_lock(&v);
+                /* blank with fixed widths so nothing shrinks (stale-pixel glitch) */
+                for (i = 0; i < naccounts; i++) { strcpy(g_code[i], "------"); strcpy(g_left[i], "   "); }
+                curcode[0] = '\0';
+                SetGadgetAttrs((struct Gadget *)listobj,  win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
+                SetGadgetAttrs((struct Gadget *)codeobj,  win, NULL, GA_Text, (ULONG)"------", TAG_END);
+                SetGadgetAttrs((struct Gadget *)gaugeobj, win, NULL, FUELGAUGE_Level, 0, TAG_END);
+                for (;;) {
+                    if (!passphrase_request(msg, pass, sizeof pass)) { running = 0; break; }
+                    rc = vault_load(&v, path, pass);
+                    memset(pass, 0, sizeof pass);
+                    if (rc == VAULT_OK) { idle_secs = 0; break; }
+                    if (rc == VAULT_ERR_AUTH) { msg = "Wrong passphrase - try again:"; continue; }
+                    running = 0; break;                 /* IO/format error */
+                }
+            }
             /* recompute + refresh below, then re-arm */
             timer_arm(1);
         }
@@ -595,6 +623,7 @@ int main(void)
             ULONG result;
             UWORD code;
             int docopy = 0;
+            idle_secs = 0;                          /* any window input = activity */
             while ((result = DoMethod(winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
                 switch (result & WMHI_CLASSMASK) {
                     case WMHI_CLOSEWINDOW:
