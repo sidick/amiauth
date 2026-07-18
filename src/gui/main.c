@@ -20,10 +20,13 @@
 #include <graphics/gfxbase.h>
 #include <graphics/view.h>          /* struct ColorMap, OBP_*, PRECISION_* */
 
+#include <libraries/gadtools.h>     /* struct NewMenu, NM_*, GTMENUITEM_USERDATA */
+
 #include <classes/window.h>
 #include <gadgets/layout.h>
 #include <gadgets/listbrowser.h>
 #include <gadgets/fuelgauge.h>
+#include <gadgets/string.h>         /* STRINGA_* (typed-URI requester) */
 
 #include <clib/alib_protos.h>       /* DoMethod, NewList */
 #include <proto/exec.h>
@@ -46,6 +49,7 @@
 #include "vault.h"
 #include "clock.h"
 #include "prefs.h"
+#include "entropy.h"                /* amiga_random (m68k build) */
 
 /* --- library / class bases. Initialised (strong definitions) on purpose: a
  * common/tentative definition lets the linker pull libnix's auto-open stub,
@@ -61,6 +65,8 @@ struct Library       *FuelGaugeBase   = NULL;   /* fuelgauge.gadget      */
 struct Library       *ButtonBase      = NULL;   /* button.gadget         */
 struct Library       *IFFParseBase    = NULL;   /* iffparse.library (optional) */
 struct GfxBase       *GfxBase         = NULL;   /* graphics.library (LED)  */
+struct Library       *StringBase      = NULL;   /* string.gadget (typed URI) */
+struct Library       *GadToolsBase    = NULL;   /* gadtools.library (menus)  */
 
 /* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none) */
 static LONG g_ledpen[3] = { -1, -1, -1 };
@@ -78,8 +84,11 @@ static struct IFFHandle        *g_iff;
 
 #define CLIP_CLEAR_SECS 30      /* wipe our copied code off the clipboard after this */
 
-enum { GID_LIST = 1, GID_CODE, GID_GAUGE, GID_COPY };
-enum { PWID_OK = 1, PWID_CANCEL };      /* passphrase requester gadgets */
+enum { GID_LIST = 1, GID_CODE, GID_GAUGE, GID_COPY, GID_ADD, GID_REMOVE };
+enum { PWID_OK = 1, PWID_CANCEL, PWID_STR };   /* modal-requester gadgets */
+
+/* menu / button command ids */
+enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_REMOVE, CMD_QUIT };
 
 #define VAULT_PATH_DEFAULT "PROGDIR:AmiAuth.vault"
 #define DEFAULT_IDLE_LOCK  120      /* seconds of inactivity before an encrypted vault re-locks */
@@ -97,10 +106,24 @@ static struct ColumnInfo g_columns[] = {
     { -1, NULL, 0 }
 };
 
+/* Menu strip (window.class WINDOW_NewMenu). nm_UserData carries the command id. */
+static struct NewMenu g_menu[] = {
+    { NM_TITLE, (STRPTR)"Project", NULL,        0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Quit",    (STRPTR)"Q", 0, 0, (APTR)CMD_QUIT },
+    { NM_TITLE, (STRPTR)"Account", NULL,        0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Add from clipboard",  (STRPTR)"V", 0, 0, (APTR)CMD_ADD_CLIP },
+    { NM_ITEM,  (STRPTR)"Add (type URI)...",   (STRPTR)"A", 0, 0, (APTR)CMD_ADD_TYPE },
+    { NM_ITEM,  NM_BARLABEL,       NULL,        0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Remove selected...",  (STRPTR)"R", 0, 0, (APTR)CMD_REMOVE },
+    { NM_END,   NULL, NULL, 0, 0, NULL }
+};
+
 /* ------------------------------------------------------------------ */
 
 static void close_libs(void)
 {
+    if (GadToolsBase)    CloseLibrary(GadToolsBase);
+    if (StringBase)      CloseLibrary(StringBase);
     if (GfxBase)         CloseLibrary((struct Library *)GfxBase);
     if (IFFParseBase)    CloseLibrary(IFFParseBase);
     if (ButtonBase)      CloseLibrary(ButtonBase);
@@ -123,6 +146,8 @@ static const char *open_libs(void)
     ButtonBase      = OpenLibrary((STRPTR)"gadgets/button.gadget", 0);
     IFFParseBase    = OpenLibrary((STRPTR)"iffparse.library", 37);  /* optional: clipboard copy */
     GfxBase         = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 37);
+    StringBase      = OpenLibrary((STRPTR)"gadgets/string.gadget", 0);  /* optional: typed URI */
+    GadToolsBase    = OpenLibrary((STRPTR)"gadtools.library", 37);      /* optional: menus */
     if (!IntuitionBase || !UtilityBase)
         return "needs intuition.library / utility.library v37+ (OS 2.04)";
     if (!WindowBase || !LayoutBase || !ListBrowserBase || !FuelGaugeBase || !ButtonBase)
@@ -279,6 +304,35 @@ static void clip_clear(void)
     clip_write_text("");
 }
 
+/* Read the primary clipboard's first FTXT/CHRS text into buf (NUL-terminated).
+ * Returns the length copied, or -1 if unavailable/empty. Mirrors the clipread
+ * test tool: OpenIFF(READ) -> StopChunk(FTXT,CHRS) -> ReadChunkBytes. */
+static int clip_read_text(char *buf, size_t cap)
+{
+    size_t len = 0;
+    int got = 0;
+    if (!g_iff || cap == 0) return -1;
+    buf[0] = '\0';
+    if (OpenIFF(g_iff, IFFF_READ) != 0) return -1;
+    if (StopChunk(g_iff, ID_FTXT, ID_CHRS) == 0) {
+        while (ParseIFF(g_iff, IFFPARSE_SCAN) == 0) {
+            struct ContextNode *cn = CurrentChunk(g_iff);
+            if (cn && cn->cn_ID == ID_CHRS) {
+                LONG n;
+                while (len < cap - 1 &&
+                       (n = ReadChunkBytes(g_iff, buf + len, (LONG)(cap - 1 - len))) > 0) {
+                    len += (size_t)n;
+                }
+                got = 1;
+                break;
+            }
+        }
+    }
+    CloseIFF(g_iff);
+    buf[len] = '\0';
+    return got ? (int)len : -1;
+}
+
 /* --- clock: corrected UTC via the saved offset, else locale, mirroring the CLI --- */
 static long locale_offset(void)
 {
@@ -308,6 +362,57 @@ static const char *vault_path(void)
     if (env && env[0]) return env;
     if (prefs_get("vault", buf, sizeof buf) == 0 && buf[0]) return buf;
     return VAULT_PATH_DEFAULT;
+}
+
+/* Save the vault, generating a fresh nonce for an encrypted one (mirrors the
+ * CLI save_vault). amiga_random never fails on the m68k build. */
+static vault_result gui_save(const vault *v, const char *path)
+{
+    if (v->cipher == VAULT_CIPHER_CHACHA20) {
+        uint8_t nonce[VAULT_NONCE_SIZE];
+        if (amiga_random(nonce, sizeof nonce) != 0) return VAULT_ERR_IO;
+        return vault_save(v, path, nonce);
+    }
+    return vault_save(v, path, NULL);
+}
+
+/* A simple info/confirm requester. `gadgets` is EasyRequest gadget text, e.g.
+ * "OK" or "Remove|Cancel"; returns EasyRequest's result (1 = first/leftmost). */
+static LONG gui_requester(struct Window *win, const char *body, const char *gadgets, const char *arg)
+{
+    struct EasyStruct es;
+    es.es_StructSize   = sizeof es;
+    es.es_Flags        = 0;
+    es.es_Title        = (STRPTR)"AmiAuth";
+    es.es_TextFormat   = (STRPTR)body;
+    es.es_GadgetFormat = (STRPTR)gadgets;
+    return EasyRequestArgs(win, &es, NULL, (APTR)&arg);
+}
+
+/* (Re)build the listbrowser nodes from the vault's accounts. Frees any existing
+ * nodes first. Columns 1/2 point at the persistent g_code[]/g_left[] buffers,
+ * blanked here (fixed width so cells never shrink). Detach the gadget's labels
+ * before calling this at runtime, and reattach after. */
+static void build_nodes(struct List *lblist, const vault *v)
+{
+    struct Node *n;
+    size_t i;
+    while ((n = RemHead(lblist)) != NULL) FreeListBrowserNode(n);
+    for (i = 0; i < v->count; i++) {
+        const otp_account *a = &v->accounts[i];
+        char label[OTP_MAX_ISSUER + OTP_MAX_LABEL + 2];
+        struct Node *node;
+        if (a->issuer[0]) { strcpy(label, a->issuer); strcat(label, ":"); strcat(label, a->label); }
+        else              strcpy(label, a->label);
+        strcpy(g_code[i], "------");
+        strcpy(g_left[i], "   ");
+        node = (struct Node *)AllocListBrowserNode(3,
+            LBNA_Column, 0, LBNCA_CopyText, TRUE, LBNCA_Text, (ULONG)label,
+            LBNA_Column, 1, LBNCA_Text, (ULONG)g_code[i],
+            LBNA_Column, 2, LBNCA_Text, (ULONG)g_left[i],
+            TAG_END);
+        if (node) AddTail(lblist, node);
+    }
 }
 
 /* --- modal masked passphrase requester ---------------------------------- *
@@ -416,6 +521,92 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
     return done == 1 ? 1 : 0;
 }
 
+/* --- modal requester with an editable string.gadget for an otpauth:// URI.
+ * Returns 1 with the (NUL-terminated) URI in buf, 0 on cancel/empty. Needs
+ * string.gadget; returns 0 if unavailable. The gadget supports native paste. */
+static int uri_request(char *buf, size_t cap)
+{
+    Object *win, *layoutobj, *strobj, *okobj, *cancelobj, *labelobj, *buttons;
+    struct Window *w;
+    ULONG sig = 0;
+    int done = -1;
+
+    if (!StringBase || cap == 0) return 0;
+    buf[0] = '\0';
+
+    strobj = NewObject(NULL, (STRPTR)"string.gadget",
+        GA_ID,            PWID_STR,
+        GA_RelVerify,     TRUE,
+        STRINGA_MaxChars, (ULONG)(cap - 1),
+        STRINGA_TextVal,  (ULONG)"",
+        TAG_END);
+    okobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID, PWID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"OK",     TAG_END);
+    cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID, PWID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)"Cancel", TAG_END);
+    labelobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ReadOnly, TRUE, GA_Text, (ULONG)"Paste or type an otpauth:// URI:", TAG_END);
+    buttons = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_AddChild, (ULONG)okobj,
+        LAYOUT_AddChild, (ULONG)cancelobj,
+        TAG_END);
+    layoutobj = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
+        LAYOUT_SpaceOuter,  TRUE,
+        LAYOUT_AddChild, (ULONG)labelobj, CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)strobj,   CHILD_WeightedHeight, 0, CHILD_MinWidth, 360,
+        LAYOUT_AddChild, (ULONG)buttons,  CHILD_WeightedHeight, 0,
+        TAG_END);
+    win = NewObject(WINDOW_GetClass(), NULL,
+        WA_Title,        (ULONG)"AmiAuth - Add account",
+        WA_Activate,     TRUE,
+        WA_CloseGadget,  TRUE,
+        WA_DragBar,      TRUE,
+        WA_DepthGadget,  TRUE,
+        WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_VANILLAKEY,
+        WINDOW_Position, WPOS_CENTERSCREEN,
+        WINDOW_Layout,   (ULONG)layoutobj,
+        TAG_END);
+    if (!win) return 0;
+
+    w = (struct Window *)DoMethod(win, WM_OPEN, NULL);
+    if (!w) { DisposeObject(win); return 0; }
+    GetAttr(WINDOW_SigMask, win, &sig);
+    ActivateLayoutGadget((struct Gadget *)layoutobj, w, NULL, PWID_STR);  /* type straight in */
+
+    while (done < 0) {
+        ULONG got = Wait(sig | SIGBREAKF_CTRL_C);
+        ULONG r;
+        UWORD code;
+        if (got & SIGBREAKF_CTRL_C) { done = 0; break; }
+        while ((r = DoMethod(win, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
+            switch (r & WMHI_CLASSMASK) {
+                case WMHI_CLOSEWINDOW: done = 0; break;
+                case WMHI_GADGETUP:
+                    if      ((r & WMHI_GADGETMASK) == PWID_OK)     done = 1;
+                    else if ((r & WMHI_GADGETMASK) == PWID_STR)    done = 1;  /* Enter */
+                    else if ((r & WMHI_GADGETMASK) == PWID_CANCEL) done = 0;
+                    break;
+                case WMHI_VANILLAKEY:
+                    if (code == 0x1B) done = 0;                              /* Escape */
+                    break;
+            }
+            if (done >= 0) break;
+        }
+    }
+
+    if (done == 1) {
+        STRPTR text = NULL;
+        GetAttr(STRINGA_TextVal, strobj, (ULONG *)&text);
+        if (text) { strncpy(buf, (char *)text, cap - 1); buf[cap - 1] = '\0'; }
+        if (buf[0] == '\0') done = 0;                    /* empty == cancel */
+    }
+    DoMethod(win, WM_CLOSE, NULL);
+    DisposeObject(win);
+    return done == 1 ? 1 : 0;
+}
+
 /* ------------------------------------------------------------------ */
 
 int main(void)
@@ -424,7 +615,7 @@ int main(void)
     static char pass[128];              /* passphrase buffer; off the stack, scrubbed after use */
     struct List lblist;
     Object *winobj = NULL, *codeobj = NULL, *gaugeobj = NULL, *listobj = NULL, *copyobj = NULL;
-    Object *statobj = NULL;
+    Object *statobj = NULL, *addobj = NULL, *removeobj = NULL;
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
@@ -433,6 +624,7 @@ int main(void)
     long idle_limit = 0;
     size_t i, naccounts = 0;
     char curcode[16], statbuf[48];
+    static char uribuf[300];            /* otpauth:// URI; off the stack */
     vault_result rc;
 
     curcode[0] = '\0';
@@ -475,23 +667,7 @@ int main(void)
     if (prefs_get_long("idlelock", &idle_limit) != 0)
         idle_limit = DEFAULT_IDLE_LOCK;
 
-    /* Build the account list: [name | code | left]. Column 0 (name) is copied
-     * into the node; columns 1/2 point at g_code[i]/g_left[i], refreshed live. */
-    for (i = 0; i < v.count; i++) {
-        const otp_account *a = &v.accounts[i];
-        char label[OTP_MAX_ISSUER + OTP_MAX_LABEL + 2];
-        struct Node *node;
-        if (a->issuer[0]) { strcpy(label, a->issuer); strcat(label, ":"); strcat(label, a->label); }
-        else              strcpy(label, a->label);
-        strcpy(g_code[i], "------");
-        g_left[i][0] = '\0';
-        node = (struct Node *)AllocListBrowserNode(3,
-            LBNA_Column, 0, LBNCA_CopyText, TRUE, LBNCA_Text, (ULONG)label,
-            LBNA_Column, 1, LBNCA_Text, (ULONG)g_code[i],
-            LBNA_Column, 2, LBNCA_Text, (ULONG)g_left[i],
-            TAG_END);
-        if (node) AddTail(&lblist, node);
-    }
+    build_nodes(&lblist, &v);          /* account rows: [name | code | left] */
 
     have_timer = timer_open();
     have_clip  = clip_open();
@@ -520,10 +696,22 @@ int main(void)
         FUELGAUGE_Percent, FALSE,
         FUELGAUGE_Ticks,   0,
         TAG_END);
+    addobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_ADD,
+        GA_RelVerify, TRUE,
+        GA_Disabled,  !StringBase,          /* typed-URI requester needs string.gadget */
+        GA_Text,      (ULONG)"Add",
+        TAG_END);
+    removeobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_REMOVE,
+        GA_RelVerify, TRUE,
+        GA_Disabled,  (v.count == 0),
+        GA_Text,      (ULONG)"Remove",
+        TAG_END);
     copyobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_COPY,
         GA_RelVerify, TRUE,
-        GA_Disabled,  !have_clip,           /* no clipboard.device -> greyed out */
+        GA_Disabled,  (!have_clip || v.count == 0),  /* no clipboard / nothing to copy */
         GA_Text,      (ULONG)"Copy",
         TAG_END);
     /* Clock-status label (a full-width read-only field). It states the trust
@@ -535,6 +723,12 @@ int main(void)
         GA_Text,     (ULONG)statbuf,
         TAG_END);
     {
+        Object *btnrow = NewObject(LAYOUT_GetClass(), NULL,
+            LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
+            LAYOUT_AddChild, (ULONG)addobj,
+            LAYOUT_AddChild, (ULONG)removeobj,
+            LAYOUT_AddChild, (ULONG)copyobj,
+            TAG_END);
         Object *layoutobj = NewObject(LAYOUT_GetClass(), NULL,
             LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
             LAYOUT_SpaceOuter,  TRUE,
@@ -545,7 +739,7 @@ int main(void)
             CHILD_WeightedHeight, 0,
             LAYOUT_AddChild,    (ULONG)gaugeobj,
             CHILD_WeightedHeight, 0,
-            LAYOUT_AddChild,    (ULONG)copyobj,
+            LAYOUT_AddChild,    (ULONG)btnrow,
             CHILD_WeightedHeight, 0,
             LAYOUT_AddChild,    (ULONG)statobj,
             CHILD_WeightedHeight, 0,
@@ -557,8 +751,9 @@ int main(void)
             WA_DragBar,      TRUE,
             WA_DepthGadget,  TRUE,
             WA_SizeGadget,   TRUE,
-            WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP,
+            WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK,
             WINDOW_Position, WPOS_CENTERSCREEN,
+            GadToolsBase ? WINDOW_NewMenu : TAG_IGNORE, (ULONG)g_menu,
             WINDOW_Layout,   (ULONG)layoutobj,
             TAG_END);
     }
@@ -622,7 +817,7 @@ int main(void)
         if (sigs & winsig) {
             ULONG result;
             UWORD code;
-            int docopy = 0;
+            int docopy = 0, doadd_clip = 0, doadd_type = 0, doremove = 0, changed = 0;
             idle_secs = 0;                          /* any window input = activity */
             while ((result = DoMethod(winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
                 switch (result & WMHI_CLASSMASK) {
@@ -639,11 +834,28 @@ int main(void)
                                 lastsec = cs; lastmic = cm;
                                 break;
                             }
-                            case GID_COPY:
-                                docopy = 1;
-                                break;
+                            case GID_COPY:   docopy = 1;     break;
+                            case GID_ADD:    doadd_type = 1; break;
+                            case GID_REMOVE: doremove = 1;   break;
                         }
                         break;
+                    case WMHI_MENUPICK: {
+                        struct Menu *ms = NULL;
+                        UWORD mc = (UWORD)(result & WMHI_MENUMASK);
+                        GetAttr(WINDOW_MenuStrip, winobj, (ULONG *)&ms);
+                        while (ms && mc != MENUNULL) {
+                            struct MenuItem *it = ItemAddress(ms, mc);
+                            if (!it) break;
+                            switch ((ULONG)GTMENUITEM_USERDATA(it)) {
+                                case CMD_ADD_CLIP: doadd_clip = 1; break;
+                                case CMD_ADD_TYPE: doadd_type = 1; break;
+                                case CMD_REMOVE:   doremove   = 1; break;
+                                case CMD_QUIT:     running    = 0; break;
+                            }
+                            mc = it->NextSelect;
+                        }
+                        break;
+                    }
                 }
             }
             if (docopy && have_clip && curcode[0]) {
@@ -652,6 +864,57 @@ int main(void)
                 SetGadgetAttrs((struct Gadget *)copyobj, win, NULL,
                                GA_Text, (ULONG)"Copied", TAG_END);
                 copied = 2;                           /* revert after ~2 ticks */
+            }
+
+            /* --- Add (clipboard or typed) --- */
+            if (doadd_clip || doadd_type) {
+                otp_account acct;
+                int ok = doadd_clip ? (clip_read_text(uribuf, sizeof uribuf) > 0)
+                                    : uri_request(uribuf, sizeof uribuf);
+                if (ok) {
+                    if (otpauth_parse(uribuf, &acct) != 0)
+                        gui_requester(win, "That is not a valid otpauth:// URI.", "OK", NULL);
+                    else {
+                        rc = vault_add(&v, &acct);
+                        if (rc == VAULT_OK) { changed = 1; rc = gui_save(&v, path); }
+                        if (rc != VAULT_OK)
+                            gui_requester(win, rc == VAULT_ERR_FULL
+                                          ? "The vault is full (max 64 accounts)."
+                                          : "Could not save the vault.", "OK", NULL);
+                    }
+                    memset(&acct, 0, sizeof acct);
+                }
+                memset(uribuf, 0, sizeof uribuf);
+            }
+
+            /* --- Remove selected (with confirmation) --- */
+            if (doremove && v.count > 0) {
+                char name[OTP_MAX_ISSUER + OTP_MAX_LABEL + 2];
+                const otp_account *a;
+                if (sel >= v.count) sel = 0;
+                a = &v.accounts[sel];
+                if (a->issuer[0]) { strcpy(name, a->issuer); strcat(name, ":"); strcat(name, a->label); }
+                else              strcpy(name, a->label);
+                if (gui_requester(win, "Remove %s?", "Remove|Cancel", name) == 1) {
+                    rc = vault_remove(&v, sel);
+                    changed = 1;
+                    if (rc == VAULT_OK) rc = gui_save(&v, path);
+                    if (rc != VAULT_OK)
+                        gui_requester(win, "Could not save the vault.", "OK", NULL);
+                }
+            }
+
+            /* --- reflect an add/remove in the list + button states --- */
+            if (changed) {
+                SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, ~0UL, TAG_END);
+                build_nodes(&lblist, &v);
+                SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
+                naccounts = v.count;
+                if (sel >= v.count) sel = v.count ? v.count - 1 : 0;
+                curcode[0] = '\0';
+                SetGadgetAttrs((struct Gadget *)removeobj, win, NULL, GA_Disabled, (v.count == 0), TAG_END);
+                SetGadgetAttrs((struct Gadget *)copyobj,   win, NULL,
+                               GA_Disabled, (!have_clip || v.count == 0), TAG_END);
             }
         }
 
