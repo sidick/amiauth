@@ -88,3 +88,6 @@ audience.
 ## License
 
 BSD 2-Clause. Copyright (c) 2026 Simon Dick. See [`LICENSE`](LICENSE).
+
+Bundled third-party source (the ISC-licensed `quirc` QR decoder) is listed in
+[`THIRDPARTY.md`](THIRDPARTY.md).
