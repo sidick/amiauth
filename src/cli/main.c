@@ -49,6 +49,17 @@
 #  define DEFAULT_VAULT "AmiAuth.vault"
 #endif
 
+#include "../amiga/guiport.h"     /* forward vault commands to a resident GUI */
+
+#ifndef AMIAUTH_AMIGA
+/* Host: there is never a resident GUI, so forwarding is a no-op (do it locally). */
+int gui_forward(int cmd, const char *arg, char *buf, unsigned long buflen, int *result)
+{
+    (void)cmd; (void)arg; (void)buf; (void)buflen; (void)result;
+    return -1;
+}
+#endif
+
 /* --no-rekey suppresses the adaptive re-key prompts for a single run (the
  * ENVARC:AmiAuth/rekey pref silences them permanently). */
 static int g_no_rekey;
@@ -540,11 +551,50 @@ static int cmd_init(const char *path, int always_unlocked, long iterations)
     return 0;
 }
 
+/* If a GUI is resident it owns the (unlocked) vault: forward the command there
+ * instead of opening the vault a second time. Returns the process exit code when
+ * the GUI handled it, or -1 if no GUI is running (do it locally). */
+static int try_forward(int cmd, const char *arg)
+{
+    static char buf[2600];   /* off the ~4 KB shell stack; holds a LIST reply */
+    int result = AAR_OK;
+
+    if (gui_forward(cmd, arg, buf, sizeof buf, &result) != 0)
+        return -1;                            /* no resident GUI -> local path */
+
+    switch (result) {
+        case AAR_OK:
+            if (buf[0]) fputs(buf, stdout);   /* GET code / LIST names (with \n) */
+            return 0;
+        case AAR_LOCKED:
+            fprintf(stderr, "AmiAuth: the running GUI's vault is locked; "
+                            "unlock it there first\n");
+            return 2;
+        case AAR_NOTFOUND:
+            fprintf(stderr, "AmiAuth: no account matching '%s'\n", arg ? arg : "");
+            return 2;
+        case AAR_FULL:
+            fprintf(stderr, "AmiAuth: the vault is full (max 64 accounts)\n");
+            return 2;
+        case AAR_BADARG:
+            fprintf(stderr, "AmiAuth: not a valid otpauth:// URI\n");
+            return 2;
+        case AAR_SAVEFAIL:
+            fprintf(stderr, "AmiAuth: applied in the GUI but the re-save failed\n");
+            return 2;
+        default:
+            fprintf(stderr, "AmiAuth: the running GUI could not handle that\n");
+            return 2;
+    }
+}
+
 static int cmd_add(const char *path, const char *uri)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     otp_account acct;
     vault_result rc;
+    int fc = try_forward(AAP_ADD, uri);       /* resident GUI owns the vault? */
+    if (fc >= 0) return fc;
 
     if (otpauth_parse(uri, &acct) != 0) {
         fprintf(stderr, "AmiAuth: could not parse otpauth:// URI\n");
@@ -570,8 +620,11 @@ static int cmd_add(const char *path, const char *uri)
 static int cmd_list(const char *path)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
-    vault_result rc = open_vault(&v, path);
+    vault_result rc;
     size_t i;
+    int fc = try_forward(AAP_LIST, NULL);
+    if (fc >= 0) return fc;
+    rc = open_vault(&v, path);
     if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
 
     for (i = 0; i < v.count; i++) {
@@ -586,8 +639,11 @@ static int cmd_list(const char *path)
 static int cmd_get(const char *path, const char *account)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
-    vault_result rc = open_vault(&v, path);
+    vault_result rc;
     int idx;
+    int fc = try_forward(AAP_GET, account);
+    if (fc >= 0) return fc;
+    rc = open_vault(&v, path);
     otp_account *a;
     clock_ctx clk;
     uint64_t now;
@@ -620,8 +676,11 @@ static int cmd_get(const char *path, const char *account)
 static int cmd_remove(const char *path, const char *account)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
-    vault_result rc = open_vault(&v, path);
+    vault_result rc;
     int idx;
+    int fc = try_forward(AAP_REMOVE, account);
+    if (fc >= 0) return fc;
+    rc = open_vault(&v, path);
     if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
 
     idx = find_account(&v, account);
@@ -648,6 +707,7 @@ static int usage(void)
         "  LIST                               List account names\n"
         "  GET    <account>                   Print an account's code\n"
         "  REMOVE <account>                   Delete an account\n"
+        "  SHOW                               Pop the running GUI to front\n"
         "  CLOCK                              Show UTC offset + status\n"
         "  SYNC   [server]                    SNTP sync + save\n"
         "  OFFSET <seconds>                   Set + save a UTC offset\n"
@@ -686,6 +746,15 @@ static const char *resolve_vault(const cli_args *a)
 }
 
 /* Run the parsed command. Shared by both parser backends. */
+/* SHOW: pop the resident GUI to the front (no local equivalent). */
+static int cmd_show(void)
+{
+    int fc = try_forward(AAP_SHOW, NULL);
+    if (fc >= 0) return fc;
+    fprintf(stderr, "AmiAuth: no running GUI to show\n");
+    return 2;
+}
+
 static int dispatch(const cli_args *a)
 {
     const char *vault = resolve_vault(a);
@@ -699,6 +768,7 @@ static int dispatch(const cli_args *a)
     if (ci_streq(a->command, "LIST"))   return cmd_list(vault);
     if (ci_streq(a->command, "GET"))    return a->value ? cmd_get(vault, a->value) : usage();
     if (ci_streq(a->command, "REMOVE")) return a->value ? cmd_remove(vault, a->value) : usage();
+    if (ci_streq(a->command, "SHOW"))   return cmd_show();
     if (ci_streq(a->command, "CLOCK"))  return cmd_clock();
     if (ci_streq(a->command, "SYNC"))   return cmd_sync(a->value);   /* NULL = default pool */
     if (ci_streq(a->command, "OFFSET")) return a->value ? cmd_offset(a->value) : usage();

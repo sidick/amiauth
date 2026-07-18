@@ -60,6 +60,7 @@
 #include "entropy.h"                /* amiga_random (m68k build) */
 #include "qr.h"                     /* qr_decode_gray (portable QR decoder) */
 #include "qrimage.h"                /* qrimage_load_gray (datatypes glue) */
+#include "guiport.h"                /* CLI->GUI IPC (Stage 3b public port) */
 
 /* Request a larger stack (libnix): the QR decoder still needs more than the
  * few KB a shell hands a Run/WBench program. qr_decode_gray keeps its big
@@ -930,6 +931,25 @@ static int edit_request(otp_account *acct)
     return done == 1 ? 1 : 0;
 }
 
+/* Match an account by label, issuer, or "issuer:label" (case-insensitive) —
+ * mirrors the CLI find_account so `AmiAuth GET <name>` behaves the same whether
+ * it runs locally or is forwarded to this GUI (Stage 3b). */
+static int gui_find_account(const vault *v, const char *q)
+{
+    size_t i;
+    if (!q) return -1;
+    for (i = 0; i < v->count; i++) {
+        const otp_account *a = &v->accounts[i];
+        char combo[OTP_MAX_ISSUER + OTP_MAX_LABEL + 2];
+        strcpy(combo, a->issuer); strcat(combo, ":"); strcat(combo, a->label);
+        if (Stricmp((STRPTR)q, (STRPTR)a->label)  == 0 ||
+            Stricmp((STRPTR)q, (STRPTR)a->issuer) == 0 ||
+            Stricmp((STRPTR)q, (STRPTR)combo)     == 0)
+            return (int)i;
+    }
+    return -1;
+}
+
 /* --- window show/hide (Stage 3 commodity) ------------------------------- *
  * The window object + its gadgets are built once; hide/show just toggles the
  * intuition window via WM_CLOSE/WM_OPEN (window.class supports cycling), so the
@@ -980,6 +1000,10 @@ int main(int argc, char **argv)
     CxObj *broker = NULL;
     STRPTR *tt = NULL;
     int retcode = 0;
+    /* Public port (Stage 3b): the CLI forwards vault commands here so it doesn't
+     * open the vault a second time. Created once we hold the (unlocked) vault. */
+    struct MsgPort *pubport = NULL;
+    ULONG pubsig = 0;
 
     curcode[0] = '\0';
 
@@ -1193,9 +1217,22 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Public port for CLI forwarding (Stage 3b), only if we're the resident one
+     * (single-instance is normally the Stage 3a broker; the FindPort guard covers
+     * the no-commodities edge case). */
+    Forbid();
+    if (!FindPort((CONST_STRPTR)AMIAUTH_PORT_NAME) &&
+        (pubport = CreateMsgPort()) != NULL) {
+        pubport->mp_Node.ln_Name = (char *)AMIAUTH_PORT_NAME;
+        pubport->mp_Node.ln_Pri  = 0;
+        AddPort(pubport);
+        pubsig = 1UL << pubport->mp_SigBit;
+    }
+    Permit();
+
     while (running) {
         ULONG sigs = Wait((win ? winsig : 0) | timersig | (win ? appsig : 0) |
-                          cxsig | SIGBREAKF_CTRL_C);
+                          cxsig | pubsig | SIGBREAKF_CTRL_C);
         changed = 0;                            /* set by any add/remove/edit this pass */
 
         if (sigs & SIGBREAKF_CTRL_C) running = 0;
@@ -1225,6 +1262,84 @@ int main(int argc, char **argv)
                         case CXCMD_KILL:    running = 0; break;
                     }
                 }
+            }
+        }
+
+        /* --- CLI forwarding (Stage 3b): serve vault commands to the CLI, which
+         * writes into the buffer it passed (same address space). Only while the
+         * vault is unlocked; the passphrase never crosses the port. --- */
+        if (pubsig && (sigs & pubsig)) {
+            struct AmiAuthReq *req;
+            while ((req = (struct AmiAuthReq *)GetMsg(pubport)) != NULL) {
+                const char *arg = (const char *)req->aar_Arg;
+                char  *rb    = (char *)req->aar_Buf;
+                ULONG  rbcap = req->aar_BufLen;
+                req->aar_Result = AAR_OK;
+                switch (req->aar_Cmd) {
+                    case AAP_SHOW:
+                        if (win) { WindowToFront(win); ActivateWindow(win); }
+                        else     { win = win_show(winobj, statobj, &winsig, clk.state); }
+                        break;
+                    case AAP_LIST:
+                        if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
+                        if (rb && rbcap) {
+                            size_t k; rb[0] = '\0';
+                            for (k = 0; k < v.count; k++) {
+                                const otp_account *a = &v.accounts[k];
+                                char line[OTP_MAX_ISSUER + OTP_MAX_LABEL + 3];
+                                if (a->issuer[0]) { strcpy(line, a->issuer); strcat(line, ":"); strcat(line, a->label); }
+                                else              strcpy(line, a->label);
+                                strcat(line, "\n");
+                                if (strlen(rb) + strlen(line) < rbcap) strcat(rb, line);
+                            }
+                        }
+                        break;
+                    case AAP_GET: {
+                        int idx;
+                        if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
+                        idx = gui_find_account(&v, arg);
+                        if (idx < 0) { req->aar_Result = AAR_NOTFOUND; break; }
+                        {
+                            otp_account *a = &v.accounts[idx];
+                            char fmt[8];
+                            unsigned long code;
+                            if (strcmp(a->type, "hotp") == 0) {
+                                code = (unsigned long)hotp_sha1(a->secret, a->secret_len, a->counter, a->digits);
+                                a->counter++;                     /* stateful: persist */
+                                if (gui_save(&v, path) != VAULT_OK) req->aar_Result = AAR_SAVEFAIL;
+                            } else {
+                                uint64_t now = clock_now_utc(&clk);
+                                code = (unsigned long)totp_sha1(a->secret, a->secret_len, now, 0, a->period, a->digits);
+                            }
+                            if (rb && rbcap) { sprintf(fmt, "%%0%dlu\n", (int)a->digits); sprintf(rb, fmt, code); }
+                        }
+                        break;
+                    }
+                    case AAP_ADD: {
+                        otp_account acct;
+                        if (!v.unlocked)                     req->aar_Result = AAR_LOCKED;
+                        else if (otpauth_parse(arg, &acct) != 0) req->aar_Result = AAR_BADARG;
+                        else {
+                            vault_result r = vault_add(&v, &acct);
+                            if (r == VAULT_ERR_FULL) req->aar_Result = AAR_FULL;
+                            else if (r != VAULT_OK)  req->aar_Result = AAR_SAVEFAIL;
+                            else { if (gui_save(&v, path) != VAULT_OK) req->aar_Result = AAR_SAVEFAIL; changed = 1; }
+                        }
+                        memset(&acct, 0, sizeof acct);
+                        break;
+                    }
+                    case AAP_REMOVE: {
+                        int idx;
+                        if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
+                        idx = gui_find_account(&v, arg);
+                        if (idx < 0) req->aar_Result = AAR_NOTFOUND;
+                        else if (vault_remove(&v, (size_t)idx) != VAULT_OK) req->aar_Result = AAR_SAVEFAIL;
+                        else { if (gui_save(&v, path) != VAULT_OK) req->aar_Result = AAR_SAVEFAIL; changed = 1; }
+                        break;
+                    }
+                    default: req->aar_Result = AAR_BADARG; break;
+                }
+                ReplyMsg((struct Message *)req);
             }
         }
 
@@ -1389,19 +1504,24 @@ int main(int argc, char **argv)
             }
         }
 
-        /* --- reflect an add/remove/edit in the list + button states --- */
-        if (win && changed) {
-            SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, ~0UL, TAG_END);
+        /* --- reflect an add/remove/edit in the list + button states. Rebuild the
+         * nodes even while hidden (a CLI-forwarded add/remove can arrive then), so
+         * the list is correct on the next show; only touch gadgets when open. --- */
+        if (changed) {
+            if (win)
+                SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, ~0UL, TAG_END);
             build_nodes(&lblist, &v);
-            SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
             naccounts = v.count;
             if (sel >= v.count) sel = v.count ? v.count - 1 : 0;
             curcode[0] = '\0';
-            SetGadgetAttrs((struct Gadget *)removeobj, win, NULL, GA_Disabled, (v.count == 0), TAG_END);
-            SetGadgetAttrs((struct Gadget *)editobj,   win, NULL,
-                           GA_Disabled, (!StringBase || v.count == 0), TAG_END);
-            SetGadgetAttrs((struct Gadget *)copyobj,   win, NULL,
-                           GA_Disabled, (!have_clip || v.count == 0), TAG_END);
+            if (win) {
+                SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
+                SetGadgetAttrs((struct Gadget *)removeobj, win, NULL, GA_Disabled, (v.count == 0), TAG_END);
+                SetGadgetAttrs((struct Gadget *)editobj,   win, NULL,
+                               GA_Disabled, (!StringBase || v.count == 0), TAG_END);
+                SetGadgetAttrs((struct Gadget *)copyobj,   win, NULL,
+                               GA_Disabled, (!have_clip || v.count == 0), TAG_END);
+            }
         }
 
         /* Refresh every account's code + countdown in the list, and drive the
@@ -1440,6 +1560,15 @@ int main(int argc, char **argv)
     }
 
 cleanup:
+    if (pubport) {                            /* stop new forwards, drain pending */
+        struct AmiAuthReq *req;
+        RemPort(pubport);
+        while ((req = (struct AmiAuthReq *)GetMsg(pubport)) != NULL) {
+            req->aar_Result = AAR_LOCKED;     /* we're going away */
+            ReplyMsg((struct Message *)req);
+        }
+        DeleteMsgPort(pubport);
+    }
     if (win) { win_hide(winobj, win); win = NULL; }  /* led_pens_free + WM_CLOSE */
     if (winobj) DisposeObject(winobj);        /* also removes the AppWindow */
     if (broker) DeleteCxObjAll(broker);       /* detach the hotkey + broker */
