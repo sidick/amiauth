@@ -77,8 +77,8 @@ Security
   The vault passphrase is only ever entered interactively (never on the command
   line, in an environment variable or over the commodity port). AmiAuth is a
   convenience tool for classic hardware, not a hardware security key - please
-  read the honest threat model in docs/SECURITY.md before trusting it with
-  high-value accounts.
+  read the honest threat model before trusting it with high-value accounts:
+      https://github.com/sidick/amiauth/blob/main/docs/SECURITY.md
 
 Source and licence
 -------------------
