@@ -69,6 +69,27 @@ AmiAuth aims to make "my A1200 is my 2FA device" a real, daily-useful thing.
 The core is portable C, so `test`/`cli` build with any host compiler. Example:
 `build/amiauth-host CODE JBSWY3DPEHPK3PXP` prints a code.
 
+## Running the GUI as a commodity
+
+`AmiAuthGUI` registers as an AmigaOS **Commodity**: it appears in **Exchange**
+(Show/Hide/Enable/Disable/Kill), pops up on a **hotkey**, and is **single
+instance** — one resident process holds the unlocked vault, and a second launch
+just makes the running one appear. Closing the window **hides** it (the process
+stays resident, vault unlocked); the hotkey or Exchange "Show" brings it back.
+Quit for real from **Project → Quit** or Exchange's "Kill".
+
+Drop it in **WBStartup** (or run from the Startup-Sequence) with these icon
+**tooltypes**:
+
+| Tooltype      | Default        | Meaning                                        |
+|---------------|----------------|------------------------------------------------|
+| `CX_POPKEY`   | `ctrl alt a`   | hotkey that shows/raises the window            |
+| `CX_POPUP`    | `yes`          | `no` = start hidden (window opens on the hotkey) |
+| `CX_PRIORITY` | `0`            | commodity broker priority                      |
+| `DONOTWAIT`   | —              | (WBStartup) don't make Workbench wait for it   |
+
+Without `commodities.library` it degrades to a plain window (close = quit).
+
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — module layout and build targets.

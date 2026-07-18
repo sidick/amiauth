@@ -23,6 +23,7 @@
 
 #include <libraries/gadtools.h>     /* struct NewMenu, NM_*, GTMENUITEM_USERDATA */
 #include <libraries/asl.h>          /* ASL_FileRequest, ASLFR_* (QR file picker) */
+#include <libraries/commodities.h>  /* NewBroker, CxMsg, CXCMD_*, NBU_* (Stage 3) */
 #include <workbench/workbench.h>    /* struct AppMessage (QR drag-and-drop) */
 #include <workbench/startup.h>      /* struct WBArg */
 
@@ -46,6 +47,7 @@
 #include <proto/fuelgauge.h>
 #include <proto/string.h>       /* STRING_GetClass */
 #include <proto/asl.h>          /* AllocAslRequestTags, AslRequest (QR picker) */
+#include <proto/commodities.h>  /* CxBroker, HotKey, CxMsgType/ID (Stage 3) */
 
 #include <string.h>
 #include <stdio.h>
@@ -85,6 +87,7 @@ struct Library       *GadToolsBase    = NULL;   /* gadtools.library (menus)  */
 struct Library       *DataTypesBase   = NULL;   /* datatypes.library (QR import: image load) */
 struct Library       *AslBase         = NULL;   /* asl.library (QR import: file requester)   */
 struct Library       *WorkbenchBase   = NULL;   /* workbench.library (QR import: drag-and-drop) */
+struct Library       *CxBase          = NULL;   /* commodities.library (Stage 3: broker/hotkey) */
 
 /* AppWindow message port: image icons dropped on the main window (QR import).
  * Created only when datatypes + workbench are available. */
@@ -114,6 +117,9 @@ enum { EDID_ISSUER = 1, EDID_LABEL, EDID_DIGITS, EDID_PERIOD, EDID_OK, EDID_CANC
 
 /* menu / button command ids */
 enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_ADD_QR, CMD_EDIT, CMD_REMOVE, CMD_QUIT };
+
+/* Commodity hotkey id (CxMsg id for the CX_POPKEY input event). */
+#define EVT_HOTKEY 1
 
 #define VAULT_PATH_DEFAULT "PROGDIR:AmiAuth.vault"
 #define DEFAULT_IDLE_LOCK  120      /* seconds of inactivity before an encrypted vault re-locks */
@@ -149,6 +155,7 @@ static struct NewMenu g_menu[] = {
 
 static void close_libs(void)
 {
+    if (CxBase)          CloseLibrary(CxBase);
     if (WorkbenchBase)   CloseLibrary(WorkbenchBase);
     if (AslBase)         CloseLibrary(AslBase);
     if (DataTypesBase)   CloseLibrary(DataTypesBase);
@@ -184,6 +191,7 @@ static const char *open_libs(void)
     DataTypesBase   = OpenLibrary((STRPTR)"datatypes.library", 39);
     AslBase         = OpenLibrary((STRPTR)"asl.library", 37);
     WorkbenchBase   = OpenLibrary((STRPTR)"workbench.library", 37);
+    CxBase          = OpenLibrary((STRPTR)"commodities.library", 37);  /* optional: commodity */
     if (!IntuitionBase || !UtilityBase)
         return "needs intuition.library / utility.library v37+ (OS 2.04)";
     if (!WindowBase || !LayoutBase || !ListBrowserBase || !FuelGaugeBase || !ButtonBase)
@@ -922,9 +930,33 @@ static int edit_request(otp_account *acct)
     return done == 1 ? 1 : 0;
 }
 
+/* --- window show/hide (Stage 3 commodity) ------------------------------- *
+ * The window object + its gadgets are built once; hide/show just toggles the
+ * intuition window via WM_CLOSE/WM_OPEN (window.class supports cycling), so the
+ * resident commodity keeps everything cheaply across a hide. led pens are
+ * screen-bound, so (re)allocated per open. */
+static struct Window *win_show(Object *winobj, Object *statobj,
+                               ULONG *winsig, int ledstate)
+{
+    struct Window *w = (struct Window *)DoMethod(winobj, WM_OPEN, NULL);
+    if (w) {
+        GetAttr(WINDOW_SigMask, winobj, winsig);
+        led_pens_alloc(w);
+        led_draw(w, statobj, ledstate);
+    }
+    return w;
+}
+
+static void win_hide(Object *winobj, struct Window *w)
+{
+    if (!w) return;
+    led_pens_free(w);
+    DoMethod(winobj, WM_CLOSE, NULL);
+}
+
 /* ------------------------------------------------------------------ */
 
-int main(void)
+int main(int argc, char **argv)
 {
     static vault v;                     /* ~19 KB: keep it off the stack */
     static char pass[128];              /* passphrase buffer; off the stack, scrubbed after use */
@@ -934,13 +966,20 @@ int main(void)
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
-    ULONG winsig = 0, appsig = 0, timersig, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0, idle_secs = 0;
-    int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0, encrypted = 0, changed = 0;
+    ULONG winsig = 0, appsig = 0, timersig, cxsig = 0, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0, idle_secs = 0;
+    int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0, encrypted = 0, changed = 0, popup = 1;
     long idle_limit = 0;
     size_t i, naccounts = 0;
     char curcode[16], statbuf[48];
     static char uribuf[300];            /* otpauth:// URI; off the stack */
     vault_result rc;
+    /* Commodity (Stage 3): broker + hotkey, so AmiAuth runs as a background
+     * authenticator poppable from Exchange / a hotkey. Optional — no CxBase =
+     * plain window app (close = quit), as before. */
+    struct MsgPort *cxport = NULL;
+    CxObj *broker = NULL;
+    STRPTR *tt = NULL;
+    int retcode = 0;
 
     curcode[0] = '\0';
 
@@ -952,6 +991,43 @@ int main(void)
         return 20;
     }
 
+    /* Read CX_* tooltypes (WBStartup icon) or CLI args uniformly (amiga.lib). */
+    tt = ArgArrayInit(argc, (CONST_STRPTR *)argv);
+
+    /* Register the commodity broker BEFORE unlocking: a second launch must
+     * detect the running instance and exit without prompting for a passphrase. */
+    if (CxBase && (cxport = CreateMsgPort()) != NULL) {
+        struct NewBroker nb;
+        LONG cberr = 0;
+        nb.nb_Version = NB_VERSION;
+        nb.nb_Name    = (STRPTR)"AmiAuth";
+        nb.nb_Title   = (STRPTR)"AmiAuth";
+        nb.nb_Descr   = (STRPTR)"TOTP/HOTP authenticator";
+        nb.nb_Unique  = NBU_UNIQUE | NBU_NOTIFY;   /* one instance; notify the elder */
+        nb.nb_Flags   = COF_SHOW_HIDE;             /* Exchange Show/Hide */
+        nb.nb_Pri     = (BYTE)ArgInt((CONST_STRPTR *)tt, (CONST_STRPTR)"CX_PRIORITY", 0);
+        nb.nb_Port    = cxport;
+        nb.nb_ReservedChannel = 0;
+        broker = CxBroker(&nb, &cberr);
+        if (!broker && cberr == CBERR_DUP) {
+            /* Another AmiAuth is resident (now told to appear via NBU_NOTIFY);
+             * leave its unlocked vault alone and exit quietly. */
+            DeleteMsgPort(cxport);
+            ArgArrayDone();
+            close_libs();
+            return 0;
+        }
+        if (broker) {
+            STRPTR popkey = ArgString((CONST_STRPTR *)tt, (CONST_STRPTR)"CX_POPKEY", (CONST_STRPTR)"ctrl alt a");
+            AttachCxObj(broker, HotKey((CONST_STRPTR)popkey, cxport, EVT_HOTKEY));
+            ActivateCxObj(broker, 1);
+            cxsig = 1UL << cxport->mp_SigBit;
+            /* CX_POPUP=no starts hidden (window opens on the hotkey/Exchange). */
+            { STRPTR pu = ArgString((CONST_STRPTR *)tt, (CONST_STRPTR)"CX_POPUP", (CONST_STRPTR)"yes");
+              popup = !(pu && (pu[0] == 'n' || pu[0] == 'N')); }
+        }
+    }
+
     path = vault_path();
     rc = vault_load(&v, path, NULL);
     if (rc == VAULT_ERR_LOCKED) {
@@ -959,8 +1035,7 @@ int main(void)
         encrypted = 1;                     /* enables idle auto-lock */
         for (;;) {
             if (!passphrase_request(msg, pass, sizeof pass)) {
-                close_libs();              /* user cancelled — a clean exit */
-                return 0;
+                goto cleanup;              /* user cancelled — a clean exit */
             }
             {   /* time the KDF so we can offer an adaptive re-key (below) */
                 uint32_t t0 = amiga_millis();
@@ -976,8 +1051,8 @@ int main(void)
     }
     if (rc != VAULT_OK) {
         Printf((CONST_STRPTR)"AmiAuth: cannot open the vault (%ld)\n", (LONG)rc);
-        close_libs();
-        return 10;
+        retcode = 10;
+        goto cleanup;
     }
 
     clock_setup(&clk);
@@ -1103,29 +1178,59 @@ int main(void)
         goto cleanup;
     }
 
-    win = (struct Window *)DoMethod(winobj, WM_OPEN, NULL);
-    if (!win) {
-        Printf((CONST_STRPTR)"AmiAuth: could not open the window\n");
-        goto cleanup;
-    }
-
-    GetAttr(WINDOW_SigMask, winobj, &winsig);
     timersig = have_timer ? (1UL << g_tport->mp_SigBit) : 0;
     appsig   = g_appport ? (1UL << g_appport->mp_SigBit) : 0;
     if (have_timer) timer_arm(1);
 
-    led_pens_alloc(win);                      /* red/amber/green from the screen */
-    led_draw(win, statobj, clk.state);        /* initial LED */
+    /* Open the window now, unless started as a hidden commodity (CX_POPUP=no):
+     * then it stays dormant until the hotkey / Exchange "Show". win_show sets
+     * winsig; it stays 0 while hidden so the event loop drops it from the mask. */
+    if (popup) {
+        win = win_show(winobj, statobj, &winsig, clk.state);
+        if (!win && !broker) {                /* a plain window app needs its window */
+            Printf((CONST_STRPTR)"AmiAuth: could not open the window\n");
+            goto cleanup;
+        }
+    }
 
     while (running) {
-        ULONG sigs = Wait(winsig | timersig | appsig | SIGBREAKF_CTRL_C);
+        ULONG sigs = Wait((win ? winsig : 0) | timersig | (win ? appsig : 0) |
+                          cxsig | SIGBREAKF_CTRL_C);
         changed = 0;                            /* set by any add/remove/edit this pass */
 
         if (sigs & SIGBREAKF_CTRL_C) running = 0;
 
+        /* --- commodity: hotkey + Exchange (Show/Hide/Enable/Disable/Kill) --- */
+        if (cxsig && (sigs & cxsig)) {
+            CxMsg *cxm;
+            while ((cxm = (CxMsg *)GetMsg(cxport)) != NULL) {
+                ULONG type = CxMsgType(cxm);
+                LONG  id   = CxMsgID(cxm);
+                ReplyMsg((struct Message *)cxm);
+                if (type == CXM_IEVENT && id == EVT_HOTKEY) {
+                    if (win) { WindowToFront(win); ActivateWindow(win); }
+                    else     { win = win_show(winobj, statobj, &winsig, clk.state); }
+                } else if (type == CXM_COMMAND) {
+                    switch (id) {
+                        case CXCMD_APPEAR:
+                        case CXCMD_UNIQUE:      /* a second launch asked us to show */
+                            if (win) { WindowToFront(win); ActivateWindow(win); }
+                            else     { win = win_show(winobj, statobj, &winsig, clk.state); }
+                            break;
+                        case CXCMD_DISAPPEAR:
+                            win_hide(winobj, win); win = NULL;
+                            break;
+                        case CXCMD_ENABLE:  ActivateCxObj(broker, 1); break;
+                        case CXCMD_DISABLE: ActivateCxObj(broker, 0); break;
+                        case CXCMD_KILL:    running = 0; break;
+                    }
+                }
+            }
+        }
+
         if (have_timer && (sigs & timersig)) {
             WaitIO((struct IORequest *)g_treq);   /* consume the request */
-            if (copied > 0 && --copied == 0)      /* revert the "Copied" flash */
+            if (win && copied > 0 && --copied == 0)  /* revert the "Copied" flash */
                 SetGadgetAttrs((struct Gadget *)copyobj, win, NULL,
                                GA_Text, (ULONG)"Copy", TAG_END);
             /* auto-clear our copied code once it has sat ~30s, but only if the
@@ -1133,8 +1238,10 @@ int main(void)
             if (clear_secs > 0 && --clear_secs == 0 && clip_write_id() == our_clipid)
                 clip_clear();
             /* idle auto-lock: after enough inactivity, scrub an encrypted vault
-             * and re-prompt for the passphrase. Cancel/error quits cleanly. */
-            if (encrypted && idle_limit > 0 && (long)(++idle_secs) >= idle_limit) {
+             * and re-prompt for the passphrase. Only while the window is open —
+             * hidden, the resident unlocked vault reachable by hotkey is the
+             * point (a future "lock on hide" pref could tighten this). */
+            if (win && encrypted && idle_limit > 0 && (long)(++idle_secs) >= idle_limit) {
                 const char *msg = "Locked - enter passphrase:";
                 vault_lock(&v);
                 /* blank with fixed widths so nothing shrinks (stale-pixel glitch) */
@@ -1156,7 +1263,7 @@ int main(void)
             timer_arm(1);
         }
 
-        if (sigs & winsig) {
+        if (win && (sigs & winsig)) {
             ULONG result;
             UWORD code;
             int docopy = 0, doadd_clip = 0, doadd_type = 0, doadd_qr = 0, doedit = 0, doremove = 0;
@@ -1164,7 +1271,10 @@ int main(void)
             while ((result = DoMethod(winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
                 switch (result & WMHI_CLASSMASK) {
                     case WMHI_CLOSEWINDOW:
-                        running = 0;
+                        /* As a commodity the close gadget hides (stay resident,
+                         * vault unlocked); a plain window app quits. */
+                        if (broker) { win_hide(winobj, win); win = NULL; }
+                        else        { running = 0; }
                         break;
                     case WMHI_GADGETUP:
                         switch (result & WMHI_GADGETMASK) {
@@ -1261,7 +1371,7 @@ int main(void)
         }
 
         /* --- drag-and-drop: image icons dropped on the window (QR import) --- */
-        if (g_appport && (sigs & appsig)) {
+        if (win && g_appport && (sigs & appsig)) {
             struct AppMessage *am;
             idle_secs = 0;                          /* a drop counts as activity */
             while ((am = (struct AppMessage *)GetMsg(g_appport)) != NULL) {
@@ -1280,7 +1390,7 @@ int main(void)
         }
 
         /* --- reflect an add/remove/edit in the list + button states --- */
-        if (changed) {
+        if (win && changed) {
             SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, ~0UL, TAG_END);
             build_nodes(&lblist, &v);
             SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
@@ -1295,8 +1405,8 @@ int main(void)
         }
 
         /* Refresh every account's code + countdown in the list, and drive the
-         * detail pane (big code + gauge) from the selected row. */
-        if (running && v.count > 0) {
+         * detail pane (big code + gauge) from the selected row. Only when shown. */
+        if (win && running && v.count > 0) {
             uint64_t now = clock_now_utc(&clk);
             uint32_t sel_period = OTP_DEFAULT_PERIOD, sel_rem = 0;
             char fmt[8];
@@ -1326,13 +1436,19 @@ int main(void)
                            FUELGAUGE_Max, sel_period, FUELGAUGE_Level, sel_rem, TAG_END);
         }
 
-        if (running) led_draw(win, statobj, clk.state);  /* keep the LED lit */
+        if (win && running) led_draw(win, statobj, clk.state);  /* keep the LED lit */
     }
 
 cleanup:
-    led_pens_free(win);                       /* while the screen is still valid */
-    if (win) DoMethod(winobj, WM_CLOSE, NULL);
+    if (win) { win_hide(winobj, win); win = NULL; }  /* led_pens_free + WM_CLOSE */
     if (winobj) DisposeObject(winobj);        /* also removes the AppWindow */
+    if (broker) DeleteCxObjAll(broker);       /* detach the hotkey + broker */
+    if (cxport) {                             /* drain any late commodity msgs */
+        struct Message *m;
+        while ((m = GetMsg(cxport)) != NULL) ReplyMsg(m);
+        DeleteMsgPort(cxport);
+    }
+    if (tt) ArgArrayDone();
     if (g_appport) {                          /* drain any late drops, then close */
         struct AppMessage *am;
         while ((am = (struct AppMessage *)GetMsg(g_appport)) != NULL)
@@ -1349,5 +1465,5 @@ cleanup:
     if (have_timer) timer_close();
     vault_lock(&v);
     close_libs();
-    return 0;
+    return retcode;
 }
