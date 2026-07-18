@@ -15,6 +15,7 @@
 #include <intuition/intuition.h>
 #include <intuition/gadgetclass.h>
 #include <intuition/icclass.h>
+#include <intuition/screens.h>     /* DrawInfo, SHADOWPEN/SHINEPEN (LED bevel) */
 #include <libraries/locale.h>
 #include <libraries/iffparse.h>
 #include <graphics/gfxbase.h>
@@ -68,8 +69,10 @@ struct GfxBase       *GfxBase         = NULL;   /* graphics.library (LED)  */
 struct Library       *StringBase      = NULL;   /* string.gadget (typed URI) */
 struct Library       *GadToolsBase    = NULL;   /* gadtools.library (menus)  */
 
-/* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none) */
+/* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none),
+ * drawn in a recessed bevel (shadow/shine pens from the screen's DrawInfo). */
 static LONG g_ledpen[3] = { -1, -1, -1 };
+static LONG g_shadowpen = 1, g_shinepen = 2;   /* fallback: black / white */
 
 /* timer.device, for the once-a-second refresh */
 static struct MsgPort     *g_tport;
@@ -210,11 +213,18 @@ static void led_pens_alloc(struct Window *win)
     struct TagItem tags[] = { { OBP_Precision, PRECISION_GUI }, { TAG_END, 0 } };
     struct ColorMap *cm;
     int i;
+    struct DrawInfo *dri;
     if (!GfxBase || !win || !win->WScreen) return;
     cm = win->WScreen->ViewPort.ColorMap;
     if (!cm) return;
     for (i = 0; i < 3; i++)
         g_ledpen[i] = ObtainBestPenA(cm, rgb[i][0], rgb[i][1], rgb[i][2], tags);
+    dri = GetScreenDrawInfo(win->WScreen);          /* bevel pens for the LED well */
+    if (dri) {
+        g_shadowpen = dri->dri_Pens[SHADOWPEN];
+        g_shinepen  = dri->dri_Pens[SHINEPEN];
+        FreeScreenDrawInfo(win->WScreen, dri);
+    }
 }
 
 static void led_pens_free(struct Window *win)
@@ -227,22 +237,29 @@ static void led_pens_free(struct Window *win)
         if (g_ledpen[i] != -1) { ReleasePen(cm, (ULONG)g_ledpen[i]); g_ledpen[i] = -1; }
 }
 
-/* Draw a small red/amber/green LED square in the left margin of the status
- * label gadget (its text is centred, so the left is clear). Uses the gadget's
- * laid-out bounds, so it needs no layout sizing of its own. */
+/* Draw the clock-status LED in the left margin of the status label gadget (its
+ * text is centred, so the left is clear). A recessed bevel well (dark top/left,
+ * light bottom/right) frames a red/amber/green colour fill, so it reads as a
+ * deliberate indicator even where the colour maps to grey on a limited palette.
+ * Uses the gadget's laid-out bounds, so it needs no layout sizing of its own. */
 static void led_draw(struct Window *win, Object *labelobj, int state)
 {
     struct Gadget *g = (struct Gadget *)labelobj;
-    LONG pen, x, y, s = 10;
+    struct RastPort *rp = win->RPort;
+    LONG pen, x, y, s = 11, x2, y2;
     if (!GfxBase || !labelobj || state < 0 || state > 2) return;
     if (g->Width <= s + 6 || g->Height <= s) return;   /* not laid out yet */
-    pen = g_ledpen[state] >= 0 ? g_ledpen[state] : 1;   /* fallback: visible */
-    x = g->LeftEdge + 4;
-    y = g->TopEdge + (g->Height - s) / 2;
-    SetAPen(win->RPort, 1);                             /* black bezel */
-    RectFill(win->RPort, x, y, x + s - 1, y + s - 1);
-    SetAPen(win->RPort, (ULONG)pen);                    /* colour */
-    RectFill(win->RPort, x + 1, y + 1, x + s - 2, y + s - 2);
+    pen = g_ledpen[state] >= 0 ? g_ledpen[state] : g_shadowpen;
+    x  = g->LeftEdge + 4;
+    y  = g->TopEdge + (g->Height - s) / 2;
+    x2 = x + s - 1;
+    y2 = y + s - 1;
+    SetAPen(rp, (ULONG)pen);                            /* colour fill inside */
+    RectFill(rp, x + 1, y + 1, x2 - 1, y2 - 1);
+    SetAPen(rp, (ULONG)g_shadowpen);                    /* recessed: dark top+left */
+    Move(rp, x, y2); Draw(rp, x, y); Draw(rp, x2, y);
+    SetAPen(rp, (ULONG)g_shinepen);                     /* light bottom+right */
+    Move(rp, x2, y); Draw(rp, x2, y2); Draw(rp, x, y2);
 }
 
 /* --- clipboard: put the current code on the primary clipboard as IFF FTXT,
