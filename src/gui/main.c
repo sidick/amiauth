@@ -1080,6 +1080,23 @@ int main(int argc, char **argv)
     }
 
     clock_setup(&clk);
+    /* One SNTP sync at startup so the resident instance has accurate (green) time
+     * without a manual CLI SYNC. Server precedence mirrors the CLI: the TIMESERVER
+     * tooltype, then the saved "server" pref, then the default pool. Fails
+     * fast/quiet with no TCP/IP stack (or no response), leaving the persisted
+     * offset in place (clock_sntp_sync only updates clk on success). */
+    {
+        STRPTR ts = ArgString((CONST_STRPTR *)tt, (CONST_STRPTR)"TIMESERVER", NULL);
+        char cfg[128];
+        const char *server;
+        if (ts && ts[0])                                              server = (const char *)ts;
+        else if (prefs_get("server", cfg, sizeof cfg) == 0 && cfg[0]) server = cfg;
+        else                                                         server = "pool.ntp.org";
+        if (clock_sntp_sync(&clk, server) == 0) {
+            prefs_set("server", server);
+            prefs_set_long("offset", clk.offset_seconds);
+        }
+    }
     naccounts = v.count;
     /* Idle auto-lock (encrypted vaults only): scrub + re-prompt after this many
      * idle seconds. Pref "idlelock" overrides; 0 disables. */

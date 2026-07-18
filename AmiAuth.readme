@@ -53,6 +53,7 @@ Installation
   icon tooltypes such as:
       CX_POPKEY=ctrl alt a
       CX_POPUP=yes
+      TIMESERVER=pool.ntp.org      (SNTP server for the startup time sync)
       DONOTWAIT
 
 Quick start (CLI)
