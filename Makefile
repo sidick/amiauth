@@ -52,7 +52,7 @@ BUILD := build
 # Object paths for the vendored quirc decoder (needs $(BUILD), defined above).
 QUIRC_HOST_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-host/%.o,$(QUIRC_SRCS))
 
-.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench clean
+.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench clean
 
 all: test cli
 
@@ -103,6 +103,14 @@ gui: | $(BUILD)
 gui-docker:
 	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make gui'
+
+# --- Headless GUI smoke test: boot WB 3.2 under Copperline, render AmiAuthGUI --
+# Boots an A1200/OS 3.2 under native Copperline, auto-launches AmiAuthGUI, and
+# asserts the ReAction window rendered (screenshot in build/gui-smoke/). No VNC
+# or clicking. Needs `copperline` on PATH, the paths in tests/gui/.env, and a
+# prebuilt build/AmiAuthGUI (make gui-docker). See tests/gui/gui-smoke.sh.
+gui-smoke: $(BUILD)/amiauth-host
+	sh tests/gui/gui-smoke.sh
 
 # --- m68k via the CI container: no local toolchain needed, matches CI exactly ---
 m68k-docker:
