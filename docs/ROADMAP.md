@@ -29,8 +29,9 @@ PBKDF2, ChaCha20, encrypted account store, `otpauth://` import. CLI complete.
 - [x] `uri.c` — `otpauth://` parsing + import
 - [x] CLI: `INIT`/`ADD`/`LIST`/`GET`/`REMOVE` (+ `CODE`); interactive-TTY
       passphrase for encrypted vaults, always-unlocked for scripting
-- [ ] Iteration calibration + cap (deferred to Phase 4 front-end; `vault.c`
-      takes an explicit count and the default is `VAULT_DEFAULT_ITERATIONS`).
+- [x] Iteration calibration + cap (landed in Phase 4; `vault.c` takes an explicit
+      count, default `VAULT_DEFAULT_ITERATIONS`, calibrated per-machine by the
+      front-end).
       See [SECURITY.md](SECURITY.md) "KDF cost across the hardware range".
 - [x] CSPRNG for salt/nonce (Amiga front-end entropy source; core takes them
       as parameters) — HMAC-DRBG seeded from EClock jitter, volatile system
@@ -47,7 +48,8 @@ SNTP query, offset model, manual adjustment.
 - [x] Clock-status state (synced / manual / unverified)
 - [x] SNTP transport over `bsdsocket` (single UDP exchange) — `src/amiga/sntp.c`;
       CLI `SYNC` command; verified on OS 3.2 under Amiberry (green, true UTC)
-- [ ] Offset/status persistence (ENVARC:) + display — front-end (Phase 4)
+- [x] Offset/status persistence (ENVARC:) + display — done in Phase 4 (CLI
+      `OFFSET`/`SYNC` save; GUI clock-status LED)
 
 See [CLOCK.md](CLOCK.md) for the full layered time-resolution design.
 
@@ -70,17 +72,28 @@ status command are done and verified on OS 3.2. Remaining Phase 4 work:
       strengthen/speed-up re-key when a vault is opened on much faster/slower
       hardware (silence via `--no-rekey` / `ENVARC:AmiAuth/rekey`). Measured: a
       stock 68000 does ~14 PBKDF2/s (`make pbkdf2-bench`). See docs/SECURITY.md.
-- [ ] ReAction window: `listbrowser` list, large code display, `fuelgauge` bar
-- [ ] Clipboard copy (clipboard.device, FTXT)
-- [ ] Clock-status **indicator** in the GUI (green/amber/red)
-- [ ] CxBroker setup, hotkey filter, popup/hide window lifecycle
-- [ ] Exchange messages (show/hide/kill), auto-lock timer
-- [ ] WBStartup-friendly tooltypes (`DONOTWAIT`, `CX_POPUP=NO`), passphrase flow
-- [ ] (polish) parse CLI args with dos.library `ReadArgs` on Amiga
+- [x] ReAction window: multi-column `listbrowser` (all accounts, live codes +
+      countdown), large selected-code display, `fuelgauge` bar
+- [x] Passphrase unlock + idle auto-lock; add / remove / edit accounts
+- [x] Clipboard copy (iffparse FTXT, auto-clear after 30s)
+- [x] Clock-status **indicator** in the GUI (green/amber/red LED)
+- [x] **QR-image import** — decode an `otpauth://` QR from a PNG/JPEG/GIF/IFF via
+      datatypes.library + a vendored quirc decoder (file requester + drag-and-drop)
+- [x] CxBroker setup, hotkey filter, popup/hide window lifecycle
+- [x] Exchange messages (show/hide/enable/disable/kill), auto-lock timer
+- [x] WBStartup-friendly tooltypes (`DONOTWAIT`, `CX_POPKEY`, `CX_POPUP`)
+- [x] Single-instance + **CLI forwards to the resident GUI** over a public port
+      (no second passphrase prompt; the GUI stays the one vault owner)
+- [x] (polish) parse CLI args with dos.library `ReadArgs` on Amiga
+
+The commodity/hotkey/Exchange and CLI-forwarding flows still want an interactive
+on-hardware verification pass (they are input-/two-process-driven, so not
+headless-scriptable).
 
 ## Phase 5 — Release
-- [ ] Docs, including the honest security note
-- [ ] Aminet packaging (`aminet-release-action`)
+- [x] Docs, including the honest security note (+ an AI-use disclosure)
+- [~] Aminet packaging — the `.readme` is written to spec; wiring the
+      `aminet-release-action` workflow + tagging a version is the remaining step
 - [ ] Demo: log into GitHub using a code from real hardware
 
 ## Success criteria

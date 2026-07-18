@@ -1,0 +1,86 @@
+Short:        TOTP/HOTP two-factor authenticator
+Author:       simond@irrelevant.org (Simon Dick)
+Uploader:     simond@irrelevant.org (Simon Dick)
+Type:         util/crypt
+Version:      1.0
+Architecture: m68k-amigaos >= 2.0.4
+Distribution: Aminet
+
+AmiAuth is a native two-factor authentication (2FA) code generator for classic
+AmigaOS. It implements TOTP (RFC 6238) and HOTP (RFC 4226) - the codes used by
+GitHub, Google, Microsoft, banks and countless other sites - so your Amiga can
+stand in for a phone authenticator app.
+
+It stores multiple accounts in an (optionally passphrase-encrypted) vault,
+generates 6- or 8-digit codes with a live countdown, and - critically for the
+platform - tackles the accurate-time problem that TOTP depends on.
+
+Features
+--------
+  - TOTP (RFC 6238) and HOTP (RFC 4226), 6- or 8-digit codes.
+  - Multiple accounts in a single vault; import from standard "otpauth://" URIs.
+  - Optional vault encryption (ChaCha20 + PBKDF2-HMAC-SHA1), with the passphrase
+    entered interactively only and per-machine KDF calibration.
+  - Accurate time without a working clock: SNTP sync over bsdsocket, a manual
+    UTC offset, and a locale-based first guess, with an honest red/amber/green
+    trust indicator.
+  - Two front-ends sharing one portable, RFC-verified core:
+      * CLI - CODE / ADD / LIST / GET / REMOVE / SYNC / OFFSET.
+      * GUI - a ReAction interface with a live all-accounts view, clipboard
+        copy, and QR-image import (decode an "otpauth://" enrolment QR from a
+        PNG/JPEG/GIF/IFF via a file requester or drag-and-drop).
+  - The GUI runs as a proper Commodity: it lives in Exchange, pops up on a
+    hotkey, can start from WBStartup, and is single-instance. While it is
+    running it owns the unlocked vault, and the CLI transparently forwards
+    commands to it instead of re-prompting for the passphrase.
+  - Self-contained: no mandatory external libraries or archives to install.
+
+Requirements
+------------
+  - Any Amiga, from a stock 68000 upwards. The CLI needs AmigaOS 2.04 (V37).
+  - The GUI needs AmigaOS 3.0+ and the ReAction/ClassAct classes (window,
+    layout, listbrowser, fuelgauge, button); 3.1.4 / 3.2 / 3.5+ recommended.
+  - Optional, auto-detected (the feature is simply absent if missing):
+      * datatypes.library + a picture datatype (png/jpeg/...) - QR image import.
+      * commodities.library - the hotkey / Exchange integration.
+      * bsdsocket.library (a TCP/IP stack) - SNTP time sync.
+
+Installation
+------------
+  Copy "AmiAuth" (CLI) and "AmiAuthGUI" (GUI) to a drawer of your choice; the
+  vault lives next to them (PROGDIR:AmiAuth.vault) and settings in ENVARC:.
+  To run the GUI as a background commodity, drop AmiAuthGUI in WBStartup with
+  icon tooltypes such as:
+      CX_POPKEY=ctrl alt a
+      CX_POPUP=yes
+      DONOTWAIT
+
+Quick start (CLI)
+-----------------
+  AmiAuth INIT                                  create a vault
+  AmiAuth ADD "otpauth://totp/GitHub:me?secret=JBSWY3DPEHPK3PXP"
+  AmiAuth LIST                                  list account names
+  AmiAuth GET GitHub                            print the current code
+  AmiAuth CODE JBSWY3DPEHPK3PXP                 one-shot code, no vault
+
+AI disclosure
+-------------
+  Be aware: AmiAuth was written largely by an AI coding agent (Anthropic's Claude
+  / Claude Code), under human direction, review and on-hardware testing. As this
+  is a security tool that disclosure matters - so rather than asking for blind
+  trust, the crypto primitives are verified against their RFC test vectors and
+  fuzzed against OpenSSL, and the full source is open (BSD) for you to review and
+  judge for yourself.
+
+Security
+--------
+  The vault passphrase is only ever entered interactively (never on the command
+  line, in an environment variable or over the commodity port). AmiAuth is a
+  convenience tool for classic hardware, not a hardware security key - please
+  read the honest threat model before trusting it with high-value accounts:
+      https://github.com/sidick/amiauth/blob/main/docs/SECURITY.md
+
+Source and licence
+-------------------
+  Free and open source, BSD 2-Clause. Full source, documentation and issue
+  tracker: https://github.com/sidick/amiauth
