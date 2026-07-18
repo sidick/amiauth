@@ -35,10 +35,14 @@ CLI_SRCS   := src/cli/main.c
 # exercises the exact float path that ships on the Amiga.
 QUIRC_SRCS      := src/qr/quirc.c src/qr/decode.c src/qr/identify.c src/qr/version_db.c
 QR_WRAP         := src/qr/qr.c
-QR_CPPFLAGS     := -Isrc/qr -DQUIRC_FLOAT_TYPE=float
+# QUIRC_FLOAT_TYPE=float + QUIRC_USE_TGMATH: single-precision soft-float on the
+# FPU-less 68000 (quirc's identify geometry is float-heavy; the pair is what its
+# docs recommend, and avoids slow double soft-float via rintf/sqrtf/fabsf).
+QR_CPPFLAGS     := -Isrc/qr -DQUIRC_FLOAT_TYPE=float -DQUIRC_USE_TGMATH
 DIFF_SRCS  := tests/diff/diff_main.c
-# AmigaOS-only front-end glue (bsdsocket SNTP, ...); m68k build only.
-AMIGA_SRCS := $(wildcard src/amiga/*.c)
+# AmigaOS-only front-end glue (bsdsocket SNTP, ...); m68k build only. qrimage.c
+# is GUI-only (datatypes.library) so it's excluded here and added to GUI_SRCS.
+AMIGA_SRCS := $(filter-out src/amiga/qrimage.c,$(wildcard src/amiga/*.c))
 
 # OpenSSL flags for the differential harness (pkg-config, with a plain fallback).
 OPENSSL_CFLAGS ?= $(shell pkg-config --cflags libcrypto 2>/dev/null)
@@ -51,8 +55,9 @@ BUILD := build
 
 # Object paths for the vendored quirc decoder (needs $(BUILD), defined above).
 QUIRC_HOST_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-host/%.o,$(QUIRC_SRCS))
+QUIRC_M68K_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-m68k/%.o,$(QUIRC_SRCS))
 
-.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench clean
+.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench clean
 
 all: test cli
 
@@ -95,10 +100,18 @@ m68k: | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) -o $(BUILD)/AmiAuth
 
 # --- m68k: ReAction GUI binary (Amiga only; needs intuition + ReAction classes) ---
-GUI_SRCS := src/gui/main.c
+# Includes the QR decoder: qrimage.c (datatypes glue) + our qr.c wrapper + the
+# vendored quirc objects (built -w for m68k). QUIRC_FLOAT_TYPE=float: no FPU.
+GUI_SRCS := src/gui/main.c src/amiga/qrimage.c
 
-gui: | $(BUILD)
-	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) -lamiga -o $(BUILD)/AmiAuthGUI
+# Vendored quirc objects — m68k toolchain, warnings suppressed (third-party).
+$(BUILD)/qr-m68k/%.o: src/qr/%.c | $(BUILD)
+	@mkdir -p $(BUILD)/qr-m68k
+	$(M68K_CC) -std=c99 -O2 -m68000 -noixemul -w $(QR_CPPFLAGS) -c $< -o $@
+
+gui: $(QUIRC_M68K_OBJS) | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) $(QR_CPPFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) \
+		$(QR_WRAP) $(QUIRC_M68K_OBJS) -lm -lamiga -o $(BUILD)/AmiAuthGUI
 
 gui-docker:
 	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
@@ -111,6 +124,24 @@ gui-docker:
 # prebuilt build/AmiAuthGUI (make gui-docker). See tests/gui/gui-smoke.sh.
 gui-smoke: $(BUILD)/amiauth-host
 	sh tests/gui/gui-smoke.sh
+
+# --- Headless on-target QR pipeline test: boot WB 3.2, load a staged QR PNG via
+# datatypes.library (src/amiga/qrimage.c) + decode it (src/qr), emit the URI over
+# serial. Validates the datatypes glue on real picture.datatype. Build the v39
+# fallback with:  make qr-onhw-docker QR_ONHW_DEFS=-DQRIMAGE_FORCE_V39
+QR_ONHW_DEFS ?=
+QR_ONHW_SRCS := tests/gui/qr_onhw.c src/amiga/qrimage.c $(QR_WRAP)
+
+qr-onhw: $(QUIRC_M68K_OBJS) | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) $(QR_CPPFLAGS) $(QR_ONHW_DEFS) $(QR_ONHW_SRCS) \
+		$(QUIRC_M68K_OBJS) -lm -lamiga -o $(BUILD)/qr-onhw
+
+qr-onhw-docker:
+	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make qr-onhw QR_ONHW_DEFS=$(QR_ONHW_DEFS)'
+
+qr-onhw-smoke:
+	sh tests/gui/qr-onhw.sh
 
 # --- m68k via the CI container: no local toolchain needed, matches CI exactly ---
 m68k-docker:

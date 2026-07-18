@@ -22,6 +22,9 @@
 #include <graphics/view.h>          /* struct ColorMap, OBP_*, PRECISION_* */
 
 #include <libraries/gadtools.h>     /* struct NewMenu, NM_*, GTMENUITEM_USERDATA */
+#include <libraries/asl.h>          /* ASL_FileRequest, ASLFR_* (QR file picker) */
+#include <workbench/workbench.h>    /* struct AppMessage (QR drag-and-drop) */
+#include <workbench/startup.h>      /* struct WBArg */
 
 #include <classes/window.h>
 #include <gadgets/layout.h>
@@ -42,6 +45,7 @@
 #include <proto/listbrowser.h>
 #include <proto/fuelgauge.h>
 #include <proto/string.h>       /* STRING_GetClass */
+#include <proto/asl.h>          /* AllocAslRequestTags, AslRequest (QR picker) */
 
 #include <string.h>
 #include <stdio.h>
@@ -52,6 +56,15 @@
 #include "clock.h"
 #include "prefs.h"
 #include "entropy.h"                /* amiga_random (m68k build) */
+#include "qr.h"                     /* qr_decode_gray (portable QR decoder) */
+#include "qrimage.h"                /* qrimage_load_gray (datatypes glue) */
+
+/* Request a larger stack (libnix): the QR decoder still needs more than the
+ * few KB a shell hands a Run/WBench program. qr_decode_gray keeps its big
+ * quirc_code/quirc_data off the stack (heap), but quirc_decode uses a ~9 KB
+ * datastream internally; 32 KB leaves ample headroom. Harmless to the rest of
+ * the GUI. */
+unsigned long __stack = 32768;
 
 /* --- library / class bases. Initialised (strong definitions) on purpose: a
  * common/tentative definition lets the linker pull libnix's auto-open stub,
@@ -69,6 +82,13 @@ struct Library       *IFFParseBase    = NULL;   /* iffparse.library (optional) *
 struct GfxBase       *GfxBase         = NULL;   /* graphics.library (LED)  */
 struct Library       *StringBase      = NULL;   /* string.gadget (typed URI) */
 struct Library       *GadToolsBase    = NULL;   /* gadtools.library (menus)  */
+struct Library       *DataTypesBase   = NULL;   /* datatypes.library (QR import: image load) */
+struct Library       *AslBase         = NULL;   /* asl.library (QR import: file requester)   */
+struct Library       *WorkbenchBase   = NULL;   /* workbench.library (QR import: drag-and-drop) */
+
+/* AppWindow message port: image icons dropped on the main window (QR import).
+ * Created only when datatypes + workbench are available. */
+static struct MsgPort *g_appport = NULL;
 
 /* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none),
  * drawn in a recessed bevel (shadow/shine pens from the screen's DrawInfo). */
@@ -93,7 +113,7 @@ enum { PWID_OK = 1, PWID_CANCEL, PWID_STR };   /* modal-requester gadgets */
 enum { EDID_ISSUER = 1, EDID_LABEL, EDID_DIGITS, EDID_PERIOD, EDID_OK, EDID_CANCEL };  /* edit form */
 
 /* menu / button command ids */
-enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_EDIT, CMD_REMOVE, CMD_QUIT };
+enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_ADD_QR, CMD_EDIT, CMD_REMOVE, CMD_QUIT };
 
 #define VAULT_PATH_DEFAULT "PROGDIR:AmiAuth.vault"
 #define DEFAULT_IDLE_LOCK  120      /* seconds of inactivity before an encrypted vault re-locks */
@@ -118,6 +138,7 @@ static struct NewMenu g_menu[] = {
     { NM_TITLE, (STRPTR)"Account", NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Add from clipboard",  (STRPTR)"V", 0, 0, (APTR)CMD_ADD_CLIP },
     { NM_ITEM,  (STRPTR)"Add (type URI)...",   (STRPTR)"A", 0, 0, (APTR)CMD_ADD_TYPE },
+    { NM_ITEM,  (STRPTR)"Add from QR image...",(STRPTR)"I", 0, 0, (APTR)CMD_ADD_QR },
     { NM_ITEM,  (STRPTR)"Edit selected...",    (STRPTR)"E", 0, 0, (APTR)CMD_EDIT },
     { NM_ITEM,  NM_BARLABEL,       NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Remove selected...",  (STRPTR)"R", 0, 0, (APTR)CMD_REMOVE },
@@ -128,6 +149,9 @@ static struct NewMenu g_menu[] = {
 
 static void close_libs(void)
 {
+    if (WorkbenchBase)   CloseLibrary(WorkbenchBase);
+    if (AslBase)         CloseLibrary(AslBase);
+    if (DataTypesBase)   CloseLibrary(DataTypesBase);
     if (GadToolsBase)    CloseLibrary(GadToolsBase);
     if (StringBase)      CloseLibrary(StringBase);
     if (GfxBase)         CloseLibrary((struct Library *)GfxBase);
@@ -154,6 +178,12 @@ static const char *open_libs(void)
     GfxBase         = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 37);
     StringBase      = OpenLibrary((STRPTR)"gadgets/string.gadget", 0);  /* optional: typed URI */
     GadToolsBase    = OpenLibrary((STRPTR)"gadtools.library", 37);      /* optional: menus */
+    /* QR import — all optional and feature-detected; absence just disables it:
+     *   datatypes = load the image (whole feature); asl = the file-picker menu;
+     *   workbench = drag-and-drop an image icon onto the window. */
+    DataTypesBase   = OpenLibrary((STRPTR)"datatypes.library", 39);
+    AslBase         = OpenLibrary((STRPTR)"asl.library", 37);
+    WorkbenchBase   = OpenLibrary((STRPTR)"workbench.library", 37);
     if (!IntuitionBase || !UtilityBase)
         return "needs intuition.library / utility.library v37+ (OS 2.04)";
     if (!WindowBase || !LayoutBase || !ListBrowserBase || !FuelGaugeBase || !ButtonBase)
@@ -433,6 +463,93 @@ static void build_nodes(struct List *lblist, const vault *v)
             TAG_END);
         if (node) AddTail(lblist, node);
     }
+}
+
+/* Parse an otpauth:// URI, add it to the vault and save. Returns 1 if the vault
+ * changed, else 0 (reporting the reason). Shared by the clipboard/typed add and
+ * the QR-image add so all three behave identically. */
+static int gui_add_uri(struct Window *win, vault *v, const char *path, const char *uri)
+{
+    otp_account acct;
+    int changed = 0;
+    vault_result rc;
+    if (otpauth_parse(uri, &acct) != 0) {
+        gui_requester(win, "That is not a valid otpauth:// URI.", "OK", NULL);
+    } else {
+        rc = vault_add(v, &acct);
+        if (rc == VAULT_OK) { changed = 1; rc = gui_save(v, path); }
+        if (rc != VAULT_OK)
+            gui_requester(win, rc == VAULT_ERR_FULL
+                          ? "The vault is full (max 64 accounts)."
+                          : "Could not save the vault.", "OK", NULL);
+    }
+    memset(&acct, 0, sizeof acct);
+    return changed;
+}
+
+/* Decode the QR in an image file into its otpauth:// URI and add it. Returns 1
+ * if the vault changed. Reports load and decode failures. */
+static int do_add_qr(struct Window *win, vault *v, const char *vpath, const char *img)
+{
+    static char uri[300];                 /* off the stack */
+    unsigned char *gray = NULL;
+    int iw = 0, ih = 0, changed = 0, lr, dr;
+
+    lr = qrimage_load_gray(img, &gray, &iw, &ih);
+    if (lr != QRIMAGE_OK) {
+        gui_requester(win,
+            lr == QRIMAGE_ERR_TOOBIG  ? "That image is too large to decode."
+          : lr == QRIMAGE_ERR_UNAVAIL ? "QR import needs datatypes.library."
+          : lr == QRIMAGE_ERR_NOMEM   ? "Not enough memory to load that image."
+          :                             "Could not read that image "
+                                        "(needs picture.datatype).", "OK", NULL);
+        return 0;
+    }
+    /* Decoding is slow on the FPU-less CPU (quirc's soft-float geometry can take
+     * tens of seconds), and it blocks the event loop — show a busy pointer and a
+     * "Decoding" title so the wait is expected. SetWindowPointer is v39+, which
+     * we already have wherever datatypes.library (v39) opened for QR import. */
+    if (IntuitionBase->LibNode.lib_Version >= 39) {
+        SetWindowPointer(win, WA_BusyPointer, TRUE, WA_PointerDelay, TRUE, TAG_END);
+        SetWindowTitles(win, (STRPTR)"AmiAuth - Decoding QR image...", (STRPTR)~0UL);
+    }
+    dr = qr_decode_gray(gray, iw, ih, uri, sizeof uri);
+    if (IntuitionBase->LibNode.lib_Version >= 39) {
+        SetWindowPointer(win, TAG_END);           /* restore the default pointer */
+        SetWindowTitles(win, (STRPTR)"AmiAuth", (STRPTR)~0UL);
+    }
+    if (dr == QR_OK)
+        changed = gui_add_uri(win, v, vpath, uri);
+    else
+        gui_requester(win, "No otpauth QR code was found in that image.", "OK", NULL);
+    qrimage_free(gray);
+    memset(uri, 0, sizeof uri);
+    return changed;
+}
+
+/* Ask the user for an image file (asl.library). Returns 1 and fills `path`
+ * (`cap` bytes) with a full path on OK. */
+static int qr_file_request(struct Window *win, char *path, size_t cap)
+{
+    struct FileRequester *fr;
+    int ok = 0;
+    if (!AslBase) return 0;
+    fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
+        ASLFR_Window,         (ULONG)win,
+        ASLFR_TitleText,      (ULONG)"Select a QR image",
+        ASLFR_DoPatterns,     TRUE,
+        ASLFR_InitialPattern, (ULONG)"#?.(png|jpg|jpeg|gif|iff|ilbm|lbm|bmp)",
+        TAG_END);
+    if (!fr) return 0;
+    if (AslRequest(fr, NULL) && fr->fr_File[0]) {
+        path[0] = '\0';
+        strncpy(path, (const char *)fr->fr_Drawer, cap - 1);
+        path[cap - 1] = '\0';
+        AddPart((STRPTR)path, (STRPTR)fr->fr_File, (ULONG)cap);
+        ok = 1;
+    }
+    FreeAslRequest(fr);
+    return ok;
 }
 
 /* --- modal masked passphrase requester ---------------------------------- *
@@ -761,8 +878,8 @@ int main(void)
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
-    ULONG winsig = 0, timersig, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0, idle_secs = 0;
-    int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0, encrypted = 0;
+    ULONG winsig = 0, appsig = 0, timersig, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0, idle_secs = 0;
+    int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0, encrypted = 0, changed = 0;
     long idle_limit = 0;
     size_t i, naccounts = 0;
     char curcode[16], statbuf[48];
@@ -893,6 +1010,18 @@ int main(void)
             LAYOUT_AddChild,    (ULONG)statobj,
             CHILD_WeightedHeight, 0,
             TAG_END);
+        /* QR import is optional and feature-detected: grey the menu item unless
+         * datatypes+asl are present, and only make the window an AppWindow
+         * (drag-and-drop) when datatypes+workbench are present. */
+        if (!(DataTypesBase && AslBase)) {
+            int mi;
+            for (mi = 0; g_menu[mi].nm_Type != NM_END; mi++)
+                if (g_menu[mi].nm_Type == NM_ITEM &&
+                    (ULONG)g_menu[mi].nm_UserData == CMD_ADD_QR)
+                    g_menu[mi].nm_Flags |= NM_ITEMDISABLED;
+        }
+        if (DataTypesBase && WorkbenchBase)
+            g_appport = CreateMsgPort();
         winobj = NewObject(WINDOW_GetClass(), NULL,
             WA_Title,        (ULONG)"AmiAuth",
             WA_Activate,     TRUE,
@@ -903,6 +1032,7 @@ int main(void)
             WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK,
             WINDOW_Position, WPOS_CENTERSCREEN,
             GadToolsBase ? WINDOW_NewMenu : TAG_IGNORE, (ULONG)g_menu,
+            g_appport ? WINDOW_AppPort : TAG_IGNORE, (ULONG)g_appport,
             WINDOW_Layout,   (ULONG)layoutobj,
             TAG_END);
     }
@@ -920,13 +1050,15 @@ int main(void)
 
     GetAttr(WINDOW_SigMask, winobj, &winsig);
     timersig = have_timer ? (1UL << g_tport->mp_SigBit) : 0;
+    appsig   = g_appport ? (1UL << g_appport->mp_SigBit) : 0;
     if (have_timer) timer_arm(1);
 
     led_pens_alloc(win);                      /* red/amber/green from the screen */
     led_draw(win, statobj, clk.state);        /* initial LED */
 
     while (running) {
-        ULONG sigs = Wait(winsig | timersig | SIGBREAKF_CTRL_C);
+        ULONG sigs = Wait(winsig | timersig | appsig | SIGBREAKF_CTRL_C);
+        changed = 0;                            /* set by any add/remove/edit this pass */
 
         if (sigs & SIGBREAKF_CTRL_C) running = 0;
 
@@ -966,7 +1098,7 @@ int main(void)
         if (sigs & winsig) {
             ULONG result;
             UWORD code;
-            int docopy = 0, doadd_clip = 0, doadd_type = 0, doedit = 0, doremove = 0, changed = 0;
+            int docopy = 0, doadd_clip = 0, doadd_type = 0, doadd_qr = 0, doedit = 0, doremove = 0;
             idle_secs = 0;                          /* any window input = activity */
             while ((result = DoMethod(winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
                 switch (result & WMHI_CLASSMASK) {
@@ -999,6 +1131,7 @@ int main(void)
                             switch ((ULONG)GTMENUITEM_USERDATA(it)) {
                                 case CMD_ADD_CLIP: doadd_clip = 1; break;
                                 case CMD_ADD_TYPE: doadd_type = 1; break;
+                                case CMD_ADD_QR:   doadd_qr   = 1; break;
                                 case CMD_EDIT:     doedit     = 1; break;
                                 case CMD_REMOVE:   doremove   = 1; break;
                                 case CMD_QUIT:     running    = 0; break;
@@ -1017,25 +1150,19 @@ int main(void)
                 copied = 2;                           /* revert after ~2 ticks */
             }
 
-            /* --- Add (clipboard or typed) --- */
+            /* --- Add (clipboard or typed URI) --- */
             if (doadd_clip || doadd_type) {
-                otp_account acct;
                 int ok = doadd_clip ? (clip_read_text(uribuf, sizeof uribuf) > 0)
                                     : uri_request(uribuf, sizeof uribuf);
-                if (ok) {
-                    if (otpauth_parse(uribuf, &acct) != 0)
-                        gui_requester(win, "That is not a valid otpauth:// URI.", "OK", NULL);
-                    else {
-                        rc = vault_add(&v, &acct);
-                        if (rc == VAULT_OK) { changed = 1; rc = gui_save(&v, path); }
-                        if (rc != VAULT_OK)
-                            gui_requester(win, rc == VAULT_ERR_FULL
-                                          ? "The vault is full (max 64 accounts)."
-                                          : "Could not save the vault.", "OK", NULL);
-                    }
-                    memset(&acct, 0, sizeof acct);
-                }
+                if (ok) changed |= gui_add_uri(win, &v, path, uribuf);
                 memset(uribuf, 0, sizeof uribuf);
+            }
+
+            /* --- Add from a QR image (asl file requester) --- */
+            if (doadd_qr) {
+                char img[256];
+                if (qr_file_request(win, img, sizeof img))
+                    changed |= do_add_qr(win, &v, path, img);
             }
 
             /* --- Edit selected (issuer/label/digits/period; secret kept) --- */
@@ -1070,20 +1197,40 @@ int main(void)
                 }
             }
 
-            /* --- reflect an add/remove in the list + button states --- */
-            if (changed) {
-                SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, ~0UL, TAG_END);
-                build_nodes(&lblist, &v);
-                SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
-                naccounts = v.count;
-                if (sel >= v.count) sel = v.count ? v.count - 1 : 0;
-                curcode[0] = '\0';
-                SetGadgetAttrs((struct Gadget *)removeobj, win, NULL, GA_Disabled, (v.count == 0), TAG_END);
-                SetGadgetAttrs((struct Gadget *)editobj,   win, NULL,
-                               GA_Disabled, (!StringBase || v.count == 0), TAG_END);
-                SetGadgetAttrs((struct Gadget *)copyobj,   win, NULL,
-                               GA_Disabled, (!have_clip || v.count == 0), TAG_END);
+        }
+
+        /* --- drag-and-drop: image icons dropped on the window (QR import) --- */
+        if (g_appport && (sigs & appsig)) {
+            struct AppMessage *am;
+            idle_secs = 0;                          /* a drop counts as activity */
+            while ((am = (struct AppMessage *)GetMsg(g_appport)) != NULL) {
+                LONG n;
+                for (n = 0; n < am->am_NumArgs; n++) {
+                    struct WBArg *wa = &am->am_ArgList[n];
+                    char fp[256];
+                    if (wa->wa_Lock && NameFromLock(wa->wa_Lock, (STRPTR)fp, sizeof fp)) {
+                        if (wa->wa_Name && wa->wa_Name[0])
+                            AddPart((STRPTR)fp, (STRPTR)wa->wa_Name, sizeof fp);
+                        if (fp[0]) changed |= do_add_qr(win, &v, path, fp);
+                    }
+                }
+                ReplyMsg((struct Message *)am);
             }
+        }
+
+        /* --- reflect an add/remove/edit in the list + button states --- */
+        if (changed) {
+            SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, ~0UL, TAG_END);
+            build_nodes(&lblist, &v);
+            SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
+            naccounts = v.count;
+            if (sel >= v.count) sel = v.count ? v.count - 1 : 0;
+            curcode[0] = '\0';
+            SetGadgetAttrs((struct Gadget *)removeobj, win, NULL, GA_Disabled, (v.count == 0), TAG_END);
+            SetGadgetAttrs((struct Gadget *)editobj,   win, NULL,
+                           GA_Disabled, (!StringBase || v.count == 0), TAG_END);
+            SetGadgetAttrs((struct Gadget *)copyobj,   win, NULL,
+                           GA_Disabled, (!have_clip || v.count == 0), TAG_END);
         }
 
         /* Refresh every account's code + countdown in the list, and drive the
@@ -1124,7 +1271,14 @@ int main(void)
 cleanup:
     led_pens_free(win);                       /* while the screen is still valid */
     if (win) DoMethod(winobj, WM_CLOSE, NULL);
-    if (winobj) DisposeObject(winobj);
+    if (winobj) DisposeObject(winobj);        /* also removes the AppWindow */
+    if (g_appport) {                          /* drain any late drops, then close */
+        struct AppMessage *am;
+        while ((am = (struct AppMessage *)GetMsg(g_appport)) != NULL)
+            ReplyMsg((struct Message *)am);
+        DeleteMsgPort(g_appport);
+        g_appport = NULL;
+    }
     /* free the listbrowser nodes */
     {
         struct Node *n;
