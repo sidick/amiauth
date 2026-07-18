@@ -27,6 +27,15 @@ AMIGA_GCC_IMAGE ?= stefanreinauer/amiga-gcc:latest
 CORE_SRCS  := $(wildcard src/core/*.c)
 TEST_SRCS  := $(wildcard tests/*.c)
 CLI_SRCS   := src/cli/main.c
+
+# --- Vendored QR decoder (quirc, ISC) + our portable wrapper -----------------
+# quirc is third-party, so it's compiled to objects with warnings OFF (it isn't
+# our lint to enforce); our qr.c wrapper builds under the normal warning set.
+# QUIRC_FLOAT_TYPE=float matches the m68k build (no FPU), so the host test
+# exercises the exact float path that ships on the Amiga.
+QUIRC_SRCS      := src/qr/quirc.c src/qr/decode.c src/qr/identify.c src/qr/version_db.c
+QR_WRAP         := src/qr/qr.c
+QR_CPPFLAGS     := -Isrc/qr -DQUIRC_FLOAT_TYPE=float
 DIFF_SRCS  := tests/diff/diff_main.c
 # AmigaOS-only front-end glue (bsdsocket SNTP, ...); m68k build only.
 AMIGA_SRCS := $(wildcard src/amiga/*.c)
@@ -40,6 +49,9 @@ DIFF_ITERS ?= 5000
 
 BUILD := build
 
+# Object paths for the vendored quirc decoder (needs $(BUILD), defined above).
+QUIRC_HOST_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-host/%.o,$(QUIRC_SRCS))
+
 .PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench clean
 
 all: test cli
@@ -49,8 +61,14 @@ test: $(BUILD)/run-tests
 	VAULT_TEST_FILE=$(BUILD)/amiauth-test.vault \
 		AMIAUTH_PREFS_DIR=$(BUILD)/prefs-test $(BUILD)/run-tests
 
-$(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) | $(BUILD)
-	$(CC) $(CFLAGS) $(CObjINC) -Itests $(CORE_SRCS) $(TEST_SRCS) -o $@
+$(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) | $(BUILD)
+	$(CC) $(CFLAGS) $(CObjINC) $(QR_CPPFLAGS) -Itests \
+		$(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) -o $@
+
+# Vendored quirc objects — host toolchain, warnings suppressed (third-party).
+$(BUILD)/qr-host/%.o: src/qr/%.c | $(BUILD)
+	@mkdir -p $(BUILD)/qr-host
+	$(CC) -std=c99 -O2 -w $(QR_CPPFLAGS) -c $< -o $@
 
 # --- Host: native CLI (for local development) ---
 # Named distinctly from the m68k 'AmiAuth' binary so the two don't collide on a
