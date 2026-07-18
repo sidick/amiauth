@@ -93,7 +93,9 @@ status command are done and verified on OS 3.2. Remaining Phase 4 work:
 ## v2 candidates (explicitly out of v1 scope)
 - SHA-256/SHA-512 TOTP variants.
 - Steam Guard's 5-character alphanumeric variant.
-- QR code *display* for exporting accounts to a phone (scanning is out — no camera).
+- QR code *display* for exporting accounts to a phone. (QR image *import* —
+  decoding an `otpauth://` code from an image file via datatypes.library — landed
+  in the Phase 4 GUI; live *camera* scanning stays out — no camera.)
 - ARexx port for automation, designed so **the port never carries the
   passphrase** (unlock is exclusively interactive). Command set: `GETCODE`,
   `TIMELEFT`, `LIST` (names only), `STATUS`, `LOCK`, `UNLOCK`, `SHOW`/`HIDE`/`QUIT`.
