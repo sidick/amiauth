@@ -65,16 +65,22 @@ Resolves corrected UTC without touching the system clock (full design in
 
 - **CLI** — no GUI dependency at all; retains full code-generation on OS 2.x and
   floppy-booted machines. Commands: `CODE`, `INIT`, `ADD`, `LIST`, `GET`,
-  `REMOVE`, `CLOCK`, `SYNC`. Amiga-only front-end glue (bsdsocket SNTP, ...) lives
-  in `src/amiga/` and is linked into the m68k build only; the host build stubs it.
-- **GUI (ClassAct/ReAction)** — `listbrowser.gadget` account list, large code
-  display, `fuelgauge.gadget` countdown, clipboard copy (clipboard.device, FTXT).
-  Uses only classes common to ClassAct 3.3 and ReAction; ClassAct classes bundled
-  for OS 3.0/3.1.
+  `REMOVE`, `SHOW`, `CLOCK`, `SYNC`, `OFFSET`. Amiga-only front-end glue (bsdsocket
+  SNTP, entropy, the GUI-forward client, ...) lives in `src/amiga/` and is linked
+  into the m68k build only; the host build stubs it. When a GUI is resident the
+  CLI **forwards** vault commands to it over a public message port
+  (`src/amiga/guiport.[ch]`) instead of opening the vault a second time.
+- **GUI (ClassAct/ReAction)** — a multi-column `listbrowser.gadget` (all accounts
+  with live codes + countdown), a large selected-code display, a
+  `fuelgauge.gadget` countdown, add / remove / edit, clipboard copy (iffparse
+  FTXT, auto-clear), the clock-status LED, and **QR-image import** (decode an
+  `otpauth://` QR from an image file via `datatypes.library` + a vendored quirc
+  decoder in `src/qr/`). Uses only classes common to ClassAct 3.3 and ReAction.
 - **Commodity shell** — runs resident via `commodities.library`: `CX_POPKEY` /
   `CX_POPUP` / `CX_PRIORITY` tooltypes, default hotkey `ctrl alt a`, window hides
-  (not quits) on close/Escape, full Exchange integration. Passphrase requested on
-  first show; derived key held while resident with optional idle auto-lock.
+  (not quits) on close, full Exchange integration (show/hide/enable/disable/kill),
+  single-instance. The unlocked vault is held while resident (with optional idle
+  auto-lock), so a hotkey pop-up or a forwarded CLI command needs no re-prompt.
 
 ## Build targets
 

@@ -8,10 +8,13 @@ for the platform — solves the accurate-time problem that TOTP depends on. Smal
 self-contained, and designed to run on anything from a stock 68000 A500 up to an
 accelerated or emulated machine.
 
-> **Status:** in development. The portable core (crypto, OTP, vault, `otpauth://`
-> import) and a working **CLI** are complete and RFC-verified, and cross-build to a
-> real AmigaOS binary — validated on OS 3.2 under Amiberry, including SNTP time
-> sync. The ReAction **GUI** and commodity are the remaining work. See
+> **Status:** feature-complete for v1, pending a first release. The portable core
+> (crypto, OTP, vault, `otpauth://` import), the **CLI**, and a resident **ReAction
+> GUI commodity** (live all-accounts view, add/remove/edit, clipboard copy,
+> QR-image import, hotkey/Exchange/WBStartup, single-instance) are all done and
+> RFC-verified, and cross-build to real AmigaOS binaries validated on OS 3.2 under
+> Amiberry/Copperline (including SNTP sync). Remaining: an interactive
+> on-hardware pass of the commodity/forwarding flows and Aminet packaging. See
 > [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## AI-assisted development
@@ -37,27 +40,35 @@ AmiAuth aims to make "my A1200 is my 2FA device" a real, daily-useful thing.
 
 ## Features (v1)
 
-✅ = implemented in the core/CLI · 🚧 = in progress (Amiga front-end)
+All implemented:
 
-- ✅ **TOTP & HOTP** — SHA-1, 6/8-digit codes, configurable period (30s default)
+- **TOTP & HOTP** — SHA-1, 6/8-digit codes, configurable period (30s default)
   and T0, validated against the official RFC test vectors.
-- ✅ **Easy secret entry** — padding/whitespace/case-tolerant Base32 decoding and
+- **Easy secret entry** — padding/whitespace/case-tolerant Base32 decoding and
   `otpauth://` URI parsing, so secrets from another authenticator paste directly.
-- ✅ **Multi-account store** — issuer/label per account, ordered list.
-- ✅ **Encrypted vault** — accounts encrypted at rest with a master passphrase
-  (PBKDF2 + ChaCha20, encrypt-then-MAC). Optional always-unlocked mode for
-  single-user or headless machines. (On-Amiga encrypted-vault creation awaits the
-  CSPRNG; always-unlocked works everywhere.)
-- ✅ **Accurate time without a working clock** — SNTP sync over `bsdsocket`, a
+- **Multi-account store** — issuer/label per account, ordered list.
+- **Encrypted vault** — accounts encrypted at rest with a master passphrase
+  (PBKDF2 + ChaCha20, encrypt-then-MAC), with a per-machine KDF calibration and
+  adaptive re-key, or an optional always-unlocked mode for single-user/headless
+  machines. Encrypted create/save works on real hardware (AmigaOS CSPRNG).
+- **Accurate time without a working clock** — SNTP sync over `bsdsocket`, a
   `locale.library` offset, and a manual offset/nudge, layered so it works with
   zero config on a networked machine and degrades gracefully to a floppy-booted
-  A500. (GUI status indicator is 🚧.)
-- ✅ **CLI** — dependency-free, works down to OS 2.x:
-  `CODE`, `INIT`, `ADD`, `LIST`, `GET`, `REMOVE`, `CLOCK`, `SYNC`. On Amiga it uses
-  standard `ReadArgs` parsing (`AmiAuth GET GitHub`, options as keywords like
-  `VAULT`/`ITERATIONS`; `AmiAuth ?` for the template, `HELP` for the command list).
-- 🚧 **GUI + commodity** — a ClassAct/ReAction GUI that runs as a proper commodity
-  (resident, hotkey popup, Exchange integration).
+  A500, with a red/amber/green trust indicator in the GUI.
+- **CLI** — dependency-free, works down to OS 2.x:
+  `CODE`, `INIT`, `ADD`, `LIST`, `GET`, `REMOVE`, `SHOW`, `CLOCK`, `SYNC`,
+  `OFFSET`. On Amiga it uses standard `ReadArgs` parsing (`AmiAuth GET GitHub`,
+  options as keywords like `VAULT`/`ITERATIONS`; `AmiAuth ?` for the template,
+  `HELP` for the command list).
+- **ReAction GUI** — a live all-accounts list with per-account codes + countdown,
+  a big selected-code display and fuelgauge, add / remove / edit, clipboard copy
+  (with auto-clear), the clock-status LED, idle auto-lock for encrypted vaults,
+  and **QR-image import** (decode an `otpauth://` enrolment QR from a
+  PNG/JPEG/GIF/IFF via a file requester or drag-and-drop).
+- **Background commodity** — the GUI lives in Exchange, pops up on a hotkey, runs
+  from WBStartup, and is single-instance: one resident process holds the unlocked
+  vault, and the CLI forwards commands to it (no second passphrase prompt) rather
+  than opening the vault independently.
 
 ## Design principles
 
@@ -79,7 +90,9 @@ AmiAuth aims to make "my A1200 is my 2FA device" a real, daily-useful thing.
     make cli          # native CLI  -> build/amiauth-host
     make smoke        # end-to-end CLI smoke test
     make diff         # differential fuzz vs OpenSSL (opt-in; needs libcrypto)
-    make m68k-docker  # AmigaOS binary via the amiga-gcc container -> build/AmiAuth
+    make m68k-docker  # AmigaOS CLI via the amiga-gcc container -> build/AmiAuth
+    make gui-docker   # AmigaOS ReAction GUI  -> build/AmiAuthGUI
+    make gui-smoke    # headless GUI render test (WB 3.2 under Copperline)
 
 The core is portable C, so `test`/`cli` build with any host compiler. Example:
 `build/amiauth-host CODE JBSWY3DPEHPK3PXP` prints a code.
