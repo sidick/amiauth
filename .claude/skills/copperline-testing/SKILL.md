@@ -8,8 +8,10 @@ description: >
   program produces no output, deciding how to capture output on-target, or
   attaching gdb to a guest-launched program. Encodes what the AmiAuth spike
   discovered, including a dead end that stays dead (AUX: redirection in a
-  minimal boot) and one that got resolved upstream (symbol-level GDB — now
-  has a working recipe, see below; don't re-flag it as broken).
+  minimal boot), one that got resolved upstream (symbol-level GDB — now
+  has a working recipe, see below; don't re-flag it as broken), and a
+  still-unsolved gap (precise mouse clicks on small gadget targets — this
+  is *why* AmiAuth's own GUI got keyboard shortcuts for everything).
 ---
 
 # Testing AmigaOS binaries under Copperline
@@ -109,6 +111,23 @@ in `assets/aros`.
   but not a stripped one. `SER:` can't take text at all. → Use `RawPutChar`, or
   boot a real Workbench (HDF/floppy) if you must capture a normal program's
   stdout.
+- **Precise mouse clicks on small gadget targets remain unreliable — still
+  unsolved, don't sink more time into it without a new idea.** Tried across
+  two separate #37 (on-hardware pass) sessions, both `--mouse-after`
+  relative deltas and clamp-to-corner-then-delta calibration: cursor
+  positioning CAN be made to visually land on a target (confirmed via
+  `--screenshot-after`), but the click itself frequently doesn't register —
+  worked precisely zero times against Exchange's commodity list/buttons,
+  and is why AmiAuth's own GUI gadgets grew keyboard shortcuts (#55/#56)
+  instead of relying on scripted clicks. The scale factor between
+  `--mouse-after DX DY` and actual screen pixels is also non-linear
+  (small deltas move far less than proportionally, larger ones move
+  more — looks like host mouse acceleration bleeding through), so even
+  *positioning* takes several iterative screenshot-and-adjust rounds, not
+  one computed delta. If revisiting this, the Control Protocol's live
+  session (see the "When fixed timestamps aren't enough" note above) is a
+  more promising angle than more `--mouse-after` guessing — it's untried
+  for mouse clicks specifically.
 - **Symbol-level GDB debugging — RESOLVED as of 0.12.0, kept here for
   context; use the recipe below instead of re-deriving.** The original 0.11 report
   (LinuxJedi/Copperline#181) turned out to be mostly a testing artifact, per
@@ -174,6 +193,18 @@ toolchain, no build deps, and it bundles AROS):
 - Kickstart ROMs: `~/Documents/Amiberry/Roms/` (e.g. `amiga-os-310-a600.rom`,
   a 512 KiB 3.1). Workbench/Storage ADFs: `~/Documents/Amiberry/ADF/`.
 - `xdftool` (extract files from ADFs): `~/src/amitools/bin/xdftool`.
+- **`AMIAUTH_WB_HDD` (tests/gui/.env) is a live, read-write Amiberry hard-drive
+  directory, not a Copperline-owned fixture.** Any *Amiberry* session (not
+  Copperline, whose `[ide]` mount snapshots it into RAM and discards writes)
+  has full write access and can leave it in a weird state. If `cp -Rc`/`cp -R`
+  cloning it before a Copperline boot goes from its usual ~5s to minutes
+  partway through (starts fast, degrades to a crawl - confirmed with `cp -Rv`
+  showing real but glacial progress, not a true hang), that's the likely
+  cause, or general disk/cache pressure from a long session (many Docker
+  builds etc.) - not evidence of anything wrong with AmiAuth itself. Kill and
+  retry fresh (a new session usually clears it) rather than waiting it out or
+  concluding the source directory is corrupted; `du -sh` on it should read
+  a few tens of MB, not more.
 - m68k cross-build: `make m68k-docker` (the `stefanreinauer/amiga-gcc` container;
   no local toolchain needed).
 - `/opt/amiga/bin/m68k-amigaos-gdb` also exists locally — **use this one, not
