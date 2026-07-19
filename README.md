@@ -124,6 +124,13 @@ degrades to a plain window (close = quit).
 
 ## Documentation
 
+**User documentation lives on the [project wiki](https://github.com/sidick/amiauth/wiki)** —
+installation, getting started, the CLI command reference, the GUI and
+commodity/tooltypes, vault and passphrases, time sync, settings, and
+troubleshooting/FAQ.
+
+Developer-facing design notes live in `docs/`:
+
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — module layout and build targets.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased delivery plan and v2 candidates.
 - [`docs/SECURITY.md`](docs/SECURITY.md) — threat model and the honest security note.

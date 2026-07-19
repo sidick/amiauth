@@ -92,13 +92,15 @@ headless-scriptable).
 
 ## Phase 5 — Release
 - [x] Docs, including the honest security note (+ an AI-use disclosure)
-- [ ] **Comprehensive, organised user documentation before release** —
-      consolidate the current scattered `docs/` design notes + README into a
-      proper user-facing guide: install/first-run, the CLI command reference, the
-      GUI + commodity (tooltypes, hotkey, Exchange, hide/show), the vault +
-      security model, time sync (SNTP/offset/LED), and troubleshooting/FAQ.
-      Ideally ship an **AmigaGuide (`.guide`)** version too for on-Amiga reading
-      (hyperlinked, viewable with `AmigaGuide`/`MultiView`).
+- [~] **Comprehensive, organised user documentation before release** — live on
+      the [GitHub wiki](https://github.com/sidick/amiauth/wiki): install /
+      getting-started, CLI command reference, GUI guide, commodity + tooltypes,
+      account management, vault + passphrases, time sync, settings reference,
+      security model, troubleshooting/FAQ, building from source. `docs/` keeps
+      the developer-facing design notes. Remaining: an **AmigaGuide
+      (`.guide`)** version for on-Amiga reading (hyperlinked, viewable with
+      `AmigaGuide`/`MultiView`), generated from the wiki pages so there is one
+      source of truth.
 - [ ] (maybe) **Installer** — an Amiga `Installer` script for guided setup (copy
       to a drawer, optional WBStartup with tooltypes, ENVARC: prefs). Not sure it
       is needed: weigh against the "runs from a single drawer, no installer" goal
@@ -115,6 +117,11 @@ headless-scriptable).
   anything down to a stock 68000 OS 2.x machine.
 
 ## v2 candidates (explicitly out of v1 scope)
+- **`VAULT` tooltype/argument for the GUI** — the CLI takes `VAULT/K`, but
+  `AmiAuthGUI` currently resolves its vault only via `AMIAUTH_VAULT`, the
+  saved `ENVARC:AmiAuth/vault` pref, or the `PROGDIR:` default. Accept a
+  `VAULT=` icon tooltype / Shell argument (via the existing `ArgArrayInit`
+  parse) with the same precedence as the CLI's explicit override.
 - SHA-256/SHA-512 TOTP variants.
 - Steam Guard's 5-character alphanumeric variant.
 - QR code *display* for exporting accounts to a phone. (QR image *import* —
