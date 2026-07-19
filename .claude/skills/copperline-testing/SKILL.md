@@ -5,9 +5,11 @@ description: >
   emulator — booting from a host directory, capturing guest output over serial,
   running windowless in CI, and the bundled-AROS ROM. Use when running/booting
   Amiga code under Copperline, adding a copperline test, debugging why a guest
-  program produces no output, or deciding how to capture output on-target.
-  Encodes what the AmiAuth spike discovered, including approaches that DON'T work
-  (AUX: redirection in a minimal boot; symbol-level GDB) so they aren't retried.
+  program produces no output, deciding how to capture output on-target, or
+  attaching gdb to a guest-launched program. Encodes what the AmiAuth spike
+  discovered, including a dead end that stays dead (AUX: redirection in a
+  minimal boot) and one that got resolved upstream (symbol-level GDB — now
+  has a working recipe, see below; don't re-flag it as broken).
 ---
 
 # Testing AmigaOS binaries under Copperline
@@ -107,38 +109,39 @@ in `assets/aros`.
   but not a stripped one. `SER:` can't take text at all. → Use `RawPutChar`, or
   boot a real Workbench (HDF/floppy) if you must capture a normal program's
   stdout.
-- **Symbol-level GDB debugging didn't work under 0.11, but retry this with
-  0.12 — it's not as settled as it sounds.** What was actually confirmed
-  (see `tests/copperline/GDB_FEEDBACK.md`): the **remote connection itself
-  worked fine** — `target remote` connects, and register reads, memory
-  reads, and absolute-address breakpoints all worked over the wire. This is
-  not a "gdb couldn't connect" problem. The two specific, separately
-  reproduced failures were (1) Copperline's 0.11 `--gdb` stub had no
-  `monitor` command, so `monitor segments` (docs' recommended way to learn
-  where a guest-`LoadSeg`'d program landed) errored with `"monitor" command
-  not supported`; and (2) the bebbo `amiga-gcc` toolchain's own
-  `m68k-amigaos-gdb`, purely locally (`file prog`, no remote step involved),
-  couldn't parse the `-amiga-debug-hunk` executable format at all, and the
-  toolchain has no ELF output target to work around it with.
-  **0.12 adds exactly the piece that (1) needed** — LoadSeg break events, so
-  the stub can now signal when a guest program loads, which is what a
-  pending breakpoint needs to resolve — plus stub reconnect survival. That's
-  worth a real retry: connect with a 0.12 stub and see whether LoadSeg
-  events let symbol-relative breakpoints bind without a `monitor segments`
-  fallback at all. Blocker (2), the local gdb/BFD's hunk-format parsing, is
-  unrelated to Copperline and would need a different gdb build (or an ELF
-  toolchain) regardless of emulator version. Filed upstream:
-  LinuxJedi/Copperline#181.
-  **When retrying, use the local `/opt/amiga/bin/m68k-amigaos-gdb`, not the
-  `stefanreinauer/amiga-gcc` Docker container's gdb** (this is the opposite
-  of the *build* guidance elsewhere — builds should use `make m68k-docker`
-  for reproducibility, but a debugger needs to reach Copperline's TCP stub
-  directly, which is simpler outside Docker's networking). Note the local
-  install currently reports the identical version
-  (`13.0.50.251124-132852-git`) to the container's, so blocker (2) will very
-  likely reproduce unchanged — retrying is really about confirming whether
-  0.12's LoadSeg events fix blocker (1), not about the local-vs-container
-  choice fixing the hunk-parsing problem.
+- **Symbol-level GDB debugging — RESOLVED as of 0.12.0, kept here for
+  context; use the recipe below instead of re-deriving.** The original 0.11 report
+  (LinuxJedi/Copperline#181) turned out to be mostly a testing artifact, per
+  the maintainer's reply and independent re-verification here (2026-07-19,
+  full details in `tests/copperline/GDB_FEEDBACK.md`):
+  - The `"monitor" command not supported by this target"` failure was gdb's
+    **dummy-target** response to a `target remote` that never actually
+    connected — the original gdb ran **inside the `stefanreinauer/amiga-gcc`
+    Docker container**, whose `localhost` isn't the host's. Connect from
+    **`/opt/amiga/bin/m68k-amigaos-gdb`** (this project's local toolchain
+    copy) instead — no networking workaround needed, and `monitor
+    help`/`loadseg-break`/`loadseg-list` all answer immediately.
+  - **`monitor loadseg-break`** (new in 0.12.0) is the fix for "no way to
+    relocate a program `LoadSeg`'d after connect": arm it, `continue`, and
+    the stub stops the moment a new program's seglist installs, reporting
+    the base address for `add-symbol-file` — no manual address-hunting, no
+    `monitor segments` fallback needed. Verified working end-to-end here
+    against a real boot.
+  - `break main`-level (function-symbol) breakpoints work fine from a `-g`
+    hunk exe on **both** the local and container gdb builds (the
+    macOS-vs-Linux BFD gap the maintainer described didn't reproduce here —
+    probably a since-rebuilt container image). But **`-g` alone is still
+    hunk-symbols-only, no DWARF** — `list`/`next`/source-stepping fail
+    (`No symbol table is loaded`) even right after a successful `break
+    main`. Real source-level stepping needs an ELF-with-DWARF sibling built
+    via an `m68k-elf` toolchain + `elf2hunk`, loaded alongside the running
+    hunk binary with `add-symbol-file` — untried so far, not yet needed.
+
+  **Recipe** (function-level breakpoints + register/memory poking, no
+  manual addresses): connect with the local gdb, `monitor loadseg-break`,
+  `continue` to the load event, `detach` (stub stays paused, doesn't exit),
+  `file <the-now-known-binary>`, `target remote` again, set breakpoints,
+  `continue`.
 
 ## CI (GitHub Actions)
 
@@ -174,9 +177,13 @@ toolchain, no build deps, and it bundles AROS):
 - m68k cross-build: `make m68k-docker` (the `stefanreinauer/amiga-gcc` container;
   no local toolchain needed).
 - `/opt/amiga/bin/m68k-amigaos-gdb` also exists locally — **use this one, not
-  the Docker container's gdb**, if retrying the GDB workflow above (the
-  container is for reproducible *builds*; a debugger needs a direct route to
-  Copperline's TCP stub).
+  the Docker container's gdb**, for the GDB workflow above: it's what worked
+  in the confirmed recipe, and running gdb inside the container was the
+  actual root cause of the original "monitor not supported" false alarm
+  (container `localhost` ≠ host `localhost`, so `target remote` silently
+  never connects). Opposite of the *build* guidance elsewhere — builds
+  should use `make m68k-docker` for reproducibility, but a debugger needs a
+  direct route to Copperline's TCP stub on the host.
 
 ## Useful flags
 
