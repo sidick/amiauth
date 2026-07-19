@@ -109,14 +109,18 @@ Quit for real from **Project → Quit** or Exchange's "Kill".
 Drop it in **WBStartup** (or run from the Startup-Sequence) with these icon
 **tooltypes**:
 
-| Tooltype      | Default        | Meaning                                        |
-|---------------|----------------|------------------------------------------------|
-| `CX_POPKEY`   | `ctrl alt a`   | hotkey that shows/raises the window            |
-| `CX_POPUP`    | `yes`          | `no` = start hidden (window opens on the hotkey) |
-| `CX_PRIORITY` | `0`            | commodity broker priority                      |
-| `DONOTWAIT`   | —              | (WBStartup) don't make Workbench wait for it   |
+| Tooltype       | Default        | Meaning                                        |
+|----------------|----------------|------------------------------------------------|
+| `CX_POPKEY`    | `ctrl alt a`   | hotkey that shows/raises the window            |
+| `CX_POPUP`     | `yes`          | `no` = start hidden (window opens on the hotkey) |
+| `CX_PRIORITY`  | `0`            | commodity broker priority                      |
+| `TIMESERVER`   | `pool.ntp.org` | SNTP server for the startup time sync (else the saved `server` pref) |
+| `DONOTWAIT`    | —              | (WBStartup) don't make Workbench wait for it   |
 
-Without `commodities.library` it degrades to a plain window (close = quit).
+On startup the GUI does one SNTP time sync (if a TCP/IP stack is up) so its clock
+is accurate — this is what lights the status LED green; it fails quietly offline
+and falls back to the saved offset. Without `commodities.library` the GUI
+degrades to a plain window (close = quit).
 
 ## Documentation
 
