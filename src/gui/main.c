@@ -59,6 +59,7 @@
 #include "prefs.h"
 #include "entropy.h"                /* amiga_random (m68k build) */
 #include "qr.h"                     /* qr_decode_gray (portable QR decoder) */
+#include "pbkdf2.h"                 /* first-run KDF calibration probe */
 #include "../version.h"
 
 AMIAUTH_VERSTAG("AmiAuthGUI")
@@ -726,6 +727,163 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
     return done == 1 ? 1 : 0;
 }
 
+/* Record the vault's location in the prefs as an absolute path (resolved via
+ * Lock/NameFromLock), so later launches find it even when PROGDIR: has moved -
+ * the WBStartup gotcha in docs/STORAGE.md. Best-effort: falls back to the
+ * path as given. */
+static void record_vault_path(const char *path)
+{
+    char abs[256];
+    BPTR lock = Lock((CONST_STRPTR)path, ACCESS_READ);
+    strncpy(abs, path, sizeof abs - 1);
+    abs[sizeof abs - 1] = '\0';
+    if (lock) {
+        if (!NameFromLock(lock, (STRPTR)abs, sizeof abs)) {
+            strncpy(abs, path, sizeof abs - 1);
+            abs[sizeof abs - 1] = '\0';
+        }
+        UnLock(lock);
+    }
+    prefs_set("vault", abs);
+}
+
+/* Probe PBKDF2 speed and pick the iteration count for a new vault - aim ~1s
+ * to unlock on this machine (mirrors cli_calibrate; policy in SECURITY.md). */
+static uint32_t gui_calibrate(void)
+{
+    static const uint8_t salt[16] = { 0 };
+    uint8_t dk[64];
+    uint32_t probe = 4, t0, ms;
+
+    for (;;) {
+        t0 = amiga_millis();
+        pbkdf2_hmac_sha1((const uint8_t *)"calibration", 11, salt, sizeof salt,
+                         probe, dk, sizeof dk);
+        ms = amiga_millis() - t0;
+        if (ms >= 50) break;                       /* enough to extrapolate */
+        if (probe >= KDF_MAX_ITERATIONS) {
+            if (ms == 0) { memset(dk, 0, sizeof dk); return VAULT_DEFAULT_ITERATIONS; }
+            break;                                 /* just very fast; use it */
+        }
+        probe *= 4;
+    }
+    memset(dk, 0, sizeof dk);
+    return vault_calibrate_iterations(probe, ms);
+}
+
+/* Pick a different home for the vault when the default is not writable
+ * (read-only or protected install; docs/STORAGE.md). Returns 1 with `path`
+ * (cap bytes) replaced by the chosen file. */
+static int vault_location_request(char *path, size_t cap)
+{
+    struct FileRequester *fr;
+    int ok = 0;
+    if (!AslBase) return 0;
+    fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
+        ASLFR_TitleText,   (ULONG)"Choose where to keep the vault",
+        ASLFR_DoSaveMode,  TRUE,
+        ASLFR_InitialFile, (ULONG)"AmiAuth.vault",
+        TAG_END);
+    if (!fr) return 0;
+    if (AslRequest(fr, NULL) && fr->fr_File[0]) {
+        path[0] = '\0';
+        strncpy(path, (const char *)fr->fr_Drawer, cap - 1);
+        path[cap - 1] = '\0';
+        AddPart((STRPTR)path, (STRPTR)fr->fr_File, (ULONG)cap);
+        ok = 1;
+    }
+    FreeAslRequest(fr);
+    return ok;
+}
+
+/* First-launch setup: no vault exists, so create one from Workbench - the CLI
+ * must not be a requirement for setup. Mirrors CLI INIT: empty passphrase =
+ * always-unlocked behind an explicit warning, otherwise encrypted with a
+ * freshly calibrated PBKDF2 count. On success *v is the saved, unlocked
+ * vault, `path` (cap bytes) may have been redirected to a writable location,
+ * the absolute path is recorded in the prefs, and *encrypted is set.
+ * Returns 1 to continue into the app, 0 to quit (nothing written). */
+static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted)
+{
+    char pass[128], confirm[128];
+    vault_result rc = VAULT_ERR_IO;
+
+    if (gui_requester(NULL,
+            "Welcome to AmiAuth!\n\nThere is no vault yet - it will be created at\n%s",
+            "Create a vault...|Quit", path) != 1)
+        return 0;
+
+    for (;;) {
+        if (!passphrase_request("New passphrase (empty = always-unlocked):",
+                                pass, sizeof pass))
+            return 0;
+        if (!pass[0]) {
+            if (gui_requester(NULL,
+                    "Store the vault UNENCRYPTED?\n\n"
+                    "With no passphrase there is no at-rest protection:\n"
+                    "anyone with access to the file can read your secrets.\n"
+                    "(You can add a passphrase later.)",
+                    "Store unencrypted|Go back", NULL) != 1)
+                continue;
+            rc = vault_create(v, NULL, 0, NULL);
+            *encrypted = 0;
+            break;
+        }
+        if (!passphrase_request("Confirm passphrase:", confirm, sizeof confirm)) {
+            memset(pass, 0, sizeof pass);
+            return 0;
+        }
+        if (strcmp(pass, confirm) != 0) {
+            memset(confirm, 0, sizeof confirm);
+            memset(pass, 0, sizeof pass);
+            gui_requester(NULL, "The passphrases did not match.", "Try again", NULL);
+            continue;
+        }
+        memset(confirm, 0, sizeof confirm);
+        {
+            uint8_t salt[VAULT_SALT_SIZE];
+            if (amiga_random(salt, sizeof salt) != 0) {
+                memset(pass, 0, sizeof pass);
+                gui_requester(NULL,
+                    "No secure random source is available, so an\n"
+                    "encrypted vault cannot be created safely.",
+                    "Cancel", NULL);
+                return 0;
+            }
+            /* a second or two of PBKDF2 probing - same ~1s policy as the CLI */
+            rc = vault_create(v, pass, gui_calibrate(), salt);
+            memset(salt, 0, sizeof salt);
+        }
+        memset(pass, 0, sizeof pass);
+        *encrypted = 1;
+        break;
+    }
+
+    if (rc == VAULT_OK) rc = gui_save(v, path);
+    while (rc == VAULT_ERR_IO) {
+        /* the resolved spot is unwritable (read-only install?): offer another */
+        if (gui_requester(NULL,
+                "Cannot write the vault to\n%s\n\nChoose another location?",
+                AslBase ? "Choose location...|Quit" : "Quit", path) != 1 ||
+            !vault_location_request(path, cap)) {
+            vault_lock(v);
+            return 0;
+        }
+        rc = gui_save(v, path);
+    }
+    if (rc != VAULT_OK) {
+        vault_lock(v);
+        gui_requester(NULL, "Creating the vault failed.", "Quit", NULL);
+        return 0;
+    }
+    {   /* an AMIAUTH_VAULT override is session-scoped: don't make it sticky
+         * (mirrors the CLI, which only records a non-overridden INIT path) */
+        const char *env = getenv("AMIAUTH_VAULT");
+        if (!(env && env[0])) record_vault_path(path);
+    }
+    return 1;
+}
+
 /* --- modal requester with an editable string.gadget for an otpauth:// URI.
  * Returns 1 with the (NUL-terminated) URI in buf, 0 on cancel/empty. Needs
  * string.gadget; returns 0 if unavailable. The gadget supports native paste. */
@@ -1055,8 +1213,23 @@ int main(int argc, char **argv)
         }
     }
 
-    path = vault_path();
-    rc = vault_load(&v, path, NULL);
+    {
+        static char vpath[512];           /* mutable: first-run may relocate it */
+        strncpy(vpath, vault_path(), sizeof vpath - 1);
+        vpath[sizeof vpath - 1] = '\0';
+        path = vpath;
+        rc = vault_load(&v, path, NULL);
+        if (rc == VAULT_ERR_IO) {
+            BPTR l = Lock((CONST_STRPTR)path, ACCESS_READ);
+            if (!l) {                     /* no vault at all: first launch */
+                if (!gui_first_run(&v, vpath, sizeof vpath, &encrypted))
+                    goto cleanup;
+                rc = VAULT_OK;
+            } else {
+                UnLock(l);                /* exists but unreadable: error below */
+            }
+        }
+    }
     if (rc == VAULT_ERR_LOCKED) {
         const char *msg = "Enter passphrase:";
         encrypted = 1;                     /* enables idle auto-lock */
@@ -1077,6 +1250,9 @@ int main(int argc, char **argv)
         }
     }
     if (rc != VAULT_OK) {
+        /* a WB-launched process has no console, so a requester must carry
+         * the error; keep the Printf for Shell launches */
+        gui_requester(NULL, "Cannot open the vault at\n%s", "Quit", path);
         Printf((CONST_STRPTR)"AmiAuth: cannot open the vault (%ld)\n", (LONG)rc);
         retcode = 10;
         goto cleanup;

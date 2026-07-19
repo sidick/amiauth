@@ -143,3 +143,31 @@ toolchain, no build deps, and it bundles AROS):
 `--screenshot-after SECS PATH` (grab + exit) · `--gdb ADDR` (remote stub) ·
 `--noaudio` · `--model/--cpu/--chip/--fast/--slow` · positional `ROM` overrides
 the config's `rom`. Boot config is TOML (`--config FILE`).
+
+## Scripted input: driving interactive GUIs headlessly (0.11+)
+
+Copperline CAN drive interactive flows — no Amiberry needed. Time-based input
+directives, combinable with `--screenshot-after` (all verified working on the
+AmiAuthGUI first-run flow, 2026-07):
+
+- `--key-after SECS KEY MS` — press KEY at SECS, hold MS, release. Key names:
+  `a`-`z`, `return`, `ctrl`, `lalt`, `lami`, `rami`, `f1`… Integer seconds.
+- `--press-after SECS KEY` — one press/release.
+- `--click-after SECS BTN MS`, `--mouse-after SECS DX DY` — mouse, but prefer
+  keyboard: **system requesters answer LAmiga+V (leftmost gadget) / LAmiga+B
+  (rightmost)**, and menu shortcuts are RAmiga+letter — no coordinates needed.
+- `--script FILE` — the same directives, one per line, without the leading
+  dashes (`key-after 52 lami 1500`); `#` comments allowed. `--record-input`
+  or Cmd+Shift+R records a live session into this format.
+
+Hold a modifier by overlapping windows: `key-after 52 lami 1500` +
+`key-after 53 v 200` = LAmiga+V at t≈53. Emulation is deterministic, so the
+same script hits the same frames — probe timings with one `--screenshot-after`
+per run and then trust them.
+
+**Host-dir mounts are throwaway.** Guest writes go to the in-memory FFS
+volume, never back to the host dir — a file "saved" in one boot is gone on
+the next. Multi-phase interactive tests (create → relaunch → verify) must
+happen within ONE boot: run the program twice *synchronously* from a script
+started in Startup-Sequence (`Execute` a file with two launch lines; quit the
+first instance with a scripted RAmiga+Q, the second then starts).

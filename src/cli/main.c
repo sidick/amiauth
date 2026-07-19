@@ -490,7 +490,36 @@ static int cmd_offset(const char *arg)
     return 0;
 }
 
-static int cmd_init(const char *path, int always_unlocked, long iterations)
+/* Record where the vault lives (absolute path) in the prefs at creation, so
+ * every later launch - and the GUI, even started from WBStartup where
+ * PROGDIR: differs - finds the same vault (docs/STORAGE.md). Only called when
+ * the path was not explicitly overridden, so scratch `VAULT=` vaults created
+ * for tests or experiments never hijack the pref. */
+static void record_vault_path(const char *path)
+{
+#ifdef AMIAUTH_AMIGA
+    static char abs[512];              /* static: off the ~4 KB shell stack */
+    BPTR lock;
+    strncpy(abs, path, sizeof abs - 1);
+    abs[sizeof abs - 1] = '\0';
+    lock = Lock((CONST_STRPTR)path, ACCESS_READ);
+    if (lock) {
+        if (!NameFromLock(lock, (STRPTR)abs, sizeof abs)) {
+            strncpy(abs, path, sizeof abs - 1);
+            abs[sizeof abs - 1] = '\0';
+        }
+        UnLock(lock);
+    }
+    prefs_set("vault", abs);
+#else
+    char *abs = realpath(path, NULL);
+    prefs_set("vault", abs ? abs : path);
+    free(abs);
+#endif
+}
+
+static int cmd_init(const char *path, int always_unlocked, long iterations,
+                    int record_path)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc;
@@ -552,6 +581,7 @@ static int cmd_init(const char *path, int always_unlocked, long iterations)
     }
     printf("Created %s vault at %s\n",
            v.cipher == VAULT_CIPHER_NONE ? "always-unlocked" : "encrypted", path);
+    if (record_path) record_vault_path(path);
     vault_lock(&v);
     return 0;
 }
@@ -768,7 +798,11 @@ static int dispatch(const cli_args *a)
     if (!a->command)                    return usage();
     if (ci_streq(a->command, "CODE"))
         return a->value ? cmd_code(a->value, a->digits, a->period) : usage();
-    if (ci_streq(a->command, "INIT"))   return cmd_init(vault, a->open, a->iterations);
+    if (ci_streq(a->command, "INIT")) {
+        const char *env = getenv("AMIAUTH_VAULT");
+        int defaulted = !a->vault && !(env && env[0]);
+        return cmd_init(vault, a->open, a->iterations, defaulted);
+    }
     if (ci_streq(a->command, "ADD"))    return a->value ? cmd_add(vault, a->value) : usage();
     if (ci_streq(a->command, "LIST"))   return cmd_list(vault);
     if (ci_streq(a->command, "GET"))    return a->value ? cmd_get(vault, a->value) : usage();
