@@ -98,6 +98,11 @@ struct Library       *CxBase          = NULL;   /* commodities.library (Stage 3:
  * Created only when datatypes + workbench are available. */
 static struct MsgPort *g_appport = NULL;
 
+/* Last known window position/size, remembered across a hide/show cycle
+ * (Exchange Hide/Show, idle auto-lock, the close gadget) so re-showing the
+ * window doesn't snap back to WPOS_CENTERSCREEN. -1 = no size seen yet. */
+static WORD g_winleft = -1, g_wintop = -1, g_winw = -1, g_winh = -1;
+
 /* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none),
  * drawn in a recessed bevel (shadow/shine pens from the screen's DrawInfo). */
 static LONG g_ledpen[3] = { -1, -1, -1 };
@@ -646,10 +651,13 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
 
     if (cap == 0) return 0;
     buf[0] = '\0';
-    stars[0] = '\0';
+    /* trailing '_' is a static cursor: the field is a read-only display
+     * (real keys are captured at window level, see below), so there's no
+     * gadget-drawn cursor to show it has focus without this (#37). */
+    stars[0] = '_'; stars[1] = '\0';
 
     maskobj   = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ReadOnly, TRUE, GA_Text, (ULONG)"", TAG_END);
+        GA_ReadOnly, TRUE, GA_Text, (ULONG)"_", TAG_END);
     okobj     = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID, PWID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"OK",     TAG_END);
     cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
@@ -708,15 +716,17 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
                     else if (code == 0x1B) done = 0;                 /* Escape */
                     else if (code == 0x08 || code == 0x7F) {         /* Backspace/Del */
                         if (len > 0) {
-                            buf[--len] = '\0'; stars[len] = '\0';
+                            buf[--len] = '\0';
+                            stars[len] = '_'; stars[len + 1] = '\0';
                             SetGadgetAttrs((struct Gadget *)maskobj, w, NULL,
                                            GA_Text, (ULONG)stars, TAG_END);
                         }
                     } else if (code >= 0x20 && code < 0x7F) {        /* printable */
-                        if (len < cap - 1 && len < sizeof stars - 1) {
+                        if (len < cap - 1 && len < sizeof stars - 2) {
                             buf[len] = (char)code; stars[len] = '*';
                             len++;
-                            buf[len] = '\0'; stars[len] = '\0';
+                            buf[len] = '\0';
+                            stars[len] = '_'; stars[len + 1] = '\0';
                             SetGadgetAttrs((struct Gadget *)maskobj, w, NULL,
                                            GA_Text, (ULONG)stars, TAG_END);
                         }
@@ -1194,7 +1204,11 @@ static int gui_find_account(const vault *v, const char *q)
 static struct Window *win_show(Object *winobj, Object *statobj,
                                ULONG *winsig, int ledstate)
 {
-    struct Window *w = (struct Window *)DoMethod(winobj, WM_OPEN, NULL);
+    struct Window *w;
+    if (g_winleft >= 0)                     /* reopen where it was last shown */
+        SetAttrs(winobj, WA_Left, g_winleft, WA_Top, g_wintop,
+                 WA_Width, g_winw, WA_Height, g_winh, TAG_END);
+    w = (struct Window *)DoMethod(winobj, WM_OPEN, NULL);
     if (w) {
         GetAttr(WINDOW_SigMask, winobj, winsig);
         led_pens_alloc(w);
@@ -1206,6 +1220,8 @@ static struct Window *win_show(Object *winobj, Object *statobj,
 static void win_hide(Object *winobj, struct Window *w)
 {
     if (!w) return;
+    g_winleft = w->LeftEdge; g_wintop = w->TopEdge;
+    g_winw    = w->Width;    g_winh   = w->Height;
     led_pens_free(w);
     DoMethod(winobj, WM_CLOSE, NULL);
 }
@@ -1215,7 +1231,6 @@ static void win_hide(Object *winobj, struct Window *w)
 int main(int argc, char **argv)
 {
     static vault v;                     /* ~19 KB: keep it off the stack */
-    static char pass[128];              /* passphrase buffer; off the stack, scrubbed after use */
     struct List lblist;
     Object *winobj = NULL, *codeobj = NULL, *gaugeobj = NULL, *listobj = NULL, *copyobj = NULL;
     Object *statobj = NULL, *addobj = NULL, *editobj = NULL, *removeobj = NULL;
@@ -1474,7 +1489,11 @@ int main(int argc, char **argv)
                             | IDCMP_RAWKEY,        /* cursor up/down list navigation, #55 */
             WINDOW_Position, WPOS_CENTERSCREEN,
             GadToolsBase ? WINDOW_NewMenu : TAG_IGNORE, (ULONG)g_menu,
-            g_appport ? WINDOW_AppPort : TAG_IGNORE, (ULONG)g_appport,
+            g_appport ? WINDOW_AppPort   : TAG_IGNORE, (ULONG)g_appport,
+            /* WINDOW_AppPort alone only wires the port for iconify support;
+             * WINDOW_AppWindow is what actually registers the window as a
+             * Workbench drag-and-drop target (AddAppWindowA under the hood). */
+            g_appport ? WINDOW_AppWindow : TAG_IGNORE, (ULONG)TRUE,
             WINDOW_Layout,   (ULONG)layoutobj,
             TAG_END);
     }
@@ -1651,27 +1670,17 @@ int main(int argc, char **argv)
              * clipboard is still ours (don't clobber something copied since). */
             if (clear_secs > 0 && --clear_secs == 0 && clip_write_id() == our_clipid)
                 clip_clear();
-            /* idle auto-lock: after enough inactivity, scrub an encrypted vault
-             * and re-prompt for the passphrase. Only while the window is open —
-             * hidden, the resident unlocked vault reachable by hotkey is the
-             * point (a future "lock on hide" pref could tighten this). */
+            /* idle auto-lock: after enough inactivity, lock and hide an
+             * encrypted vault's window; the next Show/hotkey/AAP_SHOW
+             * re-prompts via the same deferred_open() path a hidden
+             * commodity start uses. Blocking here with a nested
+             * passphrase_request() modal instead would starve the
+             * window/hotkey/CLI-port signals for as long as it's up (#37). */
             if (win && encrypted && idle_limit > 0 && (long)(++idle_secs) >= idle_limit) {
-                const char *msg = "Locked - enter passphrase:";
                 vault_lock(&v);
-                /* blank with fixed widths so nothing shrinks (stale-pixel glitch) */
-                for (i = 0; i < naccounts; i++) { strcpy(g_code[i], "------"); strcpy(g_left[i], "   "); }
-                curcode[0] = '\0';
-                SetGadgetAttrs((struct Gadget *)listobj,  win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
-                SetGadgetAttrs((struct Gadget *)codeobj,  win, NULL, GA_Text, (ULONG)"------", TAG_END);
-                SetGadgetAttrs((struct Gadget *)gaugeobj, win, NULL, FUELGAUGE_Level, 0, TAG_END);
-                for (;;) {
-                    if (!passphrase_request(msg, pass, sizeof pass)) { running = 0; break; }
-                    rc = vault_load(&v, path, pass);
-                    memset(pass, 0, sizeof pass);
-                    if (rc == VAULT_OK) { idle_secs = 0; break; }
-                    if (rc == VAULT_ERR_AUTH) { msg = "Wrong passphrase - try again:"; continue; }
-                    running = 0; break;                 /* IO/format error */
-                }
+                win_hide(winobj, win); win = NULL;
+                deferred = 1;
+                idle_secs = 0;
             }
             /* recompute + refresh below, then re-arm */
             timer_arm(1);
