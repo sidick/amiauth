@@ -490,6 +490,22 @@ static int cmd_offset(const char *arg)
     return 0;
 }
 
+/* Adjust the current offset by a relative delta and save it — for dialling
+ * an offline machine's clock in by eye against a known-good code, a step at a
+ * time, without having to work out (or remember) the absolute offset. */
+static int cmd_nudge(const char *arg)
+{
+    clock_ctx c;
+    cli_clock_init(&c);
+    clock_nudge(&c, atol(arg));
+    if (prefs_set_long("offset", c.offset_seconds) != 0) {
+        fprintf(stderr, "AmiAuth: could not save the offset\n");
+        return 2;
+    }
+    print_clock(&c);
+    return 0;
+}
+
 /* Record where the vault lives (absolute path) in the prefs at creation, so
  * every later launch - and the GUI, even started from WBStartup where
  * PROGDIR: differs - finds the same vault (docs/STORAGE.md). Only called when
@@ -746,6 +762,7 @@ static int usage(void)
         "  CLOCK                              Show UTC offset + status\n"
         "  SYNC   [server]                    SNTP sync + save\n"
         "  OFFSET <seconds>                   Set + save a UTC offset\n"
+        "  NUDGE  <+/-seconds>                Adjust + save the current offset\n"
         "  HELP\n"
         "\n",
         p, p);
@@ -811,6 +828,7 @@ static int dispatch(const cli_args *a)
     if (ci_streq(a->command, "CLOCK"))  return cmd_clock();
     if (ci_streq(a->command, "SYNC"))   return cmd_sync(a->value);   /* NULL = default pool */
     if (ci_streq(a->command, "OFFSET")) return a->value ? cmd_offset(a->value) : usage();
+    if (ci_streq(a->command, "NUDGE"))  return a->value ? cmd_nudge(a->value) : usage();
     if (ci_streq(a->command, "HELP"))   { usage(); return 0; }
     return usage();
 }

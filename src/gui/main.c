@@ -116,7 +116,13 @@ static struct IFFHandle        *g_iff;
 
 #define CLIP_CLEAR_SECS 30      /* wipe our copied code off the clipboard after this */
 
-enum { GID_LIST = 1, GID_CODE, GID_GAUGE, GID_COPY, GID_ADD, GID_EDIT, GID_REMOVE };
+enum { GID_LIST = 1, GID_CODE, GID_GAUGE, GID_COPY, GID_ADD, GID_EDIT, GID_REMOVE,
+       GID_NUDGEDOWN, GID_NUDGEUP };
+
+/* Step size for the manual clock nudge buttons (seconds). Small enough for
+ * fine adjustment while watching the countdown against a known-good code
+ * (see docs/CLOCK.md); a few clicks covers a typical offline drift. */
+#define CLOCK_NUDGE_STEP 10
 enum { PWID_OK = 1, PWID_CANCEL, PWID_STR };   /* modal-requester gadgets */
 enum { EDID_ISSUER = 1, EDID_LABEL, EDID_DIGITS, EDID_PERIOD, EDID_OK, EDID_CANCEL };  /* edit form */
 
@@ -1212,6 +1218,7 @@ int main(int argc, char **argv)
     struct List lblist;
     Object *winobj = NULL, *codeobj = NULL, *gaugeobj = NULL, *listobj = NULL, *copyobj = NULL;
     Object *statobj = NULL, *addobj = NULL, *editobj = NULL, *removeobj = NULL;
+    Object *nudgednobj = NULL, *nudgeupobj = NULL;
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
@@ -1384,6 +1391,22 @@ int main(int argc, char **argv)
         GA_ReadOnly, TRUE,
         GA_Text,     (ULONG)statbuf,
         TAG_END);
+    /* Manual nudge (docs/CLOCK.md "manual nudge" layer): +/- CLOCK_NUDGE_STEP
+     * seconds against the current offset, for dialling an offline clock in by
+     * eye while watching the countdown/status update live. Mirrors the CLI's
+     * NUDGE command (clock_nudge, same persisted "offset" pref) rather than
+     * duplicating the logic. Always enabled — useful before any vault/account
+     * exists, and independent of the vault's lock state. */
+    nudgednobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_NUDGEDOWN,
+        GA_RelVerify, TRUE,
+        GA_Text,      (ULONG)"-10s",
+        TAG_END);
+    nudgeupobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_NUDGEUP,
+        GA_RelVerify, TRUE,
+        GA_Text,      (ULONG)"+10s",
+        TAG_END);
     {
         Object *btnrow = NewObject(LAYOUT_GetClass(), NULL,
             LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
@@ -1391,6 +1414,14 @@ int main(int argc, char **argv)
             LAYOUT_AddChild, (ULONG)editobj,
             LAYOUT_AddChild, (ULONG)removeobj,
             LAYOUT_AddChild, (ULONG)copyobj,
+            TAG_END);
+        Object *statrow = NewObject(LAYOUT_GetClass(), NULL,
+            LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
+            LAYOUT_AddChild,      (ULONG)nudgednobj,
+            CHILD_WeightedWidth,  0,
+            LAYOUT_AddChild,      (ULONG)statobj,
+            LAYOUT_AddChild,      (ULONG)nudgeupobj,
+            CHILD_WeightedWidth,  0,
             TAG_END);
         Object *layoutobj = NewObject(LAYOUT_GetClass(), NULL,
             LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
@@ -1404,7 +1435,7 @@ int main(int argc, char **argv)
             CHILD_WeightedHeight, 0,
             LAYOUT_AddChild,    (ULONG)btnrow,
             CHILD_WeightedHeight, 0,
-            LAYOUT_AddChild,    (ULONG)statobj,
+            LAYOUT_AddChild,    (ULONG)statrow,
             CHILD_WeightedHeight, 0,
             TAG_END);
         /* QR import is optional and feature-detected: grey the menu item unless
@@ -1636,6 +1667,7 @@ int main(int argc, char **argv)
             ULONG result;
             UWORD code;
             int docopy = 0, doadd_clip = 0, doadd_type = 0, doadd_qr = 0, doedit = 0, doremove = 0;
+            long donudge = 0;
             idle_secs = 0;                          /* any window input = activity */
             while ((result = DoMethod(winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
                 switch (result & WMHI_CLASSMASK) {
@@ -1655,10 +1687,12 @@ int main(int argc, char **argv)
                                 lastsec = cs; lastmic = cm;
                                 break;
                             }
-                            case GID_COPY:   docopy = 1;     break;
-                            case GID_ADD:    doadd_type = 1; break;
-                            case GID_EDIT:   doedit = 1;     break;
-                            case GID_REMOVE: doremove = 1;   break;
+                            case GID_COPY:      docopy = 1;     break;
+                            case GID_ADD:       doadd_type = 1; break;
+                            case GID_EDIT:      doedit = 1;     break;
+                            case GID_REMOVE:    doremove = 1;   break;
+                            case GID_NUDGEDOWN: donudge = -CLOCK_NUDGE_STEP; break;
+                            case GID_NUDGEUP:   donudge = CLOCK_NUDGE_STEP;  break;
                         }
                         break;
                     case WMHI_MENUPICK: {
@@ -1737,6 +1771,17 @@ int main(int argc, char **argv)
                 }
             }
 
+            /* --- Manual clock nudge: relative adjustment, saved immediately,
+             * status text + LED refreshed right away rather than waiting for
+             * the next timer tick. Independent of the vault (clock affects
+             * every account's code, encrypted or not). --- */
+            if (donudge) {
+                clock_nudge(&clk, donudge);
+                prefs_set_long("offset", clk.offset_seconds);
+                clock_status_text(&clk, statbuf);
+                SetGadgetAttrs((struct Gadget *)statobj, win, NULL, GA_Text, (ULONG)statbuf, TAG_END);
+                led_draw(win, statobj, clk.state);
+            }
         }
 
         /* --- drag-and-drop: image icons dropped on the window (QR import) --- */
