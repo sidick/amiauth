@@ -1,0 +1,103 @@
+name: Release
+
+# Tag-driven releases: a release PR bumps src/version.h + AmiAuth.readme
+# through normal review/CI, then pushing the matching v<version> tag runs this.
+# The GitHub release (with the Aminet package attached) is created
+# automatically; the actual Aminet FTP upload waits for manual approval via the
+# `aminet` environment.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify tag matches the source version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          src=$(sed -n 's/^#define AMIAUTH_VERSION[[:space:]]*"\(.*\)"$/\1/p' src/version.h)
+          readme=$(sed -n 's/^Version:[[:space:]]*\(.*\)$/\1/p' AmiAuth.readme)
+          echo "tag=$tag src/version.h=$src AmiAuth.readme=$readme"
+          [ "$tag" = "$src" ]    || { echo "::error file=src/version.h::Tag v$tag does not match AMIAUTH_VERSION \"$src\""; exit 1; }
+          [ "$tag" = "$readme" ] || { echo "::error file=AmiAuth.readme::Tag v$tag does not match Version: \"$readme\""; exit 1; }
+
+      - name: Cross-build m68k binaries (CLI + GUI)
+        run: make m68k-docker gui-docker
+
+      - name: Check the $VER strings made it into the binaries
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          for b in AmiAuth AmiAuthGUI; do
+            # -F: fixed-string match (the pattern contains $ and parens);
+            # -a: search the binary as text.
+            grep -aqF "\$VER: $b $v (" "build/$b" || { echo "::error::build/$b lacks \"\$VER: $b $v (...)\""; exit 1; }
+          done
+
+      # Ubuntu's `lhasa` is extract-only, so build the real LHa for UNIX from
+      # source. Pinned by commit; the release-20211125 tag no longer compiles
+      # with modern compilers (K&R declarations), master does.
+      - name: Install lha (pinned source build)
+        run: |
+          git clone https://github.com/jca02266/lha.git /tmp/lha
+          git -C /tmp/lha checkout 86094cb56aba34de45668f39f74fcfb61e9d7fb6
+          cd /tmp/lha && autoreconf -fi && ./configure && make
+          sudo install /tmp/lha/src/lha /usr/local/bin/lha
+
+      - name: Package the Aminet upload pair
+        run: make dist
+
+      - name: Validate the readme (no upload)
+        uses: sidick/aminet-release-action@v1
+        with:
+          filename: build/dist/AmiAuth.lha
+          readme: build/dist/AmiAuth.readme
+          category: util/crypt
+          validate-only: true
+
+      - name: Create GitHub release with the package attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "AmiAuth $GITHUB_REF_NAME" \
+            --generate-notes \
+            build/dist/AmiAuth.lha build/dist/AmiAuth.readme
+
+      - name: Keep the package for the Aminet job
+        uses: actions/upload-artifact@v4
+        with:
+          name: aminet-dist
+          path: |
+            build/dist/AmiAuth.lha
+            build/dist/AmiAuth.readme
+          if-no-files-found: error
+
+  aminet:
+    name: Upload to Aminet (waits for approval)
+    runs-on: ubuntu-latest
+    needs: release
+    # The `aminet` environment has a required reviewer, so this job pauses
+    # until the upload is explicitly approved in the Actions UI. Publishing to
+    # Aminet is irreversible-ish (uploads land in /new for moderation) - keep
+    # the human in the loop.
+    environment: aminet
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: aminet-dist
+          path: build/dist
+
+      - name: Upload to Aminet and attach to the GitHub release
+        uses: sidick/aminet-release-action@v1
+        with:
+          filename: build/dist/AmiAuth.lha
+          readme: build/dist/AmiAuth.readme
+          category: util/crypt

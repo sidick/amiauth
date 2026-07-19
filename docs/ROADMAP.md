@@ -105,8 +105,11 @@ headless-scriptable).
       to a drawer, optional WBStartup with tooltypes, ENVARC: prefs). Not sure it
       is needed: weigh against the "runs from a single drawer, no installer" goal
       below — drag-to-a-drawer must stay the primary, always-works path.
-- [~] Aminet packaging — the `.readme` is written to spec; wiring the
-      `aminet-release-action` workflow + tagging a version is the remaining step
+- [~] Aminet packaging — the `.readme` is to spec and the tag-driven release
+      workflow is wired (`release.yml`: version-drift check against
+      `src/version.h` + the `.readme`, m68k build, `make dist` lha packaging,
+      GitHub release with auto-notes, and an approval-gated
+      `aminet-release-action` FTP upload). Remaining: tag `v1.0`
 - [ ] Demo: log into GitHub using a code from real hardware
 
 ## Success criteria
