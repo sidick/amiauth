@@ -6,9 +6,48 @@ on:
   pull_request:
 
 jobs:
+  # Decide which jobs are relevant to the files a PR changes. Docs-only PRs
+  # (README, docs/, AmiAuth.readme, CLAUDE.md, ...) skip the build/test jobs
+  # entirely. The gated jobs are *required* status checks on main, which is why
+  # they are skipped via `if:` on a job that still runs (branch protection
+  # counts a skipped check as satisfied; a workflow filtered out by `paths:`
+  # would leave the PR blocked on "Expected" forever). Pushes to main always
+  # run everything. Workflow changes also run everything.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      host: ${{ steps.filter.outputs.host }}
+      core: ${{ steps.filter.outputs.core }}
+      build: ${{ steps.filter.outputs.build }}
+      target: ${{ steps.filter.outputs.target }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Classify changed files
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            for k in host core build target; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            exit 0
+          fi
+          files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD")
+          echo "Changed files:"; echo "$files"
+          match() { echo "$files" | grep -qE "$1" && echo true || echo false; }
+          always='^(Makefile|\.github/workflows/)'
+          {
+            echo "host=$(match "$always|^(src/|tests/)")"
+            echo "core=$(match "$always|^(src/core/|tests/diff/)")"
+            echo "build=$(match "$always|^src/")"
+            echo "target=$(match "$always|^(src/|tests/copperline/)")"
+          } >> "$GITHUB_OUTPUT"
+
   host-tests:
     name: Host vector tests
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.host == 'true'
     steps:
       - uses: actions/checkout@v7
       - name: Build and run tests
@@ -21,6 +60,8 @@ jobs:
   differential:
     name: Differential fuzz (vs OpenSSL)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     steps:
       - uses: actions/checkout@v7
       - name: Install OpenSSL headers
@@ -31,9 +72,8 @@ jobs:
   m68k-build:
     name: m68k Amiga build
     runs-on: ubuntu-latest
-    # Slower job (container pull): only on PRs and post-merge on main, not on
-    # every feature-branch change. Host tests are the fast per-push signal.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     container: stefanreinauer/amiga-gcc:latest
     steps:
       - uses: actions/checkout@v7
@@ -43,8 +83,8 @@ jobs:
   copperline-smoke:
     name: Copperline on-target smoke test (AROS)
     runs-on: ubuntu-latest
-    # Gate like the m68k build (pulls the amiga-gcc image to build the harness).
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    needs: changes
+    if: needs.changes.outputs.target == 'true'
     env:
       # Pin the Copperline release; bump to adopt upstream changes.
       COPPERLINE_VERSION: "0.11.0"
