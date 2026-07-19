@@ -92,6 +92,17 @@ headless-scriptable).
 
 ## Phase 5 — Release
 - [x] Docs, including the honest security note (+ an AI-use disclosure)
+- [ ] **Comprehensive, organised user documentation before release** —
+      consolidate the current scattered `docs/` design notes + README into a
+      proper user-facing guide: install/first-run, the CLI command reference, the
+      GUI + commodity (tooltypes, hotkey, Exchange, hide/show), the vault +
+      security model, time sync (SNTP/offset/LED), and troubleshooting/FAQ.
+      Ideally ship an **AmigaGuide (`.guide`)** version too for on-Amiga reading
+      (hyperlinked, viewable with `AmigaGuide`/`MultiView`).
+- [ ] (maybe) **Installer** — an Amiga `Installer` script for guided setup (copy
+      to a drawer, optional WBStartup with tooltypes, ENVARC: prefs). Not sure it
+      is needed: weigh against the "runs from a single drawer, no installer" goal
+      below — drag-to-a-drawer must stay the primary, always-works path.
 - [~] Aminet packaging — the `.readme` is written to spec; wiring the
       `aminet-release-action` workflow + tagging a version is the remaining step
 - [ ] Demo: log into GitHub using a code from real hardware
