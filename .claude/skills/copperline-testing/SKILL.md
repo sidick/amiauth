@@ -32,10 +32,13 @@ container, then boots and checks). Local prereq: `brew install copperline`.
 
 ## The four things that make headless capture work
 
-**1. Boot from a host directory (no ADF/HDF).** Copperline mounts a host dir as
-a throwaway RAM FFS volume. `SYS:`/`C:`/`S:`/`L:`/`DEVS:` auto-assign to it, so a
-minimal tree (`C/<binary>` + `S/Startup-Sequence`) boots straight into your
-program. In `machine.toml`:
+**1. Boot from a host directory (no ADF/HDF).** `[[filesys]]` mounts a host
+dir as a live `HOSTFS<n>:` volume — as of **0.12, guest writes go straight
+back to the host directory** (protection bits/comments/datestamps in
+`.uaem` sidecars; `readonly = true` opts back into a write-protected export
+if you want the old throwaway behaviour). `SYS:`/`C:`/`S:`/`L:`/`DEVS:`
+auto-assign to it, so a minimal tree (`C/<binary>` + `S/Startup-Sequence`)
+boots straight into your program. In `machine.toml`:
 
 ```toml
 [[filesys]]
@@ -82,10 +85,17 @@ in `assets/aros`.
 
 - **Serial sends CRLF.** Strip `\r` before matching (`tr -d '\r'`), or an exact
   `grep '…=CODE$'` fails on the trailing carriage return.
-- **Deterministic assertions.** No RTC on an A500, so avoid time-dependent
-  output. For TOTP, a huge `period` forces the counter to 0 on any pre-2033
-  clock; better, test the time-independent HOTP path directly against the RFC
-  4226 vectors (counters 0-9).
+- **Deterministic assertions.** No RTC on an A500 by default, so avoid
+  time-dependent output unless you seed one. `--rtc-time "2026-01-01
+  00:00:00"` (0.12+, `TIME` also accepts Unix seconds) **fits a battery
+  clock even on a model that wouldn't otherwise have one** and seeds it,
+  after which it ticks in emulated time; add `--rtc-frozen` to pin it
+  exactly instead of ticking. This is the guest's battery-backed clock
+  (`DateStamp()`/`time()`), not `timer.device` EClock (irrelevant here;
+  that's what `make pbkdf2-bench` needs a real Kickstart for). With a
+  seeded RTC the real TOTP path is testable deterministically, not just
+  the time-independent HOTP path against the RFC 4226 vectors (counters
+  0-9) — the previous workaround for having no clock at all.
 - **`--screenshot-after SECS PATH`** boots, grabs a PNG, and exits — use it to
   see the guest console when diagnosing a boot/redirection failure.
 
@@ -97,14 +107,38 @@ in `assets/aros`.
   but not a stripped one. `SER:` can't take text at all. → Use `RawPutChar`, or
   boot a real Workbench (HDF/floppy) if you must capture a normal program's
   stdout.
-- **Symbol-level GDB debugging is blocked** with the bebbo `amiga-gcc` toolchain
-  (`stefanreinauer/amiga-gcc`): its `m68k-amigaos-gdb` can't read the
-  `-amiga-debug-hunk` executables, the toolchain has no ELF output target, and
-  gdb crashes on the ELF `.o` DWARF. Copperline 0.11's `--gdb` stub also has no
-  `monitor` command, so the `monitor segments` relocation fallback is missing.
-  GDB still works as a raw remote client (registers/memory/absolute-address
-  breakpoints). Filed upstream: LinuxJedi/Copperline#181. Details in
-  `tests/copperline/GDB_FEEDBACK.md`.
+- **Symbol-level GDB debugging didn't work under 0.11, but retry this with
+  0.12 — it's not as settled as it sounds.** What was actually confirmed
+  (see `tests/copperline/GDB_FEEDBACK.md`): the **remote connection itself
+  worked fine** — `target remote` connects, and register reads, memory
+  reads, and absolute-address breakpoints all worked over the wire. This is
+  not a "gdb couldn't connect" problem. The two specific, separately
+  reproduced failures were (1) Copperline's 0.11 `--gdb` stub had no
+  `monitor` command, so `monitor segments` (docs' recommended way to learn
+  where a guest-`LoadSeg`'d program landed) errored with `"monitor" command
+  not supported`; and (2) the bebbo `amiga-gcc` toolchain's own
+  `m68k-amigaos-gdb`, purely locally (`file prog`, no remote step involved),
+  couldn't parse the `-amiga-debug-hunk` executable format at all, and the
+  toolchain has no ELF output target to work around it with.
+  **0.12 adds exactly the piece that (1) needed** — LoadSeg break events, so
+  the stub can now signal when a guest program loads, which is what a
+  pending breakpoint needs to resolve — plus stub reconnect survival. That's
+  worth a real retry: connect with a 0.12 stub and see whether LoadSeg
+  events let symbol-relative breakpoints bind without a `monitor segments`
+  fallback at all. Blocker (2), the local gdb/BFD's hunk-format parsing, is
+  unrelated to Copperline and would need a different gdb build (or an ELF
+  toolchain) regardless of emulator version. Filed upstream:
+  LinuxJedi/Copperline#181.
+  **When retrying, use the local `/opt/amiga/bin/m68k-amigaos-gdb`, not the
+  `stefanreinauer/amiga-gcc` Docker container's gdb** (this is the opposite
+  of the *build* guidance elsewhere — builds should use `make m68k-docker`
+  for reproducibility, but a debugger needs to reach Copperline's TCP stub
+  directly, which is simpler outside Docker's networking). Note the local
+  install currently reports the identical version
+  (`13.0.50.251124-132852-git`) to the container's, so blocker (2) will very
+  likely reproduce unchanged — retrying is really about confirming whether
+  0.12's LoadSeg events fix blocker (1), not about the local-vs-container
+  choice fixing the hunk-parsing problem.
 
 ## CI (GitHub Actions)
 
@@ -131,20 +165,32 @@ toolchain, no build deps, and it bundles AROS):
 
 ## Local environment (this machine)
 
+- `copperline` (Homebrew): **0.12.0** as of 2026-07 (`brew upgrade
+  linuxjedi/copperline/copperline`; was 0.11.0 — see version-specific notes
+  above tagged 0.12+).
 - Kickstart ROMs: `~/Documents/Amiberry/Roms/` (e.g. `amiga-os-310-a600.rom`,
   a 512 KiB 3.1). Workbench/Storage ADFs: `~/Documents/Amiberry/ADF/`.
 - `xdftool` (extract files from ADFs): `~/src/amitools/bin/xdftool`.
 - m68k cross-build: `make m68k-docker` (the `stefanreinauer/amiga-gcc` container;
   no local toolchain needed).
+- `/opt/amiga/bin/m68k-amigaos-gdb` also exists locally — **use this one, not
+  the Docker container's gdb**, if retrying the GDB workflow above (the
+  container is for reproducible *builds*; a debugger needs a direct route to
+  Copperline's TCP stub).
 
 ## Useful flags
 
 `--serial stdout|off|tcp|pty` · `--benchmark-until SECS` (no window, exit) ·
 `--screenshot-after SECS PATH` (grab + exit) · `--gdb ADDR` (remote stub) ·
+`--rtc-time TIME` / `--rtc-frozen` (seed/pin the guest clock, 0.12+) ·
 `--noaudio` · `--model/--cpu/--chip/--fast/--slow` · positional `ROM` overrides
 the config's `rom`. Boot config is TOML (`--config FILE`).
 
-## Scripted input: driving interactive GUIs headlessly (0.11+)
+Debugging a guest that expects a register Copperline doesn't model: set
+`[debug] log_unmapped = true` (optionally scoped to an address range) in the
+config to log every CPU access nothing decodes (0.12+).
+
+## Scripted input: driving interactive GUIs headlessly
 
 Copperline CAN drive interactive flows — no Amiberry needed. Time-based input
 directives, combinable with `--screenshot-after` (all verified working on the
@@ -165,9 +211,34 @@ Hold a modifier by overlapping windows: `key-after 52 lami 1500` +
 same script hits the same frames — probe timings with one `--screenshot-after`
 per run and then trust them.
 
-**Host-dir mounts are throwaway.** Guest writes go to the in-memory FFS
-volume, never back to the host dir — a file "saved" in one boot is gone on
-the next. Multi-phase interactive tests (create → relaunch → verify) must
-happen within ONE boot: run the program twice *synchronously* from a script
-started in Startup-Sequence (`Execute` a file with two launch lines; quit the
-first instance with a scripted RAmiga+Q, the second then starts).
+**When fixed timestamps aren't enough** (branching on what's on screen,
+adaptive retries, string.gadget text entry — which still can't be driven
+reliably by scripted keys), reach for the **Control Protocol** instead
+(0.12+): `--control ADDR` serves a headless machine over JSON-RPC (auth via
+`--control-token`/`--control-info`); the `copperline-ctl` client — or a
+script talking JSON-RPC 2.0 directly — can inject input, take screenshots,
+save/load state, and subscribe to frame/serial/interrupt events live,
+mid-session. `--control-gui ADDR` attaches the same server to a windowed run
+for interactive debugging. Not yet used in this project; `docs/debugger/control.md`
+in the Copperline repo is the reference. `--record-input PATH` (or a live
+`--control` session) journals input into the same `.clscript` format
+`--script` reads, so a working interactive run can be captured as a
+regression script.
+
+**`[ide]`/`[scsi]` directory mounts are still throwaway — this is different
+from `[[filesys]]` above.** Giving `[ide] master = { path = ..., name = ... }`
+(or `[scsi]`) a host directory builds an in-memory FFS **snapshot** from it
+at boot; guest writes never reach the host dir, so a file "saved" in one boot
+is gone on the next. This is what booting a cloned Workbench install for
+GUI testing uses (`tests/gui/gui-smoke.sh` and the interactive first-run
+scripts: `cp -Rc` the WB dir fresh, boot from `[ide]`, throw the clone away
+after). For those, multi-phase interactive tests (create → relaunch →
+verify) must still happen within ONE boot: run the program twice
+*synchronously* from a script started in Startup-Sequence (`Execute` a file
+with two launch lines; quit the first instance with a scripted RAmiga+Q, the
+second then starts) — see `firstrun-drive.sh`-style harnesses.
+
+If a test only needs a plain host-dir boot (no full Workbench/ReAction), switch
+it to `[[filesys]]` instead of `[ide]`/`[scsi]` with a directory path — writes
+persist across separate `copperline` invocations, so multi-phase tests no
+longer need the synchronous-double-launch trick at all.
