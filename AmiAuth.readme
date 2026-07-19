@@ -81,6 +81,12 @@ Security
   read the honest threat model before trusting it with high-value accounts:
       https://github.com/sidick/amiauth/blob/main/docs/SECURITY.md
 
+Documentation
+-------------
+  Full user documentation - installation, CLI reference, GUI/commodity guide,
+  tooltypes, time sync and troubleshooting - is on the project wiki:
+      https://github.com/sidick/amiauth/wiki
+
 Source and licence
 -------------------
   Free and open source, BSD 2-Clause. Full source, documentation and issue
