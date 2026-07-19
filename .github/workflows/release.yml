@@ -41,19 +41,10 @@ jobs:
             grep -aqF "\$VER: $b $v (" "build/$b" || { echo "::error::build/$b lacks \"\$VER: $b $v (...)\""; exit 1; }
           done
 
-      # Ubuntu's `lhasa` is extract-only, so build the real LHa for UNIX from
-      # source. Pinned by commit; the release-20211125 tag no longer compiles
-      # with modern compilers (K&R declarations), master does.
-      - name: Install lha (pinned source build)
-        run: |
-          git clone https://github.com/jca02266/lha.git /tmp/lha
-          git -C /tmp/lha checkout 86094cb56aba34de45668f39f74fcfb61e9d7fb6
-          cd /tmp/lha && autoreconf -fi && ./configure && make
-          sudo install /tmp/lha/src/lha /usr/local/bin/lha
-
       - name: Clone the wiki (source of the AmigaGuide docs)
         run: git clone --depth 1 https://github.com/sidick/amiauth.wiki.git ../amiauth.wiki
 
+      # `make dist` builds its own pinned lha (Ubuntu's lhasa is extract-only)
       - name: Package the Aminet upload pair
         run: make dist
 

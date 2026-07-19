@@ -180,13 +180,34 @@ guide: | $(BUILD)
 		{ echo "guide: wiki clone not found at $(WIKI_DIR) (set WIKI_DIR=)"; exit 1; }
 	python3 tools/wiki2guide.py $(WIKI_DIR) $(BUILD)/AmiAuth.guide
 
+# --- lha: build the real LHa for UNIX (archive-capable), pinned --------------
+# Homebrew's and Ubuntu's `lha` is Lhasa — extract-only, useless for packaging
+# — and the last lha *release* tag (2021) no longer compiles with modern
+# compilers, so build a pinned master commit from source into build/tools/.
+# Needs git + autoconf/automake. Override with a known-good archiver:
+#   make dist LHA=/path/to/real/lha
+LHA_REPO   := https://github.com/jca02266/lha.git
+LHA_COMMIT := 86094cb56aba34de45668f39f74fcfb61e9d7fb6
+LHA        ?= $(BUILD)/tools/lha
+
+$(BUILD)/tools/lha:
+	@mkdir -p $(BUILD)/tools
+	rm -rf $(BUILD)/tools/lha-src
+	git clone -q $(LHA_REPO) $(BUILD)/tools/lha-src
+	cd $(BUILD)/tools/lha-src && \
+		git -c advice.detachedHead=false checkout -q $(LHA_COMMIT) && \
+		autoreconf -fi >/dev/null 2>&1 && ./configure >/dev/null && \
+		$(MAKE) >/dev/null
+	cp $(BUILD)/tools/lha-src/src/lha $(BUILD)/tools/lha
+	rm -rf $(BUILD)/tools/lha-src
+
 # --- dist: assemble the Aminet upload pair (archive + .readme) ---------------
-# Expects prebuilt m68k binaries (make m68k-docker gui-docker) and a Unix `lha`
-# on PATH. Produces build/dist/AmiAuth.lha (drawer with binaries, docs, icons)
-# and build/dist/AmiAuth.readme alongside — the two files Aminet wants.
-# Icons: the drawer icon sits next to the drawer; the CLI deliberately has no
-# icon (it is a Shell command); AmiAuthGUI and the guide get theirs.
-dist: guide
+# Expects prebuilt m68k binaries (make m68k-docker gui-docker); the lha
+# archiver is built automatically (above). Produces build/dist/AmiAuth.lha
+# (drawer with binaries, docs, icons) and build/dist/AmiAuth.readme alongside
+# — the two files Aminet wants. Icons: the drawer icon sits next to the
+# drawer; the CLI deliberately has no icon (it is a Shell command).
+dist: guide $(LHA)
 	@test -f $(BUILD)/AmiAuth -a -f $(BUILD)/AmiAuthGUI || \
 		{ echo "dist: missing m68k binaries; run: make m68k-docker gui-docker"; exit 1; }
 	rm -rf $(BUILD)/dist
@@ -195,7 +216,7 @@ dist: guide
 		LICENSE THIRDPARTY.md AmiAuth.readme $(BUILD)/dist/AmiAuth/
 	cp icons/AmiAuthGUI.info icons/AmiAuth.guide.info $(BUILD)/dist/AmiAuth/
 	cp icons/AmiAuth.info AmiAuth.readme $(BUILD)/dist/
-	cd $(BUILD)/dist && lha aq AmiAuth.lha AmiAuth AmiAuth.info
+	cd $(BUILD)/dist && $(abspath $(LHA)) aq AmiAuth.lha AmiAuth AmiAuth.info
 	@ls -l $(BUILD)/dist/AmiAuth.lha $(BUILD)/dist/AmiAuth.readme
 
 $(BUILD):
