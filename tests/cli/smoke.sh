@@ -66,4 +66,11 @@ esac
 ( cd / && "$ABS_BIN" LIST | grep -q '^Pref:test$' ) \
     || fail "LIST from another cwd did not follow the recorded vault pref"
 
+# NUDGE adjusts the existing offset by a relative delta, unlike OFFSET's
+# absolute set — verify it composes (100 -> +30 -> -50 = 80) and persists.
+if ! "$BIN" OFFSET 100 >/dev/null; then fail "OFFSET (nudge baseline)"; fi
+if ! "$BIN" NUDGE 30 | grep -q '^UTC offset : +130 seconds'; then fail "NUDGE +30"; fi
+if ! "$BIN" NUDGE -50 | grep -q '^UTC offset : +80 seconds'; then fail "NUDGE -50"; fi
+if ! "$BIN" CLOCK | grep -q '^UTC offset : +80 seconds'; then fail "NUDGE did not persist"; fi
+
 echo "CLI smoke: OK"
