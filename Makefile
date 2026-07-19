@@ -170,19 +170,32 @@ copperline-smoke: serialtest-m68k-docker
 pbkdf2-bench:
 	sh tests/copperline/bench.sh
 
+# --- guide: AmigaGuide user documentation, generated from the wiki -----------
+# The GitHub wiki is the single source of truth for user docs; this converts
+# it for on-Amiga reading (MultiView/AmigaGuide). Clone it as a sibling:
+#   git clone https://github.com/sidick/amiauth.wiki.git ../amiauth.wiki
+WIKI_DIR ?= ../amiauth.wiki
+guide: | $(BUILD)
+	@test -f $(WIKI_DIR)/Home.md || \
+		{ echo "guide: wiki clone not found at $(WIKI_DIR) (set WIKI_DIR=)"; exit 1; }
+	python3 tools/wiki2guide.py $(WIKI_DIR) $(BUILD)/AmiAuth.guide
+
 # --- dist: assemble the Aminet upload pair (archive + .readme) ---------------
 # Expects prebuilt m68k binaries (make m68k-docker gui-docker) and a Unix `lha`
-# on PATH. Produces build/dist/AmiAuth.lha (drawer with binaries + docs) and
-# build/dist/AmiAuth.readme alongside — the two files Aminet wants.
-dist:
+# on PATH. Produces build/dist/AmiAuth.lha (drawer with binaries, docs, icons)
+# and build/dist/AmiAuth.readme alongside — the two files Aminet wants.
+# Icons: the drawer icon sits next to the drawer; the CLI deliberately has no
+# icon (it is a Shell command); AmiAuthGUI and the guide get theirs.
+dist: guide
 	@test -f $(BUILD)/AmiAuth -a -f $(BUILD)/AmiAuthGUI || \
 		{ echo "dist: missing m68k binaries; run: make m68k-docker gui-docker"; exit 1; }
 	rm -rf $(BUILD)/dist
 	mkdir -p $(BUILD)/dist/AmiAuth
-	cp $(BUILD)/AmiAuth $(BUILD)/AmiAuthGUI LICENSE THIRDPARTY.md AmiAuth.readme \
-		$(BUILD)/dist/AmiAuth/
-	cp AmiAuth.readme $(BUILD)/dist/
-	cd $(BUILD)/dist && lha aq AmiAuth.lha AmiAuth
+	cp $(BUILD)/AmiAuth $(BUILD)/AmiAuthGUI $(BUILD)/AmiAuth.guide \
+		LICENSE THIRDPARTY.md AmiAuth.readme $(BUILD)/dist/AmiAuth/
+	cp icons/AmiAuthGUI.info icons/AmiAuth.guide.info $(BUILD)/dist/AmiAuth/
+	cp icons/AmiAuth.info AmiAuth.readme $(BUILD)/dist/
+	cd $(BUILD)/dist && lha aq AmiAuth.lha AmiAuth AmiAuth.info
 	@ls -l $(BUILD)/dist/AmiAuth.lha $(BUILD)/dist/AmiAuth.readme
 
 $(BUILD):

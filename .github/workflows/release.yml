@@ -51,6 +51,9 @@ jobs:
           cd /tmp/lha && autoreconf -fi && ./configure && make
           sudo install /tmp/lha/src/lha /usr/local/bin/lha
 
+      - name: Clone the wiki (source of the AmigaGuide docs)
+        run: git clone --depth 1 https://github.com/sidick/amiauth.wiki.git ../amiauth.wiki
+
       - name: Package the Aminet upload pair
         run: make dist
 

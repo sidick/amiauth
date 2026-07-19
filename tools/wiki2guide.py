@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""wiki2guide.py - build AmiAuth.guide from the GitHub wiki pages.
+
+The wiki (github.com/sidick/amiauth/wiki) is the single source of truth for
+user documentation; this converts its Markdown into one hyperlinked AmigaGuide
+document for on-Amiga reading (AmigaGuide/MultiView, OS 2.x+).
+
+Usage: wiki2guide.py <wiki-clone-dir> <output.guide>
+
+Deliberately a pragmatic subset-of-Markdown converter, tuned to how the wiki
+pages are actually written (see PAGES): headings, bold, inline code, fenced
+code blocks, pipe tables, lists, blockquotes, [[wiki links]], [md](links).
+Output is plain non-wordwrapped AmigaGuide (works in every viewer back to
+2.x): paragraphs are hard-wrapped here, code/tables pass through verbatim.
+"""
+
+import re
+import sys
+import os
+
+WIDTH = 76
+
+# Sidebar order; (file-slug, node title). MAIN is Home.
+PAGES = [
+    ('Home', 'AmiAuth'),
+    ('Installation', 'Installation'),
+    ('Getting-Started', 'Getting Started'),
+    ('Managing-Accounts', 'Managing Accounts'),
+    ('CLI-Reference', 'CLI Reference'),
+    ('GUI-Guide', 'GUI Guide'),
+    ('Commodity-and-Tooltypes', 'Commodity and Tooltypes'),
+    ('Time-and-Clock-Sync', 'Time and Clock Sync'),
+    ('Vault-and-Passphrases', 'Vault and Passphrases'),
+    ('Settings-Reference', 'Settings Reference'),
+    ('Security-Model', 'Security Model'),
+    ('Troubleshooting-and-FAQ', 'Troubleshooting and FAQ'),
+    ('Building-from-Source', 'Building from Source'),
+]
+SLUGS = {slug for slug, _ in PAGES}
+
+# Non-Latin-1 transliteration (AmigaGuide is ISO-8859-1).
+TRANSLIT = {
+    '—': ' - ', '–': '-', '‘': "'", '’': "'",
+    '“': '"', '”': '"', '…': '...', '→': '->',
+    '≈': '~', '≤': '<=', '≥': '>=', ' ': ' ',
+    '\U0001f7e2': '', '\U0001f7e0': '', '\U0001f534': '',  # LED emoji
+}
+
+
+def latin1(s):
+    for k, v in TRANSLIT.items():
+        s = s.replace(k, v)
+    return s.encode('latin-1', 'replace').decode('latin-1')
+
+
+def esc(s):
+    """Escape AmigaGuide specials in literal text."""
+    return s.replace('\\', '\\\\').replace('@', '\\@')
+
+
+def slugify(name):
+    return name.strip().replace(' ', '-')
+
+
+def inline(s):
+    """Markdown inline -> AmigaGuide markup. Escapes literal text as it goes."""
+    s = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', s)   # images have no guide analogue
+    out = []
+    i = 0
+    # [[Text|Page]] / [[Page]] / [text](url) / **bold** / `code`
+    pat = re.compile(
+        r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]'   # 1: text-or-page, 2: page
+        r'|\[([^\]]+)\]\(([^)]+)\)'           # 3: text, 4: url
+        r'|\*\*([^*]+)\*\*'                   # 5: bold
+        r'|`([^`]+)`')                        # 6: code
+    for m in pat.finditer(s):
+        out.append(esc(s[i:m.start()]))
+        if m.group(1) is not None:
+            text = m.group(1).strip()
+            page = m.group(2).strip() if m.group(2) else text
+            slug = slugify(page)
+            if slug in SLUGS:
+                out.append('@{"%s" link "%s"}' % (esc(text), slug))
+            else:
+                out.append(esc(text))
+        elif m.group(3) is not None:
+            text = esc(m.group(3).replace('`', ''))
+            url = m.group(4)
+            if url.startswith('#'):
+                out.append('@{b}%s@{ub}' % text)   # in-page anchor: text only
+            else:
+                out.append('%s <%s>' % (text, esc(url)))
+        elif m.group(5) is not None:
+            out.append('@{b}%s@{ub}' % esc(m.group(5)))
+        else:
+            out.append(esc(m.group(6)))
+        i = m.end()
+    out.append(esc(s[i:]))
+    return ''.join(out)
+
+
+VISIBLE = re.compile(r'@\{"([^"]*)" link "[^"]*"\}|@\{u?b\}|@\{u?i\}')
+
+
+def vislen(s):
+    """Visible length of a converted chunk (guide markup is zero-width)."""
+    def repl(m):
+        return m.group(1) or ''
+    return len(VISIBLE.sub(repl, s).replace('\\@', '@').replace('\\\\', '\\'))
+
+
+def wrap(s, indent=0, hang=None):
+    """Hard-wrap converted text at WIDTH visible columns.
+
+    @{...} commands contain spaces (link markup) and must never be split
+    across lines: protect their spaces with a sentinel around the split.
+    """
+    hang = indent if hang is None else hang
+    s = re.sub(r'@\{[^}]*\}', lambda m: m.group(0).replace(' ', '\x00'), s)
+    words = [w.replace('\x00', ' ') for w in s.split()]
+    lines, cur, cw, first = [], [], 0, True
+    for w in words:
+        wl = vislen(w)
+        pad = indent if first else hang
+        if cur and pad + cw + 1 + wl > WIDTH:
+            lines.append(' ' * (indent if first else hang) + ' '.join(cur))
+            cur, cw, first = [w], wl, False
+        else:
+            cw += (1 if cur else 0) + wl
+            cur.append(w)
+    if cur:
+        lines.append(' ' * (indent if first else hang) + ' '.join(cur))
+    return lines
+
+
+def table(rows):
+    """Pipe-table rows -> aligned plain text."""
+    cells = []
+    for r in rows:
+        parts = [c.strip() for c in r.strip().strip('|').split('|')]
+        if all(re.fullmatch(r':?-+:?', p or '-') for p in parts):
+            continue                      # separator row
+        cells.append([inline(p) for p in parts])
+    if not cells:
+        return []
+    ncol = max(len(r) for r in cells)
+    for r in cells:
+        r += [''] * (ncol - len(r))
+    widths = [max(vislen(r[c]) for r in cells) for c in range(ncol)]
+    if 2 + sum(widths) + 2 * (ncol - 1) <= WIDTH:
+        out = []
+        for idx, r in enumerate(cells):
+            line = '  '.join(r[c] + ' ' * (widths[c] - vislen(r[c]))
+                             for c in range(ncol)).rstrip()
+            out.append('  ' + line)
+            if idx == 0:                  # underline the header row
+                out.append('  ' + '  '.join('-' * w for w in widths))
+        return out
+    # Too wide for one line: definition-list layout - first cell as the term
+    # (emitted verbatim, so links stay clickable), the rest wrapped under it.
+    # The header row is dropped; it carries no information in this shape.
+    out = []
+    for r in cells[1:]:
+        out.append('  ' + r[0])
+        out.extend(wrap(' - '.join(c for c in r[1:] if c), indent=6))
+        out.append('')
+    while out and out[-1] == '':
+        out.pop()
+    return out
+
+
+def convert(md):
+    """One page's Markdown body -> AmigaGuide lines."""
+    lines = md.splitlines()
+    out = []
+    i = 0
+    in_code = False
+    while i < len(lines):
+        ln = latin1(lines[i].rstrip())
+        if ln.strip().startswith('```'):
+            in_code = not in_code
+            if in_code and (not out or out[-1] != ''):
+                out.append('')
+            i += 1
+            continue
+        if in_code:
+            out.append('    ' + esc(ln))
+            i += 1
+            continue
+        if not ln.strip():
+            if out and out[-1] != '':
+                out.append('')
+            i += 1
+            continue
+        if ln.startswith('# '):
+            i += 1
+            continue                       # page title: the node line has it
+        m = re.match(r'^(#{2,})\s+(.*)$', ln)
+        if m:
+            if out and out[-1] != '':
+                out.append('')
+            title = inline(m.group(2))
+            out.append('@{b}%s@{ub}' % title)
+            if len(m.group(1)) == 2:
+                out.append('-' * min(WIDTH, vislen(title)))
+            out.append('')
+            i += 1
+            continue
+        if ln.lstrip().startswith('|'):
+            rows = []
+            while i < len(lines) and lines[i].lstrip().startswith('|'):
+                rows.append(latin1(lines[i]))
+                i += 1
+            out.extend(table(rows))
+            continue
+        if ln.startswith('    ') and (not out or out[-1] == ''):
+            out.append('    ' + esc(ln.strip()))   # indented code block
+            while i + 1 < len(lines) and (
+                    lines[i + 1].startswith('    ') or not lines[i + 1].strip()):
+                i += 1
+                nxt = latin1(lines[i].rstrip())
+                out.append(('    ' + esc(nxt.strip())) if nxt.strip() else '')
+            while out and out[-1] == '':
+                out.pop()
+            out.append('')
+            i += 1
+            continue
+        m = re.match(r'^(\s*)[-*]\s+(.*)$', ln)
+        if m:
+            # gather the whole (possibly wrapped-in-source) list item
+            item = m.group(2)
+            depth = len(m.group(1))
+            while (i + 1 < len(lines) and lines[i + 1].strip()
+                   and not re.match(r'^\s*([-*#>|]|\d+\.)', lines[i + 1])
+                   and not lines[i + 1].startswith('    ')):
+                i += 1
+                item += ' ' + latin1(lines[i].strip())
+            out.extend(_bullet(' ' * depth, inline(item)))
+            i += 1
+            continue
+        m = re.match(r'^>\s?(.*)$', ln)
+        if m:
+            quote = m.group(1)
+            while i + 1 < len(lines) and lines[i + 1].startswith('>'):
+                i += 1
+                quote += ' ' + latin1(re.sub(r'^>\s?', '', lines[i]).strip())
+            out.extend(wrap(inline(quote), indent=2))
+            out.append('')
+            i += 1
+            continue
+        # plain paragraph: merge following plain lines
+        para = ln
+        while (i + 1 < len(lines) and lines[i + 1].strip()
+               and not re.match(r'^(\s*[-*#>|]|\s{4}|```|\d+\.)', lines[i + 1])):
+            i += 1
+            para += ' ' + latin1(lines[i].strip())
+        out.extend(wrap(inline(para)))
+        out.append('')
+        i += 1
+    while out and out[-1] == '':
+        out.pop()
+    return out
+
+
+def _bullet(pre, body):
+    ls = wrap(body, 0, 0)
+    res = []
+    for n, l in enumerate(ls):
+        res.append(pre + ('- ' if n == 0 else '  ') + l)
+    return res
+
+
+def version(root):
+    try:
+        src = open(os.path.join(root, 'src/version.h')).read()
+        v = re.search(r'AMIAUTH_VERSION\s+"([^"]+)"', src).group(1)
+        d = re.search(r'AMIAUTH_VERSION_DATE\s+"([^"]+)"', src).group(1)
+        return v, d
+    except Exception:
+        return '1.0', ''
+
+
+def main():
+    if len(sys.argv) != 3:
+        sys.exit('usage: wiki2guide.py <wiki-dir> <output.guide>')
+    wikidir, outpath = sys.argv[1], sys.argv[2]
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ver, vdate = version(root)
+
+    head = [
+        '@database AmiAuth',
+        '@$VER: AmiAuth.guide %s (%s)' % (ver, vdate),
+        '@author Simon Dick',
+        '@(c) BSD 2-Clause; https://github.com/sidick/amiauth',
+        '@width %d' % (WIDTH + 2),
+        '',
+    ]
+    body = []
+    for n, (slug, title) in enumerate(PAGES):
+        path = os.path.join(wikidir, slug + '.md')
+        md = open(path, encoding='utf-8').read()
+        node = 'MAIN' if slug == 'Home' else slug
+        body.append('@node %s "%s"' % (node, latin1(title)))
+        if n > 0:
+            body.append('@toc MAIN')
+        if 0 < n - 1 < len(PAGES):
+            pass
+        if n > 1:
+            body.append('@prev %s' % PAGES[n - 1][0])
+        elif n == 1:
+            body.append('@prev MAIN')
+        if n + 1 < len(PAGES):
+            body.append('@next %s' % PAGES[n + 1][0])
+        body.append('')
+        if slug == 'Home':
+            body.append('@{b}AmiAuth %s@{ub} - two-factor authentication '
+                        'for classic AmigaOS' % ver)
+            body.append('')
+        body.extend(convert(md))
+        body.append('')
+        body.append('@endnode')
+        body.append('')
+
+    # Fix node cross-references: pages link with slugs; Home's node is MAIN.
+    text = '\n'.join(head + body)
+    text = text.replace('link "Home"', 'link "MAIN"')
+    with open(outpath, 'w', encoding='latin-1', errors='replace') as f:
+        f.write(text + '\n')
+    print('%s: %d nodes, %d bytes' % (outpath, len(PAGES),
+                                      os.path.getsize(outpath)))
+
+
+if __name__ == '__main__':
+    main()
