@@ -802,15 +802,19 @@ static int vault_location_request(char *path, size_t cap)
  * freshly calibrated PBKDF2 count. On success *v is the saved, unlocked
  * vault, `path` (cap bytes) may have been redirected to a writable location,
  * the absolute path is recorded in the prefs, and *encrypted is set.
- * Returns 1 to continue into the app, 0 to quit (nothing written). */
-static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted)
+ * Returns 1 to continue into the app, 0 to decline (nothing written) - in
+ * `deferred` mode (hidden start, prompt on first show) declining keeps the
+ * commodity resident, so the cancel gadget says so. */
+static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted,
+                         int deferred)
 {
     char pass[128], confirm[128];
     vault_result rc = VAULT_ERR_IO;
 
     if (gui_requester(NULL,
             "Welcome to AmiAuth!\n\nThere is no vault yet - it will be created at\n%s",
-            "Create a vault...|Quit", path) != 1)
+            deferred ? "Create a vault...|Not now" : "Create a vault...|Quit",
+            path) != 1)
         return 0;
 
     for (;;) {
@@ -881,6 +885,70 @@ static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted)
         const char *env = getenv("AMIAUTH_VAULT");
         if (!(env && env[0])) record_vault_path(path);
     }
+    return 1;
+}
+
+/* Open the vault, running whatever interaction that needs: first-run creation
+ * when none exists, or the unlock prompt loop (with the adaptive re-key
+ * offer) for an encrypted one. All requesters parent on NULL, so this works
+ * before any window exists. Returns 1 unlocked, 0 user-declined (clean),
+ * -1 unrecoverable (already reported to the user). */
+static int gui_open_vault(vault *v, char *path, size_t cap, int *encrypted,
+                          int deferred)
+{
+    char pass[128];
+    vault_result rc = vault_load(v, path, NULL);
+
+    if (rc == VAULT_ERR_IO) {
+        BPTR l = Lock((CONST_STRPTR)path, ACCESS_READ);
+        if (!l)                            /* no vault at all: first launch */
+            return gui_first_run(v, path, cap, encrypted, deferred) ? 1 : 0;
+        UnLock(l);                         /* exists but unreadable: below */
+    }
+    if (rc == VAULT_ERR_LOCKED) {
+        const char *msg = "Enter passphrase:";
+        *encrypted = 1;                    /* enables idle auto-lock */
+        for (;;) {
+            if (!passphrase_request(msg, pass, sizeof pass))
+                return 0;                  /* cancelled */
+            {   /* time the KDF so we can offer an adaptive re-key */
+                uint32_t t0 = amiga_millis();
+                rc = vault_load(v, path, pass);
+                if (rc == VAULT_OK)
+                    gui_maybe_rekey(NULL, v, path, pass, amiga_millis() - t0);
+            }
+            memset(pass, 0, sizeof pass);  /* scrub immediately */
+            if (rc == VAULT_OK) return 1;
+            if (rc == VAULT_ERR_AUTH) { msg = "Wrong passphrase - try again:"; continue; }
+            break;                         /* IO/format error: reported below */
+        }
+    }
+    if (rc != VAULT_OK) {
+        /* a WB-launched process has no console, so a requester must carry
+         * the error; keep the Printf for Shell launches */
+        gui_requester(NULL, "Cannot open the vault at\n%s", "Quit", path);
+        Printf((CONST_STRPTR)"AmiAuth: cannot open the vault (%ld)\n", (LONG)rc);
+        return -1;
+    }
+    return 1;
+}
+
+/* Deferred-start open (#50): a hidden commodity boots with the vault locked
+ * and runs the full open/create interaction on the first show instead. On
+ * success the (empty) account list built at startup is rebuilt from the now
+ * unlocked vault; the window is still closed, so the gadget takes NULL.
+ * Returns 1 to proceed with opening the window; 0 to stay hidden+locked. */
+static int deferred_open(vault *v, char *path, size_t cap, int *encrypted,
+                         struct List *lblist, Object *listobj, size_t *naccounts)
+{
+    if (gui_open_vault(v, path, cap, encrypted, 1) <= 0)
+        return 0;
+    SetGadgetAttrs((struct Gadget *)listobj, NULL, NULL,
+                   LISTBROWSER_Labels, ~0UL, TAG_END);
+    build_nodes(lblist, v);
+    SetGadgetAttrs((struct Gadget *)listobj, NULL, NULL,
+                   LISTBROWSER_Labels, (ULONG)lblist, TAG_END);
+    *naccounts = v->count;
     return 1;
 }
 
@@ -1148,7 +1216,8 @@ int main(int argc, char **argv)
     clock_ctx clk;
     const char *err, *path;
     ULONG winsig = 0, appsig = 0, timersig, cxsig = 0, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0, idle_secs = 0;
-    int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0, encrypted = 0, changed = 0, popup = 1;
+    int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0, encrypted = 0, changed = 0, popup = 1, deferred = 0;
+    static char vpath[512];             /* vault path; first-run may relocate it */
     long idle_limit = 0;
     size_t i, naccounts = 0;
     char curcode[16], statbuf[48];
@@ -1213,49 +1282,21 @@ int main(int argc, char **argv)
         }
     }
 
-    {
-        static char vpath[512];           /* mutable: first-run may relocate it */
-        strncpy(vpath, vault_path(), sizeof vpath - 1);
-        vpath[sizeof vpath - 1] = '\0';
-        path = vpath;
-        rc = vault_load(&v, path, NULL);
-        if (rc == VAULT_ERR_IO) {
-            BPTR l = Lock((CONST_STRPTR)path, ACCESS_READ);
-            if (!l) {                     /* no vault at all: first launch */
-                if (!gui_first_run(&v, vpath, sizeof vpath, &encrypted))
-                    goto cleanup;
-                rc = VAULT_OK;
-            } else {
-                UnLock(l);                /* exists but unreadable: error below */
-            }
+    strncpy(vpath, vault_path(), sizeof vpath - 1);
+    vpath[sizeof vpath - 1] = '\0';
+    path = vpath;
+    /* CX_POPUP=no promises a silent boot, so a hidden commodity start defers
+     * every prompt - unlock or first-run - to the first show (#50). An
+     * always-unlocked vault needs no interaction and opens right away. */
+    if (broker && !popup) {
+        if (vault_load(&v, path, NULL) != VAULT_OK)
+            deferred = 1;                 /* resident, locked, list empty */
+    } else {
+        int r = gui_open_vault(&v, vpath, sizeof vpath, &encrypted, 0);
+        if (r <= 0) {
+            if (r < 0) retcode = 10;
+            goto cleanup;                  /* declined (clean) or reported error */
         }
-    }
-    if (rc == VAULT_ERR_LOCKED) {
-        const char *msg = "Enter passphrase:";
-        encrypted = 1;                     /* enables idle auto-lock */
-        for (;;) {
-            if (!passphrase_request(msg, pass, sizeof pass)) {
-                goto cleanup;              /* user cancelled — a clean exit */
-            }
-            {   /* time the KDF so we can offer an adaptive re-key (below) */
-                uint32_t t0 = amiga_millis();
-                rc = vault_load(&v, path, pass);
-                if (rc == VAULT_OK)                    /* window not open yet: NULL */
-                    gui_maybe_rekey(NULL, &v, path, pass, amiga_millis() - t0);
-            }
-            memset(pass, 0, sizeof pass);  /* scrub the passphrase immediately */
-            if (rc == VAULT_OK) break;
-            if (rc == VAULT_ERR_AUTH) { msg = "Wrong passphrase - try again:"; continue; }
-            break;                         /* IO/format error: reported below */
-        }
-    }
-    if (rc != VAULT_OK) {
-        /* a WB-launched process has no console, so a requester must carry
-         * the error; keep the Printf for Shell launches */
-        gui_requester(NULL, "Cannot open the vault at\n%s", "Quit", path);
-        Printf((CONST_STRPTR)"AmiAuth: cannot open the vault (%ld)\n", (LONG)rc);
-        retcode = 10;
-        goto cleanup;
     }
 
     clock_setup(&clk);
@@ -1442,13 +1483,23 @@ int main(int argc, char **argv)
                 ReplyMsg((struct Message *)cxm);
                 if (type == CXM_IEVENT && id == EVT_HOTKEY) {
                     if (win) { WindowToFront(win); ActivateWindow(win); }
-                    else     { win = win_show(winobj, statobj, &winsig, clk.state); }
+                    else if (!deferred ||
+                             deferred_open(&v, vpath, sizeof vpath, &encrypted,
+                                           &lblist, listobj, &naccounts)) {
+                        deferred = 0;   /* declined? stays hidden and locked */
+                        win = win_show(winobj, statobj, &winsig, clk.state);
+                    }
                 } else if (type == CXM_COMMAND) {
                     switch (id) {
                         case CXCMD_APPEAR:
                         case CXCMD_UNIQUE:      /* a second launch asked us to show */
                             if (win) { WindowToFront(win); ActivateWindow(win); }
-                            else     { win = win_show(winobj, statobj, &winsig, clk.state); }
+                            else if (!deferred ||
+                                     deferred_open(&v, vpath, sizeof vpath, &encrypted,
+                                                   &lblist, listobj, &naccounts)) {
+                                deferred = 0;
+                                win = win_show(winobj, statobj, &winsig, clk.state);
+                            }
                             break;
                         case CXCMD_DISAPPEAR:
                             win_hide(winobj, win); win = NULL;
@@ -1474,7 +1525,14 @@ int main(int argc, char **argv)
                 switch (req->aar_Cmd) {
                     case AAP_SHOW:
                         if (win) { WindowToFront(win); ActivateWindow(win); }
-                        else     { win = win_show(winobj, statobj, &winsig, clk.state); }
+                        else if (!deferred ||
+                                 deferred_open(&v, vpath, sizeof vpath, &encrypted,
+                                               &lblist, listobj, &naccounts)) {
+                            deferred = 0;
+                            win = win_show(winobj, statobj, &winsig, clk.state);
+                        } else {
+                            req->aar_Result = AAR_LOCKED;   /* declined: still locked */
+                        }
                         break;
                     case AAP_LIST:
                         if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
