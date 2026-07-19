@@ -5,11 +5,16 @@ description: >
   emulator — booting from a host directory, capturing guest output over serial,
   running windowless in CI, and the bundled-AROS ROM. Use when running/booting
   Amiga code under Copperline, adding a copperline test, debugging why a guest
-  program produces no output, deciding how to capture output on-target, or
-  attaching gdb to a guest-launched program. Encodes what the AmiAuth spike
+  program produces no output, deciding how to capture output on-target,
+  attaching gdb to a guest-launched program, or clicking a specific button
+  or menu in a screenshot-driven test. Encodes what the AmiAuth spike
   discovered, including a dead end that stays dead (AUX: redirection in a
-  minimal boot) and one that got resolved upstream (symbol-level GDB — now
-  has a working recipe, see below; don't re-flag it as broken).
+  minimal boot), one that got resolved upstream (symbol-level GDB — now
+  has a working recipe, see below; don't re-flag it as broken), and one
+  that got resolved with a workaround (`--mouse-after` isn't usably
+  precise, but a tiny guest-side `MovePointer` tool fixes it — see below;
+  this is *why* AmiAuth's own GUI also got keyboard shortcuts, as the
+  belt-and-braces alternative for its own gadgets).
 ---
 
 # Testing AmigaOS binaries under Copperline
@@ -109,6 +114,57 @@ in `assets/aros`.
   but not a stripped one. `SER:` can't take text at all. → Use `RawPutChar`, or
   boot a real Workbench (HDF/floppy) if you must capture a normal program's
   stdout.
+- **`--mouse-after DX DY` relative deltas are not usably precise — stop
+  trying to calibrate them; use the `MovePointer` workaround below
+  instead.** Tried repeatedly across #37 (on-hardware pass) sessions:
+  cursor positioning CAN be made to visually land near a target (confirmed
+  via `--screenshot-after`), but the scale factor between `--mouse-after`
+  deltas and actual screen pixels is non-linear (small deltas move far
+  less than proportionally, larger ones move more — looks like host mouse
+  acceleration bleeding through Copperline's own delta-to-counts
+  translation), so *positioning* alone took many iterative
+  screenshot-and-adjust rounds, and clicks landed via this path worked
+  precisely zero times against Exchange's commodity list/buttons. This is
+  why AmiAuth's own GUI gadgets grew keyboard shortcuts (#55/#56) instead
+  of relying on scripted clicks for the app's own UI.
+
+  **Workaround that actually works: run a guest-side pointer-mover
+  instead of fighting host-side deltas.**
+  [`tests/tools/movepointer/`](../../../tests/tools/movepointer/) has the
+  source (originally [Aminet, `util/batch/MovePointer`](https://aminet.net/package/util/batch/MovePointer),
+  1987, Public Domain). `make movepointer-docker` cross-builds it with this
+  project's own toolchain → `build/MovePointer` — the prebuilt Aminet binary
+  is deliberately *not* vendored (unreviewed 1987 binary from an
+  unmoderated archive); build from the checked-in source instead. It's a
+  tiny guest program that calls `input.device`'s `IND_WRITEEVENT` directly
+  with an `IECLASS_RAWMOUSE` event, bypassing whatever host→guest
+  translation makes `--mouse-after` non-linear:
+
+      MovePointer X Y        # clamp to screen origin, then move to (X,Y)
+      MovePointer X Y K      # ...then simulate a left-click there too
+      MovePointer 0 0 R K    # click at the CURRENT position (R = relative,
+                              # so (0,0) is a no-op move) - use after a
+                              # separate move + Wait if you want settle time
+
+  Stage `build/MovePointer` on the boot volume and invoke it from
+  `Startup-Sequence` (**after a `Wait`** — called immediately post-`LoadWB`
+  with none, it silently no-ops since Workbench hasn't made a pointer
+  sprite yet) or a Shell (`DH0:MovePointer 155 85 K`). **Confirmed
+  empirically**: the mapping from commanded (X,Y) to actual
+  `--screenshot-after` screenshot pixels is a clean **1:1 linear offset**
+  (`screen_x = X + 35`, `screen_y = Y + 28` at this project's
+  A1200/screenshot setup — re-derive the constants for a different
+  profile/resolution by commanding two well-separated points and comparing
+  screenshots, same method), not the unpredictable curve `--mouse-after`
+  produces. A click landing precisely (`MovePointer 355 387 K` on a ~100px
+  button) showed clear visual press/selection feedback on the first try.
+  **Caveat**: still missed a genuinely tiny target (AmiAuthGUI's ~10×10px
+  window close gadget) across several attempts with small coordinate
+  nudges — good enough for buttons and list rows, budget extra calibration
+  rounds (or a second/relative nudge) for anything smaller than ~20px.
+  If revisiting further, the Control Protocol's live session (see the
+  "When fixed timestamps aren't enough" note above) remains untried and
+  may resolve tiny-target precision too.
 - **Symbol-level GDB debugging — RESOLVED as of 0.12.0, kept here for
   context; use the recipe below instead of re-deriving.** The original 0.11 report
   (LinuxJedi/Copperline#181) turned out to be mostly a testing artifact, per
@@ -174,6 +230,18 @@ toolchain, no build deps, and it bundles AROS):
 - Kickstart ROMs: `~/Documents/Amiberry/Roms/` (e.g. `amiga-os-310-a600.rom`,
   a 512 KiB 3.1). Workbench/Storage ADFs: `~/Documents/Amiberry/ADF/`.
 - `xdftool` (extract files from ADFs): `~/src/amitools/bin/xdftool`.
+- **`AMIAUTH_WB_HDD` (tests/gui/.env) is a live, read-write Amiberry hard-drive
+  directory, not a Copperline-owned fixture.** Any *Amiberry* session (not
+  Copperline, whose `[ide]` mount snapshots it into RAM and discards writes)
+  has full write access and can leave it in a weird state. If `cp -Rc`/`cp -R`
+  cloning it before a Copperline boot goes from its usual ~5s to minutes
+  partway through (starts fast, degrades to a crawl - confirmed with `cp -Rv`
+  showing real but glacial progress, not a true hang), that's the likely
+  cause, or general disk/cache pressure from a long session (many Docker
+  builds etc.) - not evidence of anything wrong with AmiAuth itself. Kill and
+  retry fresh (a new session usually clears it) rather than waiting it out or
+  concluding the source directory is corrupted; `du -sh` on it should read
+  a few tens of MB, not more.
 - m68k cross-build: `make m68k-docker` (the `stefanreinauer/amiga-gcc` container;
   no local toolchain needed).
 - `/opt/amiga/bin/m68k-amigaos-gdb` also exists locally — **use this one, not
