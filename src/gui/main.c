@@ -48,6 +48,9 @@
 #include <proto/string.h>       /* STRING_GetClass */
 #include <proto/asl.h>          /* AllocAslRequestTags, AslRequest (QR picker) */
 #include <proto/commodities.h>  /* CxBroker, HotKey, CxMsgType/ID (Stage 3) */
+#include <proto/wb.h>           /* AddAppWindowA/RemoveAppWindow (QR drag-and-drop);
+                                  * note: workbench.library's proto header is
+                                  * "wb.h", not "workbench.h" */
 
 #include <string.h>
 #include <stdio.h>
@@ -95,8 +98,14 @@ struct Library       *WorkbenchBase   = NULL;   /* workbench.library (QR import:
 struct Library       *CxBase          = NULL;   /* commodities.library (Stage 3: broker/hotkey) */
 
 /* AppWindow message port: image icons dropped on the main window (QR import).
- * Created only when datatypes + workbench are available. */
-static struct MsgPort *g_appport = NULL;
+ * Created only when datatypes + workbench are available. g_appwin is the
+ * handle from AddAppWindowA(), live only while win is actually open (see
+ * win_show/win_hide) — registering the window as a Workbench drop target is
+ * a runtime call against the real struct Window*, not a window.class
+ * creation tag (WINDOW_AppPort alone, tried first, only wires iconify
+ * support and never actually registers a drop target — #37). */
+static struct MsgPort   *g_appport = NULL;
+static struct AppWindow *g_appwin  = NULL;
 
 /* Last known window position/size, remembered across a hide/show cycle
  * (Exchange Hide/Show, idle auto-lock, the close gadget) so re-showing the
@@ -651,13 +660,15 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
 
     if (cap == 0) return 0;
     buf[0] = '\0';
-    /* trailing '_' is a static cursor: the field is a read-only display
+    /* trailing '|' is a static cursor: the field is a read-only display
      * (real keys are captured at window level, see below), so there's no
-     * gadget-drawn cursor to show it has focus without this (#37). */
-    stars[0] = '_'; stars[1] = '\0';
+     * gadget-drawn cursor to show it has focus without this (#37). A
+     * vertical bar, not '_', so it isn't a descender easily clipped/missed
+     * at the bottom of a tight text box. */
+    stars[0] = '|'; stars[1] = '\0';
 
     maskobj   = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ReadOnly, TRUE, GA_Text, (ULONG)"_", TAG_END);
+        GA_ReadOnly, TRUE, GA_Text, (ULONG)"|", TAG_END);
     okobj     = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID, PWID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"OK",     TAG_END);
     cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
@@ -717,7 +728,7 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
                     else if (code == 0x08 || code == 0x7F) {         /* Backspace/Del */
                         if (len > 0) {
                             buf[--len] = '\0';
-                            stars[len] = '_'; stars[len + 1] = '\0';
+                            stars[len] = '|'; stars[len + 1] = '\0';
                             SetGadgetAttrs((struct Gadget *)maskobj, w, NULL,
                                            GA_Text, (ULONG)stars, TAG_END);
                         }
@@ -726,7 +737,7 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
                             buf[len] = (char)code; stars[len] = '*';
                             len++;
                             buf[len] = '\0';
-                            stars[len] = '_'; stars[len + 1] = '\0';
+                            stars[len] = '|'; stars[len + 1] = '\0';
                             SetGadgetAttrs((struct Gadget *)maskobj, w, NULL,
                                            GA_Text, (ULONG)stars, TAG_END);
                         }
@@ -1197,33 +1208,74 @@ static int gui_find_account(const vault *v, const char *q)
 }
 
 /* --- window show/hide (Stage 3 commodity) ------------------------------- *
- * The window object + its gadgets are built once; hide/show just toggles the
- * intuition window via WM_CLOSE/WM_OPEN (window.class supports cycling), so the
- * resident commodity keeps everything cheaply across a hide. led pens are
- * screen-bound, so (re)allocated per open. */
-static struct Window *win_show(Object *winobj, Object *statobj,
-                               ULONG *winsig, int ledstate)
+ * A fresh window.class object is created and disposed every hide/show cycle
+ * (layoutobj, and everything in it, is built once and just gets reattached).
+ * A single persistent object was tried first, cycled via WM_CLOSE/WM_OPEN
+ * across a hide - but per the window.class autodoc, WM_OPEN "locks default
+ * public screen if needed" and WM_CLOSE's documented behaviour never
+ * mentions releasing it. That held the screen locked for as long as AmiAuth
+ * stayed resident, hidden or not (blocking a Workbench screen-mode change
+ * the whole time), and left a stale reference if the screen changed anyway
+ * (window wouldn't reopen, but Exchange still saw the process as alive)
+ * (#37). Disposing the window object on hide and recreating it on show
+ * avoids both - it's always attached fresh to whatever the current default
+ * public screen is. led pens are screen-bound too, so (re)allocated per
+ * open. */
+static struct Window *win_show(Object **winobjp, Object *layoutobj,
+                               Object *statobj, ULONG *winsig, int ledstate)
 {
     struct Window *w;
-    if (g_winleft >= 0)                     /* reopen where it was last shown */
-        SetAttrs(winobj, WA_Left, g_winleft, WA_Top, g_wintop,
-                 WA_Width, g_winw, WA_Height, g_winh, TAG_END);
+    Object *winobj = NewObject(WINDOW_GetClass(), NULL,
+        WA_Title,        (ULONG)"AmiAuth",
+        WA_Activate,     TRUE,
+        WA_CloseGadget,  TRUE,
+        WA_DragBar,      TRUE,
+        WA_DepthGadget,  TRUE,
+        WA_SizeGadget,   TRUE,
+        WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK
+                        | IDCMP_VANILLAKEY    /* plain-letter gadget shortcuts, #55 */
+                        | IDCMP_RAWKEY,        /* cursor up/down list navigation, #55 */
+        (g_winleft < 0)  ? WINDOW_Position : TAG_IGNORE, (ULONG)WPOS_CENTERSCREEN,
+        (g_winleft >= 0) ? WA_Left         : TAG_IGNORE, (ULONG)g_winleft,
+        (g_winleft >= 0) ? WA_Top          : TAG_IGNORE, (ULONG)g_wintop,
+        (g_winleft >= 0) ? WA_Width        : TAG_IGNORE, (ULONG)g_winw,
+        (g_winleft >= 0) ? WA_Height       : TAG_IGNORE, (ULONG)g_winh,
+        GadToolsBase ? WINDOW_NewMenu : TAG_IGNORE, (ULONG)g_menu,
+        /* AppWindow (QR drag-and-drop) registration happens below via
+         * AddAppWindowA against the real struct Window*, not here - see the
+         * g_appport/g_appwin comment above. */
+        WINDOW_Layout,   (ULONG)layoutobj,
+        TAG_END);
+    *winobjp = winobj;
+    if (!winobj) {
+        Printf((CONST_STRPTR)"AmiAuth: could not create the window\n");
+        return NULL;
+    }
     w = (struct Window *)DoMethod(winobj, WM_OPEN, NULL);
     if (w) {
         GetAttr(WINDOW_SigMask, winobj, winsig);
         led_pens_alloc(w);
         led_draw(w, statobj, ledstate);
+        if (g_appport)
+            g_appwin = AddAppWindowA(0, 0, w, g_appport, NULL);
     }
     return w;
 }
 
-static void win_hide(Object *winobj, struct Window *w)
+static void win_hide(Object **winobjp, struct Window *w)
 {
-    if (!w) return;
+    Object *winobj = *winobjp;
+    if (!w || !winobj) return;
     g_winleft = w->LeftEdge; g_wintop = w->TopEdge;
     g_winw    = w->Width;    g_winh   = w->Height;
+    if (g_appwin) { RemoveAppWindow(g_appwin); g_appwin = NULL; }
     led_pens_free(w);
     DoMethod(winobj, WM_CLOSE, NULL);
+    /* detach the layout (and everything in it) before disposing the window
+     * wrapper, so it survives to be reattached to a fresh window next show */
+    SetAttrs(winobj, WINDOW_Layout, (ULONG)NULL, TAG_END);
+    DisposeObject(winobj);
+    *winobjp = NULL;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1234,7 +1286,7 @@ int main(int argc, char **argv)
     struct List lblist;
     Object *winobj = NULL, *codeobj = NULL, *gaugeobj = NULL, *listobj = NULL, *copyobj = NULL;
     Object *statobj = NULL, *addobj = NULL, *editobj = NULL, *removeobj = NULL;
-    Object *nudgednobj = NULL, *nudgeupobj = NULL;
+    Object *nudgednobj = NULL, *nudgeupobj = NULL, *layoutobj = NULL;
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
@@ -1450,7 +1502,7 @@ int main(int argc, char **argv)
             LAYOUT_AddChild,      (ULONG)nudgeupobj,
             CHILD_WeightedWidth,  0,
             TAG_END);
-        Object *layoutobj = NewObject(LAYOUT_GetClass(), NULL,
+        layoutobj = NewObject(LAYOUT_GetClass(), NULL,
             LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
             LAYOUT_SpaceOuter,  TRUE,
             LAYOUT_AddChild,    (ULONG)listobj,
@@ -1477,30 +1529,9 @@ int main(int argc, char **argv)
         }
         if (DataTypesBase && WorkbenchBase)
             g_appport = CreateMsgPort();
-        winobj = NewObject(WINDOW_GetClass(), NULL,
-            WA_Title,        (ULONG)"AmiAuth",
-            WA_Activate,     TRUE,
-            WA_CloseGadget,  TRUE,
-            WA_DragBar,      TRUE,
-            WA_DepthGadget,  TRUE,
-            WA_SizeGadget,   TRUE,
-            WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK
-                            | IDCMP_VANILLAKEY    /* plain-letter gadget shortcuts, #55 */
-                            | IDCMP_RAWKEY,        /* cursor up/down list navigation, #55 */
-            WINDOW_Position, WPOS_CENTERSCREEN,
-            GadToolsBase ? WINDOW_NewMenu : TAG_IGNORE, (ULONG)g_menu,
-            g_appport ? WINDOW_AppPort   : TAG_IGNORE, (ULONG)g_appport,
-            /* WINDOW_AppPort alone only wires the port for iconify support;
-             * WINDOW_AppWindow is what actually registers the window as a
-             * Workbench drag-and-drop target (AddAppWindowA under the hood). */
-            g_appport ? WINDOW_AppWindow : TAG_IGNORE, (ULONG)TRUE,
-            WINDOW_Layout,   (ULONG)layoutobj,
-            TAG_END);
-    }
-
-    if (!winobj) {
-        Printf((CONST_STRPTR)"AmiAuth: could not create the window\n");
-        goto cleanup;
+        /* winobj itself (the window.class wrapper around layoutobj) is
+         * created fresh in win_show on each show, not here - see its
+         * comment for why. */
     }
 
     timersig = have_timer ? (1UL << g_tport->mp_SigBit) : 0;
@@ -1511,9 +1542,9 @@ int main(int argc, char **argv)
      * then it stays dormant until the hotkey / Exchange "Show". win_show sets
      * winsig; it stays 0 while hidden so the event loop drops it from the mask. */
     if (popup) {
-        win = win_show(winobj, statobj, &winsig, clk.state);
+        win = win_show(&winobj, layoutobj, statobj, &winsig, clk.state);
         if (!win && !broker) {                /* a plain window app needs its window */
-            Printf((CONST_STRPTR)"AmiAuth: could not open the window\n");
+            if (winobj) Printf((CONST_STRPTR)"AmiAuth: could not open the window\n");
             goto cleanup;
         }
     }
@@ -1551,7 +1582,7 @@ int main(int argc, char **argv)
                              deferred_open(&v, vpath, sizeof vpath, &encrypted,
                                            &lblist, listobj, &naccounts)) {
                         deferred = 0;   /* declined? stays hidden and locked */
-                        win = win_show(winobj, statobj, &winsig, clk.state);
+                        win = win_show(&winobj, layoutobj, statobj, &winsig, clk.state);
                     }
                 } else if (type == CXM_COMMAND) {
                     switch (id) {
@@ -1562,11 +1593,11 @@ int main(int argc, char **argv)
                                      deferred_open(&v, vpath, sizeof vpath, &encrypted,
                                                    &lblist, listobj, &naccounts)) {
                                 deferred = 0;
-                                win = win_show(winobj, statobj, &winsig, clk.state);
+                                win = win_show(&winobj, layoutobj, statobj, &winsig, clk.state);
                             }
                             break;
                         case CXCMD_DISAPPEAR:
-                            win_hide(winobj, win); win = NULL;
+                            win_hide(&winobj, win); win = NULL;
                             break;
                         case CXCMD_ENABLE:  ActivateCxObj(broker, 1); break;
                         case CXCMD_DISABLE: ActivateCxObj(broker, 0); break;
@@ -1593,7 +1624,7 @@ int main(int argc, char **argv)
                                  deferred_open(&v, vpath, sizeof vpath, &encrypted,
                                                &lblist, listobj, &naccounts)) {
                             deferred = 0;
-                            win = win_show(winobj, statobj, &winsig, clk.state);
+                            win = win_show(&winobj, layoutobj, statobj, &winsig, clk.state);
                         } else {
                             req->aar_Result = AAR_LOCKED;   /* declined: still locked */
                         }
@@ -1678,7 +1709,7 @@ int main(int argc, char **argv)
              * window/hotkey/CLI-port signals for as long as it's up (#37). */
             if (win && encrypted && idle_limit > 0 && (long)(++idle_secs) >= idle_limit) {
                 vault_lock(&v);
-                win_hide(winobj, win); win = NULL;
+                win_hide(&winobj, win); win = NULL;
                 deferred = 1;
                 idle_secs = 0;
             }
@@ -1697,7 +1728,7 @@ int main(int argc, char **argv)
                     case WMHI_CLOSEWINDOW:
                         /* As a commodity the close gadget hides (stay resident,
                          * vault unlocked); a plain window app quits. */
-                        if (broker) { win_hide(winobj, win); win = NULL; }
+                        if (broker) { win_hide(&winobj, win); win = NULL; }
                         else        { running = 0; }
                         break;
                     case WMHI_GADGETUP:
@@ -1927,8 +1958,8 @@ cleanup:
         }
         DeleteMsgPort(pubport);
     }
-    if (win) { win_hide(winobj, win); win = NULL; }  /* led_pens_free + WM_CLOSE */
-    if (winobj) DisposeObject(winobj);        /* also removes the AppWindow */
+    if (win) { win_hide(&winobj, win); win = NULL; }  /* also disposes winobj */
+    if (winobj) DisposeObject(winobj);  /* only fires if WM_OPEN itself failed */
     if (broker) DeleteCxObjAll(broker);       /* detach the hotkey + broker */
     if (cxport) {                             /* drain any late commodity msgs */
         struct Message *m;
