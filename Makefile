@@ -219,6 +219,21 @@ dist: guide $(LHA)
 	cd $(BUILD)/dist && $(abspath $(LHA)) aq AmiAuth.lha AmiAuth AmiAuth.info
 	@ls -l $(BUILD)/dist/AmiAuth.lha $(BUILD)/dist/AmiAuth.readme
 
+# --- movepointer: dev/test-only tool, cross-built from vendored source -------
+# tests/tools/movepointer/ (1987, Public Domain - see its README) precisely
+# positions the mouse under Copperline, working around --mouse-after's
+# non-linear host-to-guest scaling (see the copperline-testing skill). Built
+# from source with our own toolchain rather than trusting the original
+# Aminet prebuilt binary; -w since it's third-party (mirrors quirc's
+# treatment) - the warnings are 1987 K&R implicit-declarations, harmless.
+movepointer: | $(BUILD)
+	$(M68K_CC) -w -m68000 -noixemul tests/tools/movepointer/movepointer.c \
+		-lamiga -o $(BUILD)/MovePointer
+
+movepointer-docker:
+	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make movepointer'
+
 $(BUILD):
 	mkdir -p $(BUILD)
 
