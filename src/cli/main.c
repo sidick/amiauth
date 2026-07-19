@@ -50,6 +50,11 @@
 #endif
 
 #include "../amiga/guiport.h"     /* forward vault commands to a resident GUI */
+#include "../version.h"
+
+#ifdef AMIAUTH_AMIGA
+AMIAUTH_VERSTAG("AmiAuth")
+#endif
 
 #ifndef AMIAUTH_AMIGA
 /* Host: there is never a resident GUI, so forwarding is a no-op (do it locally). */

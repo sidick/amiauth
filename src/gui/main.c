@@ -59,6 +59,9 @@
 #include "prefs.h"
 #include "entropy.h"                /* amiga_random (m68k build) */
 #include "qr.h"                     /* qr_decode_gray (portable QR decoder) */
+#include "../version.h"
+
+AMIAUTH_VERSTAG("AmiAuthGUI")
 #include "qrimage.h"                /* qrimage_load_gray (datatypes glue) */
 #include "guiport.h"                /* CLI->GUI IPC (Stage 3b public port) */
 

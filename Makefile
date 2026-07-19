@@ -170,6 +170,21 @@ copperline-smoke: serialtest-m68k-docker
 pbkdf2-bench:
 	sh tests/copperline/bench.sh
 
+# --- dist: assemble the Aminet upload pair (archive + .readme) ---------------
+# Expects prebuilt m68k binaries (make m68k-docker gui-docker) and a Unix `lha`
+# on PATH. Produces build/dist/AmiAuth.lha (drawer with binaries + docs) and
+# build/dist/AmiAuth.readme alongside — the two files Aminet wants.
+dist:
+	@test -f $(BUILD)/AmiAuth -a -f $(BUILD)/AmiAuthGUI || \
+		{ echo "dist: missing m68k binaries; run: make m68k-docker gui-docker"; exit 1; }
+	rm -rf $(BUILD)/dist
+	mkdir -p $(BUILD)/dist/AmiAuth
+	cp $(BUILD)/AmiAuth $(BUILD)/AmiAuthGUI LICENSE THIRDPARTY.md AmiAuth.readme \
+		$(BUILD)/dist/AmiAuth/
+	cp AmiAuth.readme $(BUILD)/dist/
+	cd $(BUILD)/dist && lha aq AmiAuth.lha AmiAuth
+	@ls -l $(BUILD)/dist/AmiAuth.lha $(BUILD)/dist/AmiAuth.readme
+
 $(BUILD):
 	mkdir -p $(BUILD)
 
