@@ -49,4 +49,21 @@ if ! echo "$LIST" | grep -q '^Acme:bob$'; then fail "REMOVE removed the wrong ac
 if ! "$BIN" OFFSET 3600 >/dev/null;                     then fail "OFFSET"; fi
 if ! "$BIN" CLOCK | grep -q '^UTC offset : +3600 seconds'; then fail "CLOCK did not read the persisted offset"; fi
 
+# INIT records the vault path in the prefs - but only when the path was not
+# explicitly overridden (-v / AMIAUTH_VAULT), so scratch vaults (like every
+# INIT above, all -v) never hijack the pref.
+ABS_BIN=$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")
+if [ -e "$TMP/prefs/vault" ]; then fail "explicit -v INIT recorded a vault pref"; fi
+( cd "$TMP" && "$ABS_BIN" INIT --open >/dev/null ) || fail "default-path INIT"
+if [ ! -e "$TMP/prefs/vault" ]; then fail "default-path INIT did not record the vault pref"; fi
+case "$(cat "$TMP/prefs/vault")" in
+    /*) ;;                              # absolute, as documented
+    *)  fail "recorded vault pref is not an absolute path" ;;
+esac
+# ...and the recorded pref is picked up when no override is given
+( cd "$TMP" && "$ABS_BIN" ADD "otpauth://totp/Pref:test?secret=$SECRET" >/dev/null ) \
+    || fail "ADD via recorded pref"
+( cd / && "$ABS_BIN" LIST | grep -q '^Pref:test$' ) \
+    || fail "LIST from another cwd did not follow the recorded vault pref"
+
 echo "CLI smoke: OK"
