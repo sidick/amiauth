@@ -127,7 +127,7 @@ enum { PWID_OK = 1, PWID_CANCEL, PWID_STR };   /* modal-requester gadgets */
 enum { EDID_ISSUER = 1, EDID_LABEL, EDID_DIGITS, EDID_PERIOD, EDID_OK, EDID_CANCEL };  /* edit form */
 
 /* menu / button command ids */
-enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_ADD_QR, CMD_EDIT, CMD_REMOVE, CMD_QUIT };
+enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_ADD_QR, CMD_EDIT, CMD_COPY, CMD_REMOVE, CMD_QUIT };
 
 /* Commodity hotkey id (CxMsg id for the CX_POPKEY input event). */
 #define EVT_HOTKEY 1
@@ -157,6 +157,7 @@ static struct NewMenu g_menu[] = {
     { NM_ITEM,  (STRPTR)"Add (type URI)...",   (STRPTR)"A", 0, 0, (APTR)CMD_ADD_TYPE },
     { NM_ITEM,  (STRPTR)"Add from QR image...",(STRPTR)"I", 0, 0, (APTR)CMD_ADD_QR },
     { NM_ITEM,  (STRPTR)"Edit selected...",    (STRPTR)"E", 0, 0, (APTR)CMD_EDIT },
+    { NM_ITEM,  (STRPTR)"Copy code",           (STRPTR)"C", 0, 0, (APTR)CMD_COPY },
     { NM_ITEM,  NM_BARLABEL,       NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Remove selected...",  (STRPTR)"R", 0, 0, (APTR)CMD_REMOVE },
     { NM_END,   NULL, NULL, 0, 0, NULL }
@@ -1359,29 +1360,37 @@ int main(int argc, char **argv)
         FUELGAUGE_Percent, FALSE,
         FUELGAUGE_Ticks,   0,
         TAG_END);
+    /* '_' in GA_Text marks the next character (must be a letter) as the
+     * gadget's keyboard shortcut: underlined, activated by the plain letter
+     * alone (no modifier) per the Amiga UI Style Guide's gadget-shortcut
+     * convention — distinct from the menu's Right-Amiga shortcuts below,
+     * though chosen to match them letter-for-letter (A/E/R/C mirror the
+     * equivalent Account-menu items) so either reaches the same action. The
+     * two systems don't collide: menu shortcuts always need Right-Amiga
+     * held, gadget shortcuts never do. See #55. */
     addobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_ADD,
         GA_RelVerify, TRUE,
         GA_Disabled,  !StringBase,          /* typed-URI requester needs string.gadget */
-        GA_Text,      (ULONG)"Add",
+        GA_Text,      (ULONG)"_Add",
         TAG_END);
     editobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_EDIT,
         GA_RelVerify, TRUE,
         GA_Disabled,  (!StringBase || v.count == 0),
-        GA_Text,      (ULONG)"Edit",
+        GA_Text,      (ULONG)"_Edit",
         TAG_END);
     removeobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_REMOVE,
         GA_RelVerify, TRUE,
         GA_Disabled,  (v.count == 0),
-        GA_Text,      (ULONG)"Remove",
+        GA_Text,      (ULONG)"_Remove",
         TAG_END);
     copyobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_COPY,
         GA_RelVerify, TRUE,
         GA_Disabled,  (!have_clip || v.count == 0),  /* no clipboard / nothing to copy */
-        GA_Text,      (ULONG)"Copy",
+        GA_Text,      (ULONG)"_Copy",
         TAG_END);
     /* Clock-status label (a full-width read-only field). It states the trust
      * level + offset in words; we draw a small red/amber/green LED into its
@@ -1397,15 +1406,18 @@ int main(int argc, char **argv)
      * NUDGE command (clock_nudge, same persisted "offset" pref) rather than
      * duplicating the logic. Always enabled — useful before any vault/account
      * exists, and independent of the vault's lock state. */
+    /* Both labels' only letter is 's' - can't underscore that on both without
+     * a collision, so lead with a distinguishing mnemonic letter (D/U) as the
+     * style guide requires an underscored *letter*, not the sign character. */
     nudgednobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_NUDGEDOWN,
         GA_RelVerify, TRUE,
-        GA_Text,      (ULONG)"-10s",
+        GA_Text,      (ULONG)"_D -10s",
         TAG_END);
     nudgeupobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_NUDGEUP,
         GA_RelVerify, TRUE,
-        GA_Text,      (ULONG)"+10s",
+        GA_Text,      (ULONG)"_U +10s",
         TAG_END);
     {
         Object *btnrow = NewObject(LAYOUT_GetClass(), NULL,
@@ -1457,7 +1469,9 @@ int main(int argc, char **argv)
             WA_DragBar,      TRUE,
             WA_DepthGadget,  TRUE,
             WA_SizeGadget,   TRUE,
-            WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK,
+            WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK
+                            | IDCMP_VANILLAKEY    /* plain-letter gadget shortcuts, #55 */
+                            | IDCMP_RAWKEY,        /* cursor up/down list navigation, #55 */
             WINDOW_Position, WPOS_CENTERSCREEN,
             GadToolsBase ? WINDOW_NewMenu : TAG_IGNORE, (ULONG)g_menu,
             g_appport ? WINDOW_AppPort : TAG_IGNORE, (ULONG)g_appport,
@@ -1707,10 +1721,46 @@ int main(int argc, char **argv)
                                 case CMD_ADD_TYPE: doadd_type = 1; break;
                                 case CMD_ADD_QR:   doadd_qr   = 1; break;
                                 case CMD_EDIT:     doedit     = 1; break;
+                                case CMD_COPY:     docopy     = 1; break;
                                 case CMD_REMOVE:   doremove   = 1; break;
                                 case CMD_QUIT:     running    = 0; break;
                             }
                             mc = it->NextSelect;
+                        }
+                        break;
+                    }
+                    case WMHI_VANILLAKEY: {
+                        /* Plain-letter gadget shortcuts (#55): window.class only
+                         * dispatches these on request (IDCMP_VANILLAKEY, added
+                         * above) - it does not auto-wire the '_' markers in
+                         * GA_Text the way GadTools' BUTTON_KIND does. Mirror
+                         * each shortcut's own gadget's disabled condition so a
+                         * key press can't do what the equivalent click can't. */
+                        int ch = (int)(result & WMHI_KEYMASK);
+                        if (ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';   /* fold case */
+                        switch (ch) {
+                            case 'a': if (StringBase) doadd_type = 1; break;
+                            case 'e': if (StringBase && v.count > 0) doedit = 1; break;
+                            case 'r': if (v.count > 0) doremove = 1; break;
+                            case 'c': if (have_clip && v.count > 0) docopy = 1; break;
+                            case 'd': donudge = -CLOCK_NUDGE_STEP; break;
+                            case 'u': donudge = CLOCK_NUDGE_STEP;  break;
+                        }
+                        break;
+                    }
+                    case WMHI_RAWKEY: {
+                        /* Cursor Up/Down move the account selection by one row
+                         * (#55) - the listbrowser doesn't do this on its own.
+                         * `code` carries the raw key for a WMHI_RAWKEY result
+                         * (CURSORUP/CURSORDOWN = 0x4C/0x4D, intuition.h). Only
+                         * the visible selection moves here; the detail pane
+                         * (code/gauge) follows on the next per-second refresh,
+                         * same as a mouse click on a row (GID_LIST above). */
+                        if (v.count > 0 && (code == CURSORUP || code == CURSORDOWN)) {
+                            if (code == CURSORDOWN) { if (sel + 1 < v.count) sel++; }
+                            else                     { if (sel > 0) sel--; }
+                            SetGadgetAttrs((struct Gadget *)listobj, win, NULL,
+                                           LISTBROWSER_Selected, sel, TAG_END);
                         }
                         break;
                     }

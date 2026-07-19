@@ -207,8 +207,16 @@ AmiAuthGUI first-run flow, 2026-07):
   `a`-`z`, `return`, `ctrl`, `lalt`, `lami`, `rami`, `f1`… Integer seconds.
 - `--press-after SECS KEY` — one press/release.
 - `--click-after SECS BTN MS`, `--mouse-after SECS DX DY` — mouse, but prefer
-  keyboard: **system requesters answer LAmiga+V (leftmost gadget) / LAmiga+B
-  (rightmost)**, and menu shortcuts are RAmiga+letter — no coordinates needed.
+  keyboard: **system requesters answer LAmiga+B (leftmost/OK gadget) /
+  LAmiga+V (rightmost/Cancel)** — this is the canonical system binding (Amiga
+  UI Style Guide ch. 10: "Left-Amiga+B → leftmost bottom gadget", "Left-Amiga+V
+  → rightmost"; earlier notes here had it backwards). Left-Amiga is reserved
+  for the system at all times and must never be used for an app's own
+  shortcuts — those are RAmiga+letter (menus) or a plain, unmodified letter
+  (gadgets; ReAction's window.class/button.gadget do not auto-wire a `_`
+  marker in `GA_Text` to a keypress the way GadTools' `BUTTON_KIND` does, so
+  an app must dispatch `IDCMP_VANILLAKEY` itself — see the `amiga-ui-style-guide`
+  skill). No coordinates needed for any of this.
 - `--script FILE` — the same directives, one per line, without the leading
   dashes (`key-after 52 lami 1500`); `#` comments allowed. `--record-input`
   or Cmd+Shift+R records a live session into this format.
