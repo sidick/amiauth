@@ -34,6 +34,13 @@ endif
 # Containerised cross-build: same image as CI, so local m68k builds match.
 DOCKER          ?= docker
 AMIGA_GCC_IMAGE ?= stefanreinauer/amiga-gcc:latest
+# Run as the calling user, not root: the container bind-mounts $(CURDIR), and
+# without this, files it creates (build/, the m68k binaries) come out root-
+# owned on Linux hosts - breaking any later non-Docker step (e.g. `make dist`)
+# that needs to write into the same build/ directory. Docker Desktop on macOS
+# has more forgiving bind-mount semantics, so this doesn't reproduce locally
+# on every platform - found via a real CI release-workflow rehearsal (#38).
+DOCKER_USER     := --user "$(shell id -u):$(shell id -g)"
 
 CORE_SRCS  := $(wildcard src/core/*.c)
 TEST_SRCS  := $(wildcard tests/*.c)
@@ -125,7 +132,7 @@ gui: $(QUIRC_M68K_OBJS) | $(BUILD)
 		$(QR_WRAP) $(QUIRC_M68K_OBJS) -lm -lamiga -o $(BUILD)/AmiAuthGUI
 
 gui-docker:
-	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make gui GIT_HASH=$(GIT_HASH) GIT_ON_TAG=$(GIT_ON_TAG)'
 
 # --- Headless GUI smoke test: boot WB 3.2 under Copperline, render AmiAuthGUI --
@@ -148,7 +155,7 @@ qr-onhw: $(QUIRC_M68K_OBJS) | $(BUILD)
 		$(QUIRC_M68K_OBJS) -lm -lamiga -o $(BUILD)/qr-onhw
 
 qr-onhw-docker:
-	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make qr-onhw QR_ONHW_DEFS=$(QR_ONHW_DEFS)'
 
 qr-onhw-smoke:
@@ -156,7 +163,7 @@ qr-onhw-smoke:
 
 # --- m68k via the CI container: no local toolchain needed, matches CI exactly ---
 m68k-docker:
-	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make m68k'
 
 # --- Copperline: headless on-target core smoke test (spike) ------------------
@@ -170,7 +177,7 @@ serialtest-m68k: | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(SERIALTEST_SRCS) -o $(BUILD)/serialtest
 
 serialtest-m68k-docker:
-	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make serialtest-m68k'
 
 copperline-smoke: serialtest-m68k-docker
@@ -242,7 +249,7 @@ movepointer: | $(BUILD)
 		-lamiga -o $(BUILD)/MovePointer
 
 movepointer-docker:
-	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make movepointer'
 
 $(BUILD):
