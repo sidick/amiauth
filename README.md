@@ -12,10 +12,13 @@ accelerated or emulated machine.
 > (crypto, OTP, vault, `otpauth://` import), the **CLI**, and a resident **ReAction
 > GUI commodity** (live all-accounts view, add/remove/edit, clipboard copy,
 > QR-image import, hotkey/Exchange/WBStartup, single-instance) are all done and
-> RFC-verified, and cross-build to real AmigaOS binaries validated on OS 3.2 under
-> Amiberry/Copperline (including SNTP sync). Remaining: an interactive
-> on-hardware pass of the commodity/forwarding flows and Aminet packaging. See
-> [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> RFC-verified, cross-build to real AmigaOS binaries, and have passed an
+> interactive on-hardware verification pass on OS 3.2. Remaining: a
+> release-workflow rehearsal, a live demo, and the v1.0 tag/Aminet upload
+> itself — see the
+> [v1.0 milestone](https://github.com/sidick/amiauth/milestone/1). Post-v1.0
+> ideas are tracked in the
+> [v2 milestone](https://github.com/sidick/amiauth/milestone/2).
 
 ## AI-assisted development
 
@@ -132,7 +135,6 @@ troubleshooting/FAQ.
 Developer-facing design notes live in `docs/`:
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — module layout and build targets.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased delivery plan and v2 candidates.
 - [`docs/SECURITY.md`](docs/SECURITY.md) — threat model and the honest security note.
 - [`docs/VAULT_FORMAT.md`](docs/VAULT_FORMAT.md) — the frozen on-disk vault format.
 - [`docs/CLOCK.md`](docs/CLOCK.md) — layered time-resolution design (SNTP/locale/manual).

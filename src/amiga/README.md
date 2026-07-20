@@ -12,4 +12,4 @@ test harness never needs OS headers:
 - **SNTP** — the `bsdsocket` implementation of `clock_sntp_sync()` (declared in
   `core/clock.h`, stubbed in the host build).
 
-See docs/ARCHITECTURE.md and docs/ROADMAP.md Phase 4. Nothing here yet.
+See docs/ARCHITECTURE.md.
