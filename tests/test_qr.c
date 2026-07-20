@@ -43,6 +43,12 @@ void run_qr_tests(void)
         g_blank[i] = 255;
     TEST_CHECK(qr_decode_gray(g_blank, 128, 128, uri, sizeof uri) == QR_ERR_NOCODE);
 
+    /* --- a QR with zero quiet zone (some export tools crop this tight) still
+     * decodes, via the padded-retry fallback --- */
+    TEST_CHECK(qr_decode_gray(qr_noquietzone_gray, QR_NOQUIETZONE_W, QR_NOQUIETZONE_H,
+                              uri, sizeof uri) == QR_OK);
+    TEST_CHECK(strcmp(uri, QR_OTP_URI) == 0);
+
     /* --- argument guards --- */
     TEST_CHECK(qr_decode_gray(NULL, QR_OTP_W, QR_OTP_H, uri, sizeof uri) == QR_ERR_ARGS);
     TEST_CHECK(qr_decode_gray(qr_otp_gray, 0, QR_OTP_H, uri, sizeof uri) == QR_ERR_ARGS);

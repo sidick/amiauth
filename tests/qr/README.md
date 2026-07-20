@@ -4,10 +4,11 @@
 pixel, row-major), used by [`tests/test_qr.c`](../test_qr.c) to exercise the
 decoder with no platform dependencies:
 
-| array           | size  | payload                                   |
-|-----------------|-------|-------------------------------------------|
-| `qr_otp_gray`   | 86×86 | `QR_OTP_URI` — an `otpauth://` TOTP URI   |
-| `qr_hello_gray` | 54×54 | `"HELLO"` — a valid QR that is *not* otpauth |
+| array                  | size  | payload                                   |
+|------------------------|-------|-------------------------------------------|
+| `qr_otp_gray`          | 86×86 | `QR_OTP_URI` — an `otpauth://` TOTP URI   |
+| `qr_hello_gray`        | 54×54 | `"HELLO"` — a valid QR that is *not* otpauth |
+| `qr_noquietzone_gray`  | 74×74 | `QR_OTP_URI`, rendered with `border=0` — zero quiet zone, exercising `qr_decode_gray()`'s padded-retry fallback |
 
 They are generated **once** (not at build time) and checked in, so the test tree
 stays dependency-free.
