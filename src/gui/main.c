@@ -1905,8 +1905,16 @@ int main(int argc, char **argv)
         }
 
         /* Refresh every account's code + countdown in the list, and drive the
-         * detail pane (big code + gauge) from the selected row. Only when shown. */
-        if (win && running && v.count > 0) {
+         * detail pane (big code + gauge) from the selected row. Only when
+         * shown, and only on the actual once-a-second timer tick - this does
+         * real HMAC-SHA1 work per account, so gate it strictly: an earlier
+         * version ran this on every loop wakeup regardless of source (window
+         * activity, CLI forwarding, commodity messages, AppWindow drag
+         * notifications...), which with any accounts present was enough
+         * uncounted crypto work on every wakeup to visibly stall unrelated
+         * Workbench drag gestures system-wide, not just interaction with
+         * this window (#37). */
+        if (have_timer && (sigs & timersig) && win && running && v.count > 0) {
             uint64_t now = clock_now_utc(&clk);
             uint32_t sel_period = OTP_DEFAULT_PERIOD, sel_rem = 0;
             char fmt[8];
