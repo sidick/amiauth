@@ -20,6 +20,17 @@ CObjINC := -Isrc/core
 M68K_CC     ?= m68k-amigaos-gcc
 M68K_CFLAGS ?= -std=c99 -O2 -Wall -m68000 -noixemul $(CObjINC) -Isrc/amiga
 
+# GUI window title shows the commit hash unless this build is exactly on a
+# release tag (the tag-driven release workflow always builds from a `vX.Y`
+# tag, so "on a tag at all" is a reliable proxy for "this is the release
+# build" in this repo). Computed on the host so gui-docker doesn't need git
+# inside the container - passed through as plain make variables instead.
+GIT_HASH   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+GIT_ON_TAG ?= $(shell git describe --tags --exact-match >/dev/null 2>&1 && echo 1)
+ifneq ($(GIT_ON_TAG),1)
+VERSION_DEFS := -DAMIAUTH_BUILD_HASH=\"$(GIT_HASH)\"
+endif
+
 # Containerised cross-build: same image as CI, so local m68k builds match.
 DOCKER          ?= docker
 AMIGA_GCC_IMAGE ?= stefanreinauer/amiga-gcc:latest
@@ -110,12 +121,12 @@ $(BUILD)/qr-m68k/%.o: src/qr/%.c | $(BUILD)
 	$(M68K_CC) -std=c99 -O2 -m68000 -noixemul -w $(QR_CPPFLAGS) -c $< -o $@
 
 gui: $(QUIRC_M68K_OBJS) | $(BUILD)
-	$(M68K_CC) $(M68K_CFLAGS) $(QR_CPPFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) \
+	$(M68K_CC) $(M68K_CFLAGS) $(VERSION_DEFS) $(QR_CPPFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) \
 		$(QR_WRAP) $(QUIRC_M68K_OBJS) -lm -lamiga -o $(BUILD)/AmiAuthGUI
 
 gui-docker:
 	$(DOCKER) run --rm --platform linux/amd64 -v "$(CURDIR)":/work -w /work \
-		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make gui'
+		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make gui GIT_HASH=$(GIT_HASH) GIT_ON_TAG=$(GIT_ON_TAG)'
 
 # --- Headless GUI smoke test: boot WB 3.2 under Copperline, render AmiAuthGUI --
 # Boots an A1200/OS 3.2 under native Copperline, auto-launches AmiAuthGUI, and
