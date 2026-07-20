@@ -112,6 +112,12 @@ static struct AppWindow *g_appwin  = NULL;
  * window doesn't snap back to WPOS_CENTERSCREEN. -1 = no size seen yet. */
 static WORD g_winleft = -1, g_wintop = -1, g_winw = -1, g_winh = -1;
 
+/* Named public screen to open on (PUBSCREEN tooltype/arg), read once at
+ * startup; empty = the default public screen, as before. Falls back to the
+ * default automatically (WA_PubScreenFallBack) if the named screen isn't
+ * open when we try. */
+static char g_pubscreen[MAXPUBSCREENNAME + 1] = "";
+
 /* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none),
  * drawn in a recessed bevel (shadow/shine pens from the screen's DrawInfo). */
 static LONG g_ledpen[3] = { -1, -1, -1 };
@@ -1360,6 +1366,10 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
         /* AppWindow (QR drag-and-drop) registration happens below via
          * AddAppWindowA against the real struct Window*, not here - see the
          * g_appport/g_appwin comment above. */
+        /* PUBSCREEN=<name>: open as a visitor on that named public screen,
+         * falling back to the default public screen if it isn't open. */
+        g_pubscreen[0] ? WA_PubScreenName     : TAG_IGNORE, (ULONG)g_pubscreen,
+        g_pubscreen[0] ? WA_PubScreenFallBack : TAG_IGNORE, (ULONG)TRUE,
         WINDOW_Layout,   (ULONG)layoutobj,
         TAG_END);
     if (!gw->winobj) {
@@ -1431,6 +1441,18 @@ int main(int argc, char **argv)
 
     /* Read CX_* tooltypes (WBStartup icon) or CLI args uniformly (amiga.lib). */
     tt = ArgArrayInit(argc, (CONST_STRPTR *)argv);
+
+    /* PUBSCREEN=<name>: open on a named public screen instead of the default
+     * one. Not commodity-specific (no CX_ prefix, matching TIMESERVER), and
+     * independent of whether a broker exists - applies to the plain-window
+     * fallback (no commodities.library) too. */
+    {
+        STRPTR ps = ArgString((CONST_STRPTR *)tt, (CONST_STRPTR)"PUBSCREEN", NULL);
+        if (ps && ps[0]) {
+            strncpy(g_pubscreen, (const char *)ps, sizeof g_pubscreen - 1);
+            g_pubscreen[sizeof g_pubscreen - 1] = '\0';
+        }
+    }
 
     /* Register the commodity broker BEFORE unlocking: a second launch must
      * detect the running instance and exit without prompting for a passphrase. */
