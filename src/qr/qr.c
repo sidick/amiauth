@@ -30,8 +30,11 @@ static int is_otpauth(const unsigned char *s, int len)
     return 1;
 }
 
-int qr_decode_gray(const unsigned char *gray, int w, int h,
-                   char *uri, size_t cap)
+/* One decode attempt over a greyscale buffer - no quiet-zone handling, just
+ * quirc itself. Factored out so qr_decode_gray() can retry once on a padded
+ * copy without duplicating the quirc setup/extract/decode loop. */
+static int decode_once(const unsigned char *gray, int w, int h,
+                       char *uri, size_t cap)
 {
     struct quirc *q;
     unsigned char *ibuf;
@@ -43,11 +46,6 @@ int qr_decode_gray(const unsigned char *gray, int w, int h,
      * on the stack internally, which the caller covers with a raised stack. */
     struct quirc_code *code;
     struct quirc_data *data;
-
-    if (cap > 0)
-        uri[0] = '\0';
-    if (!gray || !uri || cap == 0 || w <= 0 || h <= 0)
-        return QR_ERR_ARGS;
 
     q = quirc_new();
     if (!q)
@@ -93,5 +91,50 @@ int qr_decode_gray(const unsigned char *gray, int w, int h,
     free(code);
     free(data);
     quirc_destroy(q);
+    return result;
+}
+
+/* QR codes need a "quiet zone" (blank margin) around them to be reliably
+ * found (ISO/IEC 18004 calls for >= 4 modules); some export tools crop the
+ * image tight to the code with none at all, which quirc - unlike more
+ * tolerant camera-scanner decoders - won't find without help. A fixed 40px
+ * white border comfortably covers that for realistic QR-enrolment-image
+ * sizes without the retry buffer's memory cost scaling with the original
+ * image (bounded regardless of how large `gray` already is, up to
+ * qrimage.c's existing 2048x2048/2MP load cap). */
+#define QUIET_ZONE_PAD 40
+
+static int decode_with_quiet_zone(const unsigned char *gray, int w, int h,
+                                  char *uri, size_t cap)
+{
+    int pw = w + 2 * QUIET_ZONE_PAD, ph = h + 2 * QUIET_ZONE_PAD;
+    unsigned char *padded = malloc((size_t)pw * (size_t)ph);
+    int result, y;
+
+    if (!padded)
+        return QR_ERR_NOMEM;
+    memset(padded, 255, (size_t)pw * (size_t)ph);
+    for (y = 0; y < h; y++)
+        memcpy(padded + (size_t)(y + QUIET_ZONE_PAD) * pw + QUIET_ZONE_PAD,
+               gray + (size_t)y * w, (size_t)w);
+
+    result = decode_once(padded, pw, ph, uri, cap);
+    free(padded);
+    return result;
+}
+
+int qr_decode_gray(const unsigned char *gray, int w, int h,
+                   char *uri, size_t cap)
+{
+    int result;
+
+    if (cap > 0)
+        uri[0] = '\0';
+    if (!gray || !uri || cap == 0 || w <= 0 || h <= 0)
+        return QR_ERR_ARGS;
+
+    result = decode_once(gray, w, h, uri, cap);
+    if (result == QR_ERR_NOCODE)
+        result = decode_with_quiet_zone(gray, w, h, uri, cap);
     return result;
 }
