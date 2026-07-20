@@ -2,7 +2,7 @@ Short:        TOTP/HOTP two-factor authenticator
 Author:       simond@irrelevant.org (Simon Dick)
 Uploader:     simond@irrelevant.org (Simon Dick)
 Type:         util/crypt
-Version:      1.0
+Version:      0.99
 Architecture: m68k-amigaos >= 2.0.4
 Distribution: Aminet
 
