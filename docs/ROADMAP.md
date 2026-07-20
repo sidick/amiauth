@@ -135,3 +135,5 @@ one issue per candidate with the design notes:
 - QR code *display* for exporting accounts to a phone (#45)
 - ARexx port for automation — the port never carries the passphrase (#46)
 - 68k assembler crypto hot loops + optional AmiSSL provider (#47)
+- Translations via locale.library catalogs + broader locale-aware date/time/
+  decimal formatting, beyond the existing GMT-offset use (#67)
