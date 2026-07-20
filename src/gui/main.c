@@ -168,12 +168,30 @@ static struct ColumnInfo g_columns[] = {
     { -1, NULL, 0 }
 };
 
+/* button.gadget labels for the account-list toolbar. These double as the
+ * single source of truth for their WMHI_VANILLAKEY shortcuts below: window.class
+ * doesn't auto-wire GA_Text's '_' mnemonic markers for button.gadget the way
+ * GadTools' BUTTON_KIND does, so the VANILLAKEY handler reads the letter
+ * straight out of each string (index 1, right after the '_') instead of
+ * duplicating it as a separate literal - renaming a label's mnemonic can't
+ * silently desync its keyboard shortcut. */
+static const char LBL_ADD[]        = "_Add";
+static const char LBL_EDIT[]       = "_Edit";
+static const char LBL_REMOVE[]     = "_Remove";
+static const char LBL_COPY[]       = "_Copy";
+static const char LBL_NUDGE_DOWN[] = "_D -10s";
+static const char LBL_NUDGE_UP[]   = "_U +10s";
+
 /* Menu strip (window.class WINDOW_NewMenu). nm_UserData carries the command id. */
 static struct NewMenu g_menu[] = {
     { NM_TITLE, (STRPTR)"Project", NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Quit",    (STRPTR)"Q", 0, 0, (APTR)CMD_QUIT },
     { NM_TITLE, (STRPTR)"Account", NULL,        0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Add from clipboard",  (STRPTR)"V", 0, 0, (APTR)CMD_ADD_CLIP },
+    /* No RA shortcut: RA-V is the system-wide Edit->Paste convention, and this
+     * item does something bigger than a paste (parses the clipboard as an OTP
+     * URI and adds a new vault entry) - reusing that muscle memory here would
+     * surprise users expecting an ordinary paste. */
+    { NM_ITEM,  (STRPTR)"Add from clipboard",  NULL, 0, 0, (APTR)CMD_ADD_CLIP },
     { NM_ITEM,  (STRPTR)"Add (type URI)...",   (STRPTR)"A", 0, 0, (APTR)CMD_ADD_TYPE },
     { NM_ITEM,  (STRPTR)"Add from QR image...",(STRPTR)"I", 0, 0, (APTR)CMD_ADD_QR },
     { NM_ITEM,  (STRPTR)"Edit selected...",    (STRPTR)"E", 0, 0, (APTR)CMD_EDIT },
@@ -1281,25 +1299,25 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
         GA_ID,        GID_ADD,
         GA_RelVerify, TRUE,
         GA_Disabled,  !StringBase,          /* typed-URI requester needs string.gadget */
-        GA_Text,      (ULONG)"_Add",
+        GA_Text,      (ULONG)LBL_ADD,
         TAG_END);
     gw->editobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_EDIT,
         GA_RelVerify, TRUE,
         GA_Disabled,  (!StringBase || v->count == 0),
-        GA_Text,      (ULONG)"_Edit",
+        GA_Text,      (ULONG)LBL_EDIT,
         TAG_END);
     gw->removeobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_REMOVE,
         GA_RelVerify, TRUE,
         GA_Disabled,  (v->count == 0),
-        GA_Text,      (ULONG)"_Remove",
+        GA_Text,      (ULONG)LBL_REMOVE,
         TAG_END);
     gw->copyobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_COPY,
         GA_RelVerify, TRUE,
         GA_Disabled,  (!have_clip || v->count == 0),  /* no clipboard / nothing to copy */
-        GA_Text,      (ULONG)"_Copy",
+        GA_Text,      (ULONG)LBL_COPY,
         TAG_END);
     clock_status_text(clk, statbuf);
     gw->statobj = NewObject(NULL, (STRPTR)"button.gadget",
@@ -1309,12 +1327,12 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
     gw->nudgednobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_NUDGEDOWN,
         GA_RelVerify, TRUE,
-        GA_Text,      (ULONG)"_D -10s",
+        GA_Text,      (ULONG)LBL_NUDGE_DOWN,
         TAG_END);
     gw->nudgeupobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,        GID_NUDGEUP,
         GA_RelVerify, TRUE,
-        GA_Text,      (ULONG)"_U +10s",
+        GA_Text,      (ULONG)LBL_NUDGE_UP,
         TAG_END);
     btnrow = NewObject(LAYOUT_GetClass(), NULL,
         LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
@@ -1799,19 +1817,20 @@ int main(int argc, char **argv)
                         /* Plain-letter gadget shortcuts (#55): window.class only
                          * dispatches these on request (IDCMP_VANILLAKEY, added
                          * above) - it does not auto-wire the '_' markers in
-                         * GA_Text the way GadTools' BUTTON_KIND does. Mirror
-                         * each shortcut's own gadget's disabled condition so a
-                         * key press can't do what the equivalent click can't. */
+                         * GA_Text the way GadTools' BUTTON_KIND does. The letter
+                         * each case matches comes from the LBL_* string itself
+                         * (see their declaration), not a separate literal, so a
+                         * relabel can't silently desync its shortcut. Mirror each
+                         * shortcut's own gadget's disabled condition so a key
+                         * press can't do what the equivalent click can't. */
                         int ch = (int)(result & WMHI_KEYMASK);
                         if (ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';   /* fold case */
-                        switch (ch) {
-                            case 'a': if (StringBase) doadd_type = 1; break;
-                            case 'e': if (StringBase && v.count > 0) doedit = 1; break;
-                            case 'r': if (v.count > 0) doremove = 1; break;
-                            case 'c': if (have_clip && v.count > 0) docopy = 1; break;
-                            case 'd': donudge = -CLOCK_NUDGE_STEP; break;
-                            case 'u': donudge = CLOCK_NUDGE_STEP;  break;
-                        }
+                        if      (ch == (LBL_ADD[1]        | 0x20)) { if (StringBase) doadd_type = 1; }
+                        else if (ch == (LBL_EDIT[1]       | 0x20)) { if (StringBase && v.count > 0) doedit = 1; }
+                        else if (ch == (LBL_REMOVE[1]     | 0x20)) { if (v.count > 0) doremove = 1; }
+                        else if (ch == (LBL_COPY[1]       | 0x20)) { if (have_clip && v.count > 0) docopy = 1; }
+                        else if (ch == (LBL_NUDGE_DOWN[1] | 0x20)) { donudge = -CLOCK_NUDGE_STEP; }
+                        else if (ch == (LBL_NUDGE_UP[1]   | 0x20)) { donudge = CLOCK_NUDGE_STEP;  }
                         break;
                     }
                     case WMHI_RAWKEY: {
