@@ -1519,6 +1519,30 @@ int main(int argc, char **argv)
         }
     }
 
+    /* No commodities.library (or the broker above failed for some other
+     * reason): the broker's CBERR_DUP is our only single-instance check, so
+     * without one, two launches would race the same vault file with nothing
+     * arbitrating between them (#64). Fall back to the same public port used
+     * for CLI forwarding later - it exists independent of commodities.library
+     * - checked here before any prompt, exactly like the broker path above.
+     * Deliberately not forwarding an AAP_SHOW to wake the resident instance:
+     * that would mean waiting on a reply from a port whose owning process
+     * could itself be a stale registration left behind by an earlier abnormal
+     * exit (#71), which would hang this launch rather than just quietly
+     * declining to prompt - matching the broker path's own behaviour, which
+     * has the same limitation via NBU_NOTIFY. */
+    if (!broker) {
+        struct MsgPort *resident;
+        Forbid();
+        resident = FindPort((CONST_STRPTR)AMIAUTH_PORT_NAME);
+        Permit();
+        if (resident) {
+            ArgArrayDone();
+            close_libs();
+            return 0;
+        }
+    }
+
     strncpy(vpath, vault_path(), sizeof vpath - 1);
     vpath[sizeof vpath - 1] = '\0';
     path = vpath;
@@ -1593,9 +1617,10 @@ int main(int argc, char **argv)
         }
     }
 
-    /* Public port for CLI forwarding (Stage 3b), only if we're the resident one
-     * (single-instance is normally the Stage 3a broker; the FindPort guard covers
-     * the no-commodities edge case). */
+    /* Public port for CLI forwarding (Stage 3b), only if we're the resident one.
+     * Single-instance itself is handled earlier (the Stage 3a broker's CBERR_DUP,
+     * or the early FindPort check above for the no-commodities case, #64) - this
+     * guard is just to avoid a duplicate AddPort() if somehow reached anyway. */
     Forbid();
     if (!FindPort((CONST_STRPTR)AMIAUTH_PORT_NAME) &&
         (pubport = CreateMsgPort()) != NULL) {
