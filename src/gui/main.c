@@ -1348,7 +1348,7 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
         TAG_END);
 
     gw->winobj = NewObject(WINDOW_GetClass(), NULL,
-        WA_Title,        (ULONG)"AmiAuth",
+        WA_Title,        (ULONG)("AmiAuth " AMIAUTH_VERSION),
         WA_Activate,     TRUE,
         WA_CloseGadget,  TRUE,
         WA_DragBar,      TRUE,
