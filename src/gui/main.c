@@ -48,6 +48,9 @@
 #include <proto/string.h>       /* STRING_GetClass */
 #include <proto/asl.h>          /* AllocAslRequestTags, AslRequest (QR picker) */
 #include <proto/commodities.h>  /* CxBroker, HotKey, CxMsgType/ID (Stage 3) */
+#include <proto/wb.h>           /* AddAppWindowA/RemoveAppWindow (QR drag-and-drop);
+                                  * note: workbench.library's proto header is
+                                  * "wb.h", not "workbench.h" */
 
 #include <string.h>
 #include <stdio.h>
@@ -95,8 +98,19 @@ struct Library       *WorkbenchBase   = NULL;   /* workbench.library (QR import:
 struct Library       *CxBase          = NULL;   /* commodities.library (Stage 3: broker/hotkey) */
 
 /* AppWindow message port: image icons dropped on the main window (QR import).
- * Created only when datatypes + workbench are available. */
-static struct MsgPort *g_appport = NULL;
+ * Created only when datatypes + workbench are available. g_appwin is the
+ * handle from AddAppWindowA(), live only while win is actually open (see
+ * win_show/win_hide) — registering the window as a Workbench drop target is
+ * a runtime call against the real struct Window*, not a window.class
+ * creation tag (WINDOW_AppPort alone, tried first, only wires iconify
+ * support and never actually registers a drop target — #37). */
+static struct MsgPort   *g_appport = NULL;
+static struct AppWindow *g_appwin  = NULL;
+
+/* Last known window position/size, remembered across a hide/show cycle
+ * (Exchange Hide/Show, idle auto-lock, the close gadget) so re-showing the
+ * window doesn't snap back to WPOS_CENTERSCREEN. -1 = no size seen yet. */
+static WORD g_winleft = -1, g_wintop = -1, g_winw = -1, g_winh = -1;
 
 /* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none),
  * drawn in a recessed bevel (shadow/shine pens from the screen's DrawInfo). */
@@ -646,10 +660,15 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
 
     if (cap == 0) return 0;
     buf[0] = '\0';
-    stars[0] = '\0';
+    /* trailing '|' is a static cursor: the field is a read-only display
+     * (real keys are captured at window level, see below), so there's no
+     * gadget-drawn cursor to show it has focus without this (#37). A
+     * vertical bar, not '_', so it isn't a descender easily clipped/missed
+     * at the bottom of a tight text box. */
+    stars[0] = '|'; stars[1] = '\0';
 
     maskobj   = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ReadOnly, TRUE, GA_Text, (ULONG)"", TAG_END);
+        GA_ReadOnly, TRUE, GA_Text, (ULONG)"|", TAG_END);
     okobj     = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID, PWID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"OK",     TAG_END);
     cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
@@ -708,15 +727,17 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
                     else if (code == 0x1B) done = 0;                 /* Escape */
                     else if (code == 0x08 || code == 0x7F) {         /* Backspace/Del */
                         if (len > 0) {
-                            buf[--len] = '\0'; stars[len] = '\0';
+                            buf[--len] = '\0';
+                            stars[len] = '|'; stars[len + 1] = '\0';
                             SetGadgetAttrs((struct Gadget *)maskobj, w, NULL,
                                            GA_Text, (ULONG)stars, TAG_END);
                         }
                     } else if (code >= 0x20 && code < 0x7F) {        /* printable */
-                        if (len < cap - 1 && len < sizeof stars - 1) {
+                        if (len < cap - 1 && len < sizeof stars - 2) {
                             buf[len] = (char)code; stars[len] = '*';
                             len++;
-                            buf[len] = '\0'; stars[len] = '\0';
+                            buf[len] = '\0';
+                            stars[len] = '|'; stars[len + 1] = '\0';
                             SetGadgetAttrs((struct Gadget *)maskobj, w, NULL,
                                            GA_Text, (ULONG)stars, TAG_END);
                         }
@@ -950,11 +971,17 @@ static int deferred_open(vault *v, char *path, size_t cap, int *encrypted,
 {
     if (gui_open_vault(v, path, cap, encrypted, 1) <= 0)
         return 0;
-    SetGadgetAttrs((struct Gadget *)listobj, NULL, NULL,
-                   LISTBROWSER_Labels, ~0UL, TAG_END);
+    /* listobj only exists while the window is actually open (every gadget is
+     * rebuilt fresh per show, see win_show) - while hidden there's nothing to
+     * refresh here, build_nodes alone is enough: win_show picks lblist's
+     * current contents straight up via LISTBROWSER_Labels at creation. */
+    if (listobj)
+        SetGadgetAttrs((struct Gadget *)listobj, NULL, NULL,
+                       LISTBROWSER_Labels, ~0UL, TAG_END);
     build_nodes(lblist, v);
-    SetGadgetAttrs((struct Gadget *)listobj, NULL, NULL,
-                   LISTBROWSER_Labels, (ULONG)lblist, TAG_END);
+    if (listobj)
+        SetGadgetAttrs((struct Gadget *)listobj, NULL, NULL,
+                       LISTBROWSER_Labels, (ULONG)lblist, TAG_END);
     *naccounts = v->count;
     return 1;
 }
@@ -1186,28 +1213,180 @@ static int gui_find_account(const vault *v, const char *q)
     return -1;
 }
 
+/* Every gadget + the window itself is rebuilt from scratch on every hide/show
+ * cycle - see the win_show/win_hide comment below for why nothing is reused
+ * across a cycle any more. */
+struct gui_widgets {
+    Object *winobj, *listobj, *codeobj, *gaugeobj, *copyobj, *statobj,
+           *addobj, *editobj, *removeobj, *nudgednobj, *nudgeupobj;
+};
+
 /* --- window show/hide (Stage 3 commodity) ------------------------------- *
- * The window object + its gadgets are built once; hide/show just toggles the
- * intuition window via WM_CLOSE/WM_OPEN (window.class supports cycling), so the
- * resident commodity keeps everything cheaply across a hide. led pens are
- * screen-bound, so (re)allocated per open. */
-static struct Window *win_show(Object *winobj, Object *statobj,
+ * A fresh window (and every gadget in it) is built and disposed every
+ * hide/show cycle. Two smaller approaches were tried and abandoned first:
+ *
+ * 1. A single persistent window.class object, cycled via WM_CLOSE/WM_OPEN
+ *    across a hide. Per the window.class autodoc, WM_OPEN "locks default
+ *    public screen if needed" and WM_CLOSE's documented behaviour never
+ *    mentions releasing it - so that lock, taken once at the very first
+ *    open, was held for as long as AmiAuth stayed resident, hidden or not
+ *    (blocking a Workbench screen-mode change the whole time), and left a
+ *    stale reference if the screen changed anyway (window wouldn't reopen,
+ *    but Exchange still saw the process as alive).
+ * 2. Disposing just the window wrapper each hide, detaching and reattaching
+ *    the same layout/gadget tree to a fresh one each show. Fixed the lock,
+ *    but the reused gadgets didn't reliably redraw against the new window -
+ *    the account list, code, gauge and button contents came back blank.
+ *
+ * Rebuilding everything avoids both: nothing is reused across a cycle, so
+ * there's nothing that can hold a stale screen reference or stale render
+ * state (#37). led pens are screen-bound too, so (re)allocated per open. */
+static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
+                               const vault *v, int have_clip,
+                               const clock_ctx *clk, char *statbuf,
                                ULONG *winsig, int ledstate)
 {
-    struct Window *w = (struct Window *)DoMethod(winobj, WM_OPEN, NULL);
+    struct Window *w;
+    Object *layoutobj, *btnrow, *statrow;
+
+    gw->listobj = NewObject(LISTBROWSER_GetClass(), NULL,
+        GA_ID,                    GID_LIST,
+        GA_RelVerify,             TRUE,
+        LISTBROWSER_ColumnInfo,   (ULONG)g_columns,
+        LISTBROWSER_ColumnTitles, TRUE,
+        LISTBROWSER_Labels,       (ULONG)lblist,
+        LISTBROWSER_ShowSelected, TRUE,
+        LISTBROWSER_Selected,     0,
+        TAG_END);
+    gw->codeobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,       GID_CODE,
+        GA_ReadOnly, TRUE,
+        GA_Text,     (ULONG)"------",
+        TAG_END);
+    gw->gaugeobj = NewObject(FUELGAUGE_GetClass(), NULL,
+        GA_ID,             GID_GAUGE,
+        FUELGAUGE_Min,     0,
+        FUELGAUGE_Max,     30,
+        FUELGAUGE_Level,   0,
+        FUELGAUGE_Percent, FALSE,
+        FUELGAUGE_Ticks,   0,
+        TAG_END);
+    gw->addobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_ADD,
+        GA_RelVerify, TRUE,
+        GA_Disabled,  !StringBase,          /* typed-URI requester needs string.gadget */
+        GA_Text,      (ULONG)"_Add",
+        TAG_END);
+    gw->editobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_EDIT,
+        GA_RelVerify, TRUE,
+        GA_Disabled,  (!StringBase || v->count == 0),
+        GA_Text,      (ULONG)"_Edit",
+        TAG_END);
+    gw->removeobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_REMOVE,
+        GA_RelVerify, TRUE,
+        GA_Disabled,  (v->count == 0),
+        GA_Text,      (ULONG)"_Remove",
+        TAG_END);
+    gw->copyobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_COPY,
+        GA_RelVerify, TRUE,
+        GA_Disabled,  (!have_clip || v->count == 0),  /* no clipboard / nothing to copy */
+        GA_Text,      (ULONG)"_Copy",
+        TAG_END);
+    clock_status_text(clk, statbuf);
+    gw->statobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ReadOnly, TRUE,
+        GA_Text,     (ULONG)statbuf,
+        TAG_END);
+    gw->nudgednobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_NUDGEDOWN,
+        GA_RelVerify, TRUE,
+        GA_Text,      (ULONG)"_D -10s",
+        TAG_END);
+    gw->nudgeupobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID,        GID_NUDGEUP,
+        GA_RelVerify, TRUE,
+        GA_Text,      (ULONG)"_U +10s",
+        TAG_END);
+    btnrow = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_AddChild, (ULONG)gw->addobj,
+        LAYOUT_AddChild, (ULONG)gw->editobj,
+        LAYOUT_AddChild, (ULONG)gw->removeobj,
+        LAYOUT_AddChild, (ULONG)gw->copyobj,
+        TAG_END);
+    statrow = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_AddChild,      (ULONG)gw->nudgednobj,
+        CHILD_WeightedWidth,  0,
+        LAYOUT_AddChild,      (ULONG)gw->statobj,
+        LAYOUT_AddChild,      (ULONG)gw->nudgeupobj,
+        CHILD_WeightedWidth,  0,
+        TAG_END);
+    layoutobj = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
+        LAYOUT_SpaceOuter,  TRUE,
+        LAYOUT_AddChild,    (ULONG)gw->listobj,
+        CHILD_MinWidth,     320,            /* room for three columns + titles */
+        CHILD_MinHeight,    100,            /* show several accounts at once */
+        LAYOUT_AddChild,    (ULONG)gw->codeobj,
+        CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild,    (ULONG)gw->gaugeobj,
+        CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild,    (ULONG)btnrow,
+        CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild,    (ULONG)statrow,
+        CHILD_WeightedHeight, 0,
+        TAG_END);
+
+    gw->winobj = NewObject(WINDOW_GetClass(), NULL,
+        WA_Title,        (ULONG)"AmiAuth",
+        WA_Activate,     TRUE,
+        WA_CloseGadget,  TRUE,
+        WA_DragBar,      TRUE,
+        WA_DepthGadget,  TRUE,
+        WA_SizeGadget,   TRUE,
+        WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK
+                        | IDCMP_VANILLAKEY    /* plain-letter gadget shortcuts, #55 */
+                        | IDCMP_RAWKEY,        /* cursor up/down list navigation, #55 */
+        (g_winleft < 0)  ? WINDOW_Position : TAG_IGNORE, (ULONG)WPOS_CENTERSCREEN,
+        (g_winleft >= 0) ? WA_Left         : TAG_IGNORE, (ULONG)g_winleft,
+        (g_winleft >= 0) ? WA_Top          : TAG_IGNORE, (ULONG)g_wintop,
+        (g_winleft >= 0) ? WA_Width        : TAG_IGNORE, (ULONG)g_winw,
+        (g_winleft >= 0) ? WA_Height       : TAG_IGNORE, (ULONG)g_winh,
+        GadToolsBase ? WINDOW_NewMenu : TAG_IGNORE, (ULONG)g_menu,
+        /* AppWindow (QR drag-and-drop) registration happens below via
+         * AddAppWindowA against the real struct Window*, not here - see the
+         * g_appport/g_appwin comment above. */
+        WINDOW_Layout,   (ULONG)layoutobj,
+        TAG_END);
+    if (!gw->winobj) {
+        Printf((CONST_STRPTR)"AmiAuth: could not create the window\n");
+        return NULL;
+    }
+    w = (struct Window *)DoMethod(gw->winobj, WM_OPEN, NULL);
     if (w) {
-        GetAttr(WINDOW_SigMask, winobj, winsig);
+        GetAttr(WINDOW_SigMask, gw->winobj, winsig);
         led_pens_alloc(w);
-        led_draw(w, statobj, ledstate);
+        led_draw(w, gw->statobj, ledstate);
+        if (g_appport)
+            g_appwin = AddAppWindowA(0, 0, w, g_appport, NULL);
     }
     return w;
 }
 
-static void win_hide(Object *winobj, struct Window *w)
+static void win_hide(struct gui_widgets *gw, struct Window *w)
 {
-    if (!w) return;
+    if (!w || !gw->winobj) return;
+    g_winleft = w->LeftEdge; g_wintop = w->TopEdge;
+    g_winw    = w->Width;    g_winh   = w->Height;
+    if (g_appwin) { RemoveAppWindow(g_appwin); g_appwin = NULL; }
     led_pens_free(w);
-    DoMethod(winobj, WM_CLOSE, NULL);
+    DoMethod(gw->winobj, WM_CLOSE, NULL);
+    DisposeObject(gw->winobj);  /* cascades: also disposes every gadget in it */
+    memset(gw, 0, sizeof *gw);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1215,11 +1394,8 @@ static void win_hide(Object *winobj, struct Window *w)
 int main(int argc, char **argv)
 {
     static vault v;                     /* ~19 KB: keep it off the stack */
-    static char pass[128];              /* passphrase buffer; off the stack, scrubbed after use */
     struct List lblist;
-    Object *winobj = NULL, *codeobj = NULL, *gaugeobj = NULL, *listobj = NULL, *copyobj = NULL;
-    Object *statobj = NULL, *addobj = NULL, *editobj = NULL, *removeobj = NULL;
-    Object *nudgednobj = NULL, *nudgeupobj = NULL;
+    struct gui_widgets gw = { 0 };      /* every gadget - rebuilt each show, see win_show */
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
@@ -1336,153 +1512,18 @@ int main(int argc, char **argv)
     have_timer = timer_open();
     have_clip  = clip_open();
 
-    /* Build the gadgets explicitly (the ReAction *Object/End builder macros rely
-     * on NewObject not being a function-like macro, which it is here). */
-    listobj = NewObject(LISTBROWSER_GetClass(), NULL,
-        GA_ID,                    GID_LIST,
-        GA_RelVerify,             TRUE,
-        LISTBROWSER_ColumnInfo,   (ULONG)g_columns,
-        LISTBROWSER_ColumnTitles, TRUE,
-        LISTBROWSER_Labels,       (ULONG)&lblist,
-        LISTBROWSER_ShowSelected, TRUE,
-        LISTBROWSER_Selected,     0,
-        TAG_END);
-    codeobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID,       GID_CODE,
-        GA_ReadOnly, TRUE,
-        GA_Text,     (ULONG)"------",
-        TAG_END);
-    gaugeobj = NewObject(FUELGAUGE_GetClass(), NULL,
-        GA_ID,             GID_GAUGE,
-        FUELGAUGE_Min,     0,
-        FUELGAUGE_Max,     30,
-        FUELGAUGE_Level,   0,
-        FUELGAUGE_Percent, FALSE,
-        FUELGAUGE_Ticks,   0,
-        TAG_END);
-    /* '_' in GA_Text marks the next character (must be a letter) as the
-     * gadget's keyboard shortcut: underlined, activated by the plain letter
-     * alone (no modifier) per the Amiga UI Style Guide's gadget-shortcut
-     * convention — distinct from the menu's Right-Amiga shortcuts below,
-     * though chosen to match them letter-for-letter (A/E/R/C mirror the
-     * equivalent Account-menu items) so either reaches the same action. The
-     * two systems don't collide: menu shortcuts always need Right-Amiga
-     * held, gadget shortcuts never do. See #55. */
-    addobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID,        GID_ADD,
-        GA_RelVerify, TRUE,
-        GA_Disabled,  !StringBase,          /* typed-URI requester needs string.gadget */
-        GA_Text,      (ULONG)"_Add",
-        TAG_END);
-    editobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID,        GID_EDIT,
-        GA_RelVerify, TRUE,
-        GA_Disabled,  (!StringBase || v.count == 0),
-        GA_Text,      (ULONG)"_Edit",
-        TAG_END);
-    removeobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID,        GID_REMOVE,
-        GA_RelVerify, TRUE,
-        GA_Disabled,  (v.count == 0),
-        GA_Text,      (ULONG)"_Remove",
-        TAG_END);
-    copyobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID,        GID_COPY,
-        GA_RelVerify, TRUE,
-        GA_Disabled,  (!have_clip || v.count == 0),  /* no clipboard / nothing to copy */
-        GA_Text,      (ULONG)"_Copy",
-        TAG_END);
-    /* Clock-status label (a full-width read-only field). It states the trust
-     * level + offset in words; we draw a small red/amber/green LED into its
-     * left margin ourselves (led_draw) — the centred text clears the far left. */
-    clock_status_text(&clk, statbuf);
-    statobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ReadOnly, TRUE,
-        GA_Text,     (ULONG)statbuf,
-        TAG_END);
-    /* Manual nudge (docs/CLOCK.md "manual nudge" layer): +/- CLOCK_NUDGE_STEP
-     * seconds against the current offset, for dialling an offline clock in by
-     * eye while watching the countdown/status update live. Mirrors the CLI's
-     * NUDGE command (clock_nudge, same persisted "offset" pref) rather than
-     * duplicating the logic. Always enabled — useful before any vault/account
-     * exists, and independent of the vault's lock state. */
-    /* Both labels' only letter is 's' - can't underscore that on both without
-     * a collision, so lead with a distinguishing mnemonic letter (D/U) as the
-     * style guide requires an underscored *letter*, not the sign character. */
-    nudgednobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID,        GID_NUDGEDOWN,
-        GA_RelVerify, TRUE,
-        GA_Text,      (ULONG)"_D -10s",
-        TAG_END);
-    nudgeupobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID,        GID_NUDGEUP,
-        GA_RelVerify, TRUE,
-        GA_Text,      (ULONG)"_U +10s",
-        TAG_END);
-    {
-        Object *btnrow = NewObject(LAYOUT_GetClass(), NULL,
-            LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
-            LAYOUT_AddChild, (ULONG)addobj,
-            LAYOUT_AddChild, (ULONG)editobj,
-            LAYOUT_AddChild, (ULONG)removeobj,
-            LAYOUT_AddChild, (ULONG)copyobj,
-            TAG_END);
-        Object *statrow = NewObject(LAYOUT_GetClass(), NULL,
-            LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
-            LAYOUT_AddChild,      (ULONG)nudgednobj,
-            CHILD_WeightedWidth,  0,
-            LAYOUT_AddChild,      (ULONG)statobj,
-            LAYOUT_AddChild,      (ULONG)nudgeupobj,
-            CHILD_WeightedWidth,  0,
-            TAG_END);
-        Object *layoutobj = NewObject(LAYOUT_GetClass(), NULL,
-            LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
-            LAYOUT_SpaceOuter,  TRUE,
-            LAYOUT_AddChild,    (ULONG)listobj,
-            CHILD_MinWidth,     320,            /* room for three columns + titles */
-            CHILD_MinHeight,    100,            /* show several accounts at once */
-            LAYOUT_AddChild,    (ULONG)codeobj,
-            CHILD_WeightedHeight, 0,
-            LAYOUT_AddChild,    (ULONG)gaugeobj,
-            CHILD_WeightedHeight, 0,
-            LAYOUT_AddChild,    (ULONG)btnrow,
-            CHILD_WeightedHeight, 0,
-            LAYOUT_AddChild,    (ULONG)statrow,
-            CHILD_WeightedHeight, 0,
-            TAG_END);
-        /* QR import is optional and feature-detected: grey the menu item unless
-         * datatypes+asl are present, and only make the window an AppWindow
-         * (drag-and-drop) when datatypes+workbench are present. */
-        if (!(DataTypesBase && AslBase)) {
-            int mi;
-            for (mi = 0; g_menu[mi].nm_Type != NM_END; mi++)
-                if (g_menu[mi].nm_Type == NM_ITEM &&
-                    (ULONG)g_menu[mi].nm_UserData == CMD_ADD_QR)
-                    g_menu[mi].nm_Flags |= NM_ITEMDISABLED;
-        }
-        if (DataTypesBase && WorkbenchBase)
-            g_appport = CreateMsgPort();
-        winobj = NewObject(WINDOW_GetClass(), NULL,
-            WA_Title,        (ULONG)"AmiAuth",
-            WA_Activate,     TRUE,
-            WA_CloseGadget,  TRUE,
-            WA_DragBar,      TRUE,
-            WA_DepthGadget,  TRUE,
-            WA_SizeGadget,   TRUE,
-            WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_MENUPICK
-                            | IDCMP_VANILLAKEY    /* plain-letter gadget shortcuts, #55 */
-                            | IDCMP_RAWKEY,        /* cursor up/down list navigation, #55 */
-            WINDOW_Position, WPOS_CENTERSCREEN,
-            GadToolsBase ? WINDOW_NewMenu : TAG_IGNORE, (ULONG)g_menu,
-            g_appport ? WINDOW_AppPort : TAG_IGNORE, (ULONG)g_appport,
-            WINDOW_Layout,   (ULONG)layoutobj,
-            TAG_END);
+    /* Every gadget is (re)built fresh in win_show on each show - see its
+     * comment for why. QR import's menu item and the AppWindow port are
+     * independent of the window's lifecycle, so still only set up once. */
+    if (!(DataTypesBase && AslBase)) {
+        int mi;
+        for (mi = 0; g_menu[mi].nm_Type != NM_END; mi++)
+            if (g_menu[mi].nm_Type == NM_ITEM &&
+                (ULONG)g_menu[mi].nm_UserData == CMD_ADD_QR)
+                g_menu[mi].nm_Flags |= NM_ITEMDISABLED;
     }
-
-    if (!winobj) {
-        Printf((CONST_STRPTR)"AmiAuth: could not create the window\n");
-        goto cleanup;
-    }
+    if (DataTypesBase && WorkbenchBase)
+        g_appport = CreateMsgPort();
 
     timersig = have_timer ? (1UL << g_tport->mp_SigBit) : 0;
     appsig   = g_appport ? (1UL << g_appport->mp_SigBit) : 0;
@@ -1492,9 +1533,9 @@ int main(int argc, char **argv)
      * then it stays dormant until the hotkey / Exchange "Show". win_show sets
      * winsig; it stays 0 while hidden so the event loop drops it from the mask. */
     if (popup) {
-        win = win_show(winobj, statobj, &winsig, clk.state);
+        win = win_show(&gw, &lblist, &v, have_clip, &clk, statbuf, &winsig, clk.state);
         if (!win && !broker) {                /* a plain window app needs its window */
-            Printf((CONST_STRPTR)"AmiAuth: could not open the window\n");
+            if (gw.winobj) Printf((CONST_STRPTR)"AmiAuth: could not open the window\n");
             goto cleanup;
         }
     }
@@ -1530,9 +1571,9 @@ int main(int argc, char **argv)
                     if (win) { WindowToFront(win); ActivateWindow(win); }
                     else if (!deferred ||
                              deferred_open(&v, vpath, sizeof vpath, &encrypted,
-                                           &lblist, listobj, &naccounts)) {
+                                           &lblist, gw.listobj, &naccounts)) {
                         deferred = 0;   /* declined? stays hidden and locked */
-                        win = win_show(winobj, statobj, &winsig, clk.state);
+                        win = win_show(&gw, &lblist, &v, have_clip, &clk, statbuf, &winsig, clk.state);
                     }
                 } else if (type == CXM_COMMAND) {
                     switch (id) {
@@ -1541,13 +1582,13 @@ int main(int argc, char **argv)
                             if (win) { WindowToFront(win); ActivateWindow(win); }
                             else if (!deferred ||
                                      deferred_open(&v, vpath, sizeof vpath, &encrypted,
-                                                   &lblist, listobj, &naccounts)) {
+                                                   &lblist, gw.listobj, &naccounts)) {
                                 deferred = 0;
-                                win = win_show(winobj, statobj, &winsig, clk.state);
+                                win = win_show(&gw, &lblist, &v, have_clip, &clk, statbuf, &winsig, clk.state);
                             }
                             break;
                         case CXCMD_DISAPPEAR:
-                            win_hide(winobj, win); win = NULL;
+                            win_hide(&gw, win); win = NULL;
                             break;
                         case CXCMD_ENABLE:  ActivateCxObj(broker, 1); break;
                         case CXCMD_DISABLE: ActivateCxObj(broker, 0); break;
@@ -1572,9 +1613,9 @@ int main(int argc, char **argv)
                         if (win) { WindowToFront(win); ActivateWindow(win); }
                         else if (!deferred ||
                                  deferred_open(&v, vpath, sizeof vpath, &encrypted,
-                                               &lblist, listobj, &naccounts)) {
+                                               &lblist, gw.listobj, &naccounts)) {
                             deferred = 0;
-                            win = win_show(winobj, statobj, &winsig, clk.state);
+                            win = win_show(&gw, &lblist, &v, have_clip, &clk, statbuf, &winsig, clk.state);
                         } else {
                             req->aar_Result = AAR_LOCKED;   /* declined: still locked */
                         }
@@ -1645,33 +1686,23 @@ int main(int argc, char **argv)
         if (have_timer && (sigs & timersig)) {
             WaitIO((struct IORequest *)g_treq);   /* consume the request */
             if (win && copied > 0 && --copied == 0)  /* revert the "Copied" flash */
-                SetGadgetAttrs((struct Gadget *)copyobj, win, NULL,
+                SetGadgetAttrs((struct Gadget *)gw.copyobj, win, NULL,
                                GA_Text, (ULONG)"Copy", TAG_END);
             /* auto-clear our copied code once it has sat ~30s, but only if the
              * clipboard is still ours (don't clobber something copied since). */
             if (clear_secs > 0 && --clear_secs == 0 && clip_write_id() == our_clipid)
                 clip_clear();
-            /* idle auto-lock: after enough inactivity, scrub an encrypted vault
-             * and re-prompt for the passphrase. Only while the window is open —
-             * hidden, the resident unlocked vault reachable by hotkey is the
-             * point (a future "lock on hide" pref could tighten this). */
+            /* idle auto-lock: after enough inactivity, lock and hide an
+             * encrypted vault's window; the next Show/hotkey/AAP_SHOW
+             * re-prompts via the same deferred_open() path a hidden
+             * commodity start uses. Blocking here with a nested
+             * passphrase_request() modal instead would starve the
+             * window/hotkey/CLI-port signals for as long as it's up (#37). */
             if (win && encrypted && idle_limit > 0 && (long)(++idle_secs) >= idle_limit) {
-                const char *msg = "Locked - enter passphrase:";
                 vault_lock(&v);
-                /* blank with fixed widths so nothing shrinks (stale-pixel glitch) */
-                for (i = 0; i < naccounts; i++) { strcpy(g_code[i], "------"); strcpy(g_left[i], "   "); }
-                curcode[0] = '\0';
-                SetGadgetAttrs((struct Gadget *)listobj,  win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
-                SetGadgetAttrs((struct Gadget *)codeobj,  win, NULL, GA_Text, (ULONG)"------", TAG_END);
-                SetGadgetAttrs((struct Gadget *)gaugeobj, win, NULL, FUELGAUGE_Level, 0, TAG_END);
-                for (;;) {
-                    if (!passphrase_request(msg, pass, sizeof pass)) { running = 0; break; }
-                    rc = vault_load(&v, path, pass);
-                    memset(pass, 0, sizeof pass);
-                    if (rc == VAULT_OK) { idle_secs = 0; break; }
-                    if (rc == VAULT_ERR_AUTH) { msg = "Wrong passphrase - try again:"; continue; }
-                    running = 0; break;                 /* IO/format error */
-                }
+                win_hide(&gw, win); win = NULL;
+                deferred = 1;
+                idle_secs = 0;
             }
             /* recompute + refresh below, then re-arm */
             timer_arm(1);
@@ -1683,19 +1714,19 @@ int main(int argc, char **argv)
             int docopy = 0, doadd_clip = 0, doadd_type = 0, doadd_qr = 0, doedit = 0, doremove = 0;
             long donudge = 0;
             idle_secs = 0;                          /* any window input = activity */
-            while ((result = DoMethod(winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
+            while ((result = DoMethod(gw.winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
                 switch (result & WMHI_CLASSMASK) {
                     case WMHI_CLOSEWINDOW:
                         /* As a commodity the close gadget hides (stay resident,
                          * vault unlocked); a plain window app quits. */
-                        if (broker) { win_hide(winobj, win); win = NULL; }
+                        if (broker) { win_hide(&gw, win); win = NULL; }
                         else        { running = 0; }
                         break;
                     case WMHI_GADGETUP:
                         switch (result & WMHI_GADGETMASK) {
                             case GID_LIST: {
                                 ULONG cs = 0, cm = 0;
-                                GetAttr(LISTBROWSER_Selected, listobj, &sel);
+                                GetAttr(LISTBROWSER_Selected, gw.listobj, &sel);
                                 CurrentTime(&cs, &cm);       /* a quick second click = copy */
                                 if (DoubleClick(lastsec, lastmic, cs, cm)) docopy = 1;
                                 lastsec = cs; lastmic = cm;
@@ -1712,7 +1743,7 @@ int main(int argc, char **argv)
                     case WMHI_MENUPICK: {
                         struct Menu *ms = NULL;
                         UWORD mc = (UWORD)(result & WMHI_MENUMASK);
-                        GetAttr(WINDOW_MenuStrip, winobj, (ULONG *)&ms);
+                        GetAttr(WINDOW_MenuStrip, gw.winobj, (ULONG *)&ms);
                         while (ms && mc != MENUNULL) {
                             struct MenuItem *it = ItemAddress(ms, mc);
                             if (!it) break;
@@ -1759,7 +1790,7 @@ int main(int argc, char **argv)
                         if (v.count > 0 && (code == CURSORUP || code == CURSORDOWN)) {
                             if (code == CURSORDOWN) { if (sel + 1 < v.count) sel++; }
                             else                     { if (sel > 0) sel--; }
-                            SetGadgetAttrs((struct Gadget *)listobj, win, NULL,
+                            SetGadgetAttrs((struct Gadget *)gw.listobj, win, NULL,
                                            LISTBROWSER_Selected, sel, TAG_END);
                         }
                         break;
@@ -1769,7 +1800,7 @@ int main(int argc, char **argv)
             if (docopy && have_clip && curcode[0]) {
                 our_clipid = clip_write_text(curcode);
                 clear_secs = CLIP_CLEAR_SECS;         /* start/reset auto-clear */
-                SetGadgetAttrs((struct Gadget *)copyobj, win, NULL,
+                SetGadgetAttrs((struct Gadget *)gw.copyobj, win, NULL,
                                GA_Text, (ULONG)"Copied", TAG_END);
                 copied = 2;                           /* revert after ~2 ticks */
             }
@@ -1829,8 +1860,8 @@ int main(int argc, char **argv)
                 clock_nudge(&clk, donudge);
                 prefs_set_long("offset", clk.offset_seconds);
                 clock_status_text(&clk, statbuf);
-                SetGadgetAttrs((struct Gadget *)statobj, win, NULL, GA_Text, (ULONG)statbuf, TAG_END);
-                led_draw(win, statobj, clk.state);
+                SetGadgetAttrs((struct Gadget *)gw.statobj, win, NULL, GA_Text, (ULONG)statbuf, TAG_END);
+                led_draw(win, gw.statobj, clk.state);
             }
         }
 
@@ -1858,24 +1889,32 @@ int main(int argc, char **argv)
          * the list is correct on the next show; only touch gadgets when open. --- */
         if (changed) {
             if (win)
-                SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, ~0UL, TAG_END);
+                SetGadgetAttrs((struct Gadget *)gw.listobj, win, NULL, LISTBROWSER_Labels, ~0UL, TAG_END);
             build_nodes(&lblist, &v);
             naccounts = v.count;
             if (sel >= v.count) sel = v.count ? v.count - 1 : 0;
             curcode[0] = '\0';
             if (win) {
-                SetGadgetAttrs((struct Gadget *)listobj, win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
-                SetGadgetAttrs((struct Gadget *)removeobj, win, NULL, GA_Disabled, (v.count == 0), TAG_END);
-                SetGadgetAttrs((struct Gadget *)editobj,   win, NULL,
+                SetGadgetAttrs((struct Gadget *)gw.listobj, win, NULL, LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
+                SetGadgetAttrs((struct Gadget *)gw.removeobj, win, NULL, GA_Disabled, (v.count == 0), TAG_END);
+                SetGadgetAttrs((struct Gadget *)gw.editobj,   win, NULL,
                                GA_Disabled, (!StringBase || v.count == 0), TAG_END);
-                SetGadgetAttrs((struct Gadget *)copyobj,   win, NULL,
+                SetGadgetAttrs((struct Gadget *)gw.copyobj,   win, NULL,
                                GA_Disabled, (!have_clip || v.count == 0), TAG_END);
             }
         }
 
         /* Refresh every account's code + countdown in the list, and drive the
-         * detail pane (big code + gauge) from the selected row. Only when shown. */
-        if (win && running && v.count > 0) {
+         * detail pane (big code + gauge) from the selected row. Only when
+         * shown, and only on the actual once-a-second timer tick - this does
+         * real HMAC-SHA1 work per account, so gate it strictly: an earlier
+         * version ran this on every loop wakeup regardless of source (window
+         * activity, CLI forwarding, commodity messages, AppWindow drag
+         * notifications...), which with any accounts present was enough
+         * uncounted crypto work on every wakeup to visibly stall unrelated
+         * Workbench drag gestures system-wide, not just interaction with
+         * this window (#37). */
+        if (have_timer && (sigs & timersig) && win && running && v.count > 0) {
             uint64_t now = clock_now_utc(&clk);
             uint32_t sel_period = OTP_DEFAULT_PERIOD, sel_rem = 0;
             char fmt[8];
@@ -1896,16 +1935,22 @@ int main(int argc, char **argv)
             /* The nodes point at g_code[]/g_left[]; re-set Labels to repaint.
              * Cell text is fixed-width (codes and the "NNs" countdown), so no
              * stale pixels are left behind. */
-            SetGadgetAttrs((struct Gadget *)listobj, win, NULL,
+            SetGadgetAttrs((struct Gadget *)gw.listobj, win, NULL,
                            LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
             strcpy(curcode, g_code[sel]);      /* selected row -> detail + copy */
-            SetGadgetAttrs((struct Gadget *)codeobj, win, NULL,
+            SetGadgetAttrs((struct Gadget *)gw.codeobj, win, NULL,
                            GA_Text, (ULONG)curcode, TAG_END);
-            SetGadgetAttrs((struct Gadget *)gaugeobj, win, NULL,
+            SetGadgetAttrs((struct Gadget *)gw.gaugeobj, win, NULL,
                            FUELGAUGE_Max, sel_period, FUELGAUGE_Level, sel_rem, TAG_END);
         }
 
-        if (win && running) led_draw(win, statobj, clk.state);  /* keep the LED lit */
+        /* Same reasoning as the refresh block above: NUDGE (and anything else
+         * that actually changes clk.state) already redraws the LED directly
+         * and immediately where it happens, so this trailing call is only a
+         * periodic safety-net repaint - gate it to the timer tick too rather
+         * than every loop wakeup. */
+        if (have_timer && (sigs & timersig) && win && running)
+            led_draw(win, gw.statobj, clk.state);
     }
 
 cleanup:
@@ -1918,8 +1963,8 @@ cleanup:
         }
         DeleteMsgPort(pubport);
     }
-    if (win) { win_hide(winobj, win); win = NULL; }  /* led_pens_free + WM_CLOSE */
-    if (winobj) DisposeObject(winobj);        /* also removes the AppWindow */
+    if (win) { win_hide(&gw, win); win = NULL; }  /* also disposes gw.winobj */
+    if (gw.winobj) DisposeObject(gw.winobj);  /* only fires if WM_OPEN itself failed */
     if (broker) DeleteCxObjAll(broker);       /* detach the hotkey + broker */
     if (cxport) {                             /* drain any late commodity msgs */
         struct Message *m;
