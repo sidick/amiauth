@@ -613,8 +613,9 @@ static int gui_add_uri(struct Window *win, vault *v, const char *path, const cha
 }
 
 /* Decode the QR in an image file into its otpauth:// URI and add it. Returns 1
- * if the vault changed. Reports load and decode failures. */
-static int do_add_qr(struct Window *win, vault *v, const char *vpath, const char *img)
+ * if the vault changed. Reports load and decode failures. Runs under
+ * do_add_qr()'s swapped stack - see there for why. */
+static int do_add_qr_impl(struct Window *win, vault *v, const char *vpath, const char *img)
 {
     static char uri[300];                 /* off the stack */
     unsigned char *gray = NULL;
@@ -650,6 +651,38 @@ static int do_add_qr(struct Window *win, vault *v, const char *vpath, const char
     qrimage_free(gray);
     memset(uri, 0, sizeof uri);
     return changed;
+}
+
+/* do_add_qr_impl's chain - picture.datatype's own PNG decompression (closed-
+ * source, stack usage unknown to us) plus quirc's fixed ~9 KB quirc_decode()
+ * datastream - is the deepest stack user in the GUI by far. __stack=32768
+ * above should already cover it, but a crash was seen in the field on this
+ * exact path with a real-world QR image (#76), so borrow dos.library's
+ * StackSwap() for extra, guaranteed headroom on just this one risky call
+ * rather than trusting the process's baseline stack alone. 64 KB is heap
+ * memory, trivial on anything this app targets. */
+#define QR_DECODE_STACK_SIZE (64UL * 1024)
+
+static int do_add_qr(struct Window *win, vault *v, const char *vpath, const char *img)
+{
+    struct StackSwapStruct sss;
+    APTR newstack;
+    int result;
+
+    newstack = AllocMem(QR_DECODE_STACK_SIZE, MEMF_ANY);
+    if (!newstack)                        /* fall back to the current stack */
+        return do_add_qr_impl(win, v, vpath, img);
+
+    sss.stk_Lower  = newstack;
+    sss.stk_Upper  = (ULONG)newstack + QR_DECODE_STACK_SIZE;
+    sss.stk_Pointer = (APTR)sss.stk_Upper;
+
+    StackSwap(&sss);
+    result = do_add_qr_impl(win, v, vpath, img);
+    StackSwap(&sss);                      /* back to the original stack */
+
+    FreeMem(newstack, QR_DECODE_STACK_SIZE);
+    return result;
 }
 
 /* Ask the user for an image file (asl.library). Returns 1 and fills `path`
