@@ -1971,7 +1971,8 @@ int main(int argc, char **argv)
         if (have_timer && (sigs & timersig) && win && running && v.count > 0) {
             uint64_t now = clock_now_utc(&clk);
             uint32_t sel_period = OTP_DEFAULT_PERIOD, sel_rem = 0;
-            char fmt[8];
+            char fmt[8], newcode[sizeof g_code[0]];
+            int list_changed = 0;
             if (sel >= v.count) sel = 0;
             for (i = 0; i < v.count; i++) {
                 const otp_account *a = &v.accounts[i];
@@ -1980,17 +1981,28 @@ int main(int argc, char **argv)
                 uint32_t rem  = totp_seconds_remaining(now, 0, period);
                 /* libnix sprintf lacks '*' width, so build "%06lu"/"%08lu". */
                 sprintf(fmt, "%%0%dlu", (int)a->digits);
-                sprintf(g_code[i], fmt, (unsigned long)code);
-                /* fixed 2-digit field so the text never shrinks (a shrinking
-                 * cell leaves stale pixels the listbrowser doesn't clear). */
+                sprintf(newcode, fmt, (unsigned long)code);
+                /* A full LISTBROWSER_Labels reset stalls unrelated Workbench
+                 * drag gestures system-wide (#62 - closed-source ReAction
+                 * cost, not fixable on our side), so only pay for it when a
+                 * code actually rolled over, not on every second's tick. */
+                if (strcmp(newcode, g_code[i]) != 0) {
+                    strcpy(g_code[i], newcode);
+                    list_changed = 1;
+                }
+                /* Only actually redrawn when list_changed triggers the relist
+                 * below, so between rollovers this freezes rather than
+                 * ticking down - the detail pane's gauge (right below) is the
+                 * live per-second countdown for the selected account. */
                 sprintf(g_left[i], "%2lus", (unsigned long)rem);
                 if (i == sel) { sel_period = period; sel_rem = rem; }
             }
             /* The nodes point at g_code[]/g_left[]; re-set Labels to repaint.
              * Cell text is fixed-width (codes and the "NNs" countdown), so no
              * stale pixels are left behind. */
-            SetGadgetAttrs((struct Gadget *)gw.listobj, win, NULL,
-                           LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
+            if (list_changed)
+                SetGadgetAttrs((struct Gadget *)gw.listobj, win, NULL,
+                               LISTBROWSER_Labels, (ULONG)&lblist, TAG_END);
             strcpy(curcode, g_code[sel]);      /* selected row -> detail + copy */
             SetGadgetAttrs((struct Gadget *)gw.codeobj, win, NULL,
                            GA_Text, (ULONG)curcode, TAG_END);
