@@ -1366,16 +1366,25 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
         /* AppWindow (QR drag-and-drop) registration happens below via
          * AddAppWindowA against the real struct Window*, not here - see the
          * g_appport/g_appwin comment above. */
-        /* PUBSCREEN=<name>: open as a visitor on that named public screen,
-         * falling back to the default public screen if it isn't open. */
-        g_pubscreen[0] ? WA_PubScreenName     : TAG_IGNORE, (ULONG)g_pubscreen,
-        g_pubscreen[0] ? WA_PubScreenFallBack : TAG_IGNORE, (ULONG)TRUE,
         WINDOW_Layout,   (ULONG)layoutobj,
         TAG_END);
     if (!gw->winobj) {
         Printf((CONST_STRPTR)"AmiAuth: could not create the window\n");
         return NULL;
     }
+    /* PUBSCREEN=<name>: set as a separate SetAttrs() only when actually in
+     * use, rather than folding WA_PubScreenName/WA_PubScreenFallBack into
+     * the NewObject() tag list above (conditioned on TAG_IGNORE the same
+     * way as the geometry/menu tags just above). That version prevented the
+     * window from ever opening even with no PUBSCREEN set (i.e. with both
+     * tags evaluating to TAG_IGNORE) - the exact mechanism wasn't pinned
+     * down (the source preprocesses correctly, no tag-value collision), but
+     * empirically their mere presence in that tag list was the trigger, so
+     * they're kept out of it entirely unless actually needed (#62 - found
+     * while investigating that issue, not the same bug). */
+    if (g_pubscreen[0])
+        SetAttrs(gw->winobj, WA_PubScreenName, (ULONG)g_pubscreen,
+                            WA_PubScreenFallBack, (ULONG)TRUE, TAG_END);
     w = (struct Window *)DoMethod(gw->winobj, WM_OPEN, NULL);
     if (w) {
         GetAttr(WINDOW_SigMask, gw->winobj, winsig);
