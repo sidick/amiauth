@@ -161,6 +161,17 @@ enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_ADD_QR, CMD_EDIT, CMD_COPY, CMD_REMOV
  * stack. Weighted column widths (CIF_RIGHT/CENTER are V47, below our baseline).*/
 static char g_code[VAULT_MAX_ACCOUNTS][12];
 static char g_left[VAULT_MAX_ACCOUNTS][8];
+
+/* The main window's title, including the version/build hash (set at window
+ * creation, win_show below). Single source of truth so the QR-decode busy
+ * title (do_add_qr, "AmiAuth - Decoding QR image...") restores the real
+ * title afterward instead of a separate hardcoded "AmiAuth" that drops the
+ * version/hash. */
+#ifdef AMIAUTH_BUILD_HASH
+static const char g_main_title[] = "AmiAuth " AMIAUTH_VERSION " (" AMIAUTH_BUILD_HASH ")";
+#else
+static const char g_main_title[] = "AmiAuth " AMIAUTH_VERSION;
+#endif
 static struct ColumnInfo g_columns[] = {
     { 50, (STRPTR)"Account", CIF_WEIGHTED },
     { 34, (STRPTR)"Code",    CIF_WEIGHTED },
@@ -630,7 +641,7 @@ static int do_add_qr(struct Window *win, vault *v, const char *vpath, const char
     dr = qr_decode_gray(gray, iw, ih, uri, sizeof uri);
     if (IntuitionBase->LibNode.lib_Version >= 39) {
         SetWindowPointer(win, TAG_END);           /* restore the default pointer */
-        SetWindowTitles(win, (STRPTR)"AmiAuth", (STRPTR)~0UL);
+        SetWindowTitles(win, (STRPTR)g_main_title, (STRPTR)~0UL);
     }
     if (dr == QR_OK)
         changed = gui_add_uri(win, v, vpath, uri);
@@ -1366,11 +1377,7 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
         TAG_END);
 
     gw->winobj = NewObject(WINDOW_GetClass(), NULL,
-#ifdef AMIAUTH_BUILD_HASH
-        WA_Title,        (ULONG)("AmiAuth " AMIAUTH_VERSION " (" AMIAUTH_BUILD_HASH ")"),
-#else
-        WA_Title,        (ULONG)("AmiAuth " AMIAUTH_VERSION),
-#endif
+        WA_Title,        (ULONG)g_main_title,
         WA_Activate,     TRUE,
         WA_CloseGadget,  TRUE,
         WA_DragBar,      TRUE,
