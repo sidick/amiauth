@@ -9,8 +9,8 @@
  *
  * AMIAUTH_VERSION_DATE is the AmigaOS $VER date, <dd>.<mm>.<yyyy> per
  * https://wiki.amigaos.net/wiki/Version_Strings */
-#define AMIAUTH_VERSION      "1.0"
-#define AMIAUTH_VERSION_DATE "19.07.2026"
+#define AMIAUTH_VERSION      "0.99"
+#define AMIAUTH_VERSION_DATE "20.07.2026"
 
 /* Embedded AmigaOS version string, findable by the shell `Version` command.
  * The leading "\0" guards against an adjacent string in the binary running
