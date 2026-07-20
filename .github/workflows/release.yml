@@ -60,10 +60,32 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "AmiAuth $GITHUB_REF_NAME" \
-            --generate-notes \
-            build/dist/AmiAuth.lha build/dist/AmiAuth.readme
+          if [ "$(gh release list --limit 1 --json tagName -q 'length')" = "0" ]; then
+            # First-ever release: a --generate-notes PR-title dump has
+            # nothing meaningful to diff against (every merged PR since the
+            # repo's creation), so use a curated body sourced from
+            # AmiAuth.readme's own intro + Features section instead. Later
+            # releases have a previous tag to diff against, so they fall
+            # through to --generate-notes below, which becomes genuinely
+            # useful once there's real release-to-release history.
+            {
+              sed -n '/^Distribution:/,/^Features$/p' AmiAuth.readme | sed '1d;$d;/^--------$/d'
+              echo "**Features:**"
+              echo
+              sed -n '/^Features$/,/^Requirements$/p' AmiAuth.readme | sed '1d;$d;/^--------$/d;/^$/d'
+              echo
+              echo "See the [wiki](https://github.com/sidick/amiauth/wiki) for full documentation, and [docs/SECURITY.md](https://github.com/sidick/amiauth/blob/main/docs/SECURITY.md) for the honest threat model."
+            } > /tmp/release-notes.md
+            gh release create "$GITHUB_REF_NAME" \
+              --title "AmiAuth $GITHUB_REF_NAME" \
+              --notes-file /tmp/release-notes.md \
+              build/dist/AmiAuth.lha build/dist/AmiAuth.readme
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "AmiAuth $GITHUB_REF_NAME" \
+              --generate-notes \
+              build/dist/AmiAuth.lha build/dist/AmiAuth.readme
+          fi
 
       - name: Keep the package for the Aminet job
         uses: actions/upload-artifact@v7
