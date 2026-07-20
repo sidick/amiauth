@@ -1944,7 +1944,13 @@ int main(int argc, char **argv)
                            FUELGAUGE_Max, sel_period, FUELGAUGE_Level, sel_rem, TAG_END);
         }
 
-        if (win && running) led_draw(win, gw.statobj, clk.state);  /* keep the LED lit */
+        /* Same reasoning as the refresh block above: NUDGE (and anything else
+         * that actually changes clk.state) already redraws the LED directly
+         * and immediately where it happens, so this trailing call is only a
+         * periodic safety-net repaint - gate it to the timer tick too rather
+         * than every loop wakeup. */
+        if (have_timer && (sigs & timersig) && win && running)
+            led_draw(win, gw.statobj, clk.state);
     }
 
 cleanup:
