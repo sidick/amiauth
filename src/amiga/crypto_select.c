@@ -3,12 +3,18 @@
 #include "../core/crypto_dispatch.h"
 #include "../core/prefs.h"
 
-/* Hand-written asm (src/core/sha1_asm.s / chacha20_asm.s), validated under
- * vamos on both plain 68000 and 68020+ - restricted to instructions
- * available on every target this project supports, so unlike the AmiSSL
- * provider (#85) there's no CPU tier where using it is unsafe. */
+/* Hand-written asm (src/core/sha1_asm.s), validated under vamos on both
+ * plain 68000 and 68020+ - restricted to instructions available on every
+ * target this project supports, so unlike the AmiSSL provider (#85) there's
+ * no CPU tier where using it is unsafe.
+ *
+ * ChaCha20 has no asm path: a hand-written attempt measured ~17% *slower*
+ * than the C reference on real 68000 hardware (Copperline/EClock) - the
+ * naive per-quarter-round stack traffic loses to GCC's register allocation,
+ * and closing that gap needs a much more involved register-resident
+ * rewrite that wasn't judged worth the risk for this pass. g_chacha20_block
+ * stays on the portable C default. */
 extern void sha1_compress_asm(uint32_t state[5], const uint8_t block[64]);
-extern void chacha20_block_asm(const uint32_t in[16], uint8_t out[64]);
 
 void crypto_select_init(void)
 {
@@ -22,6 +28,5 @@ void crypto_select_init(void)
         (buf[1] == 'f' || buf[1] == 'F'))
         return;
 
-    g_sha1_compress  = sha1_compress_asm;
-    g_chacha20_block = chacha20_block_asm;
+    g_sha1_compress = sha1_compress_asm;
 }

@@ -97,9 +97,9 @@ Resolves corrected UTC without touching the system clock (full design in
 `sha1_compress()` and `chacha20_block()` (HMAC and PBKDF2 have no hot loops of
 their own - they're built entirely on SHA-1) are reached through a
 function-pointer seam (`src/core/crypto_dispatch.h`), defaulting to the
-portable C reference. On Amiga, `src/amiga/crypto_select.c` repoints both at
-hand-written m68k assembly (`src/core/sha1_asm.s` / `chacha20_asm.s`) at
-startup, unless `ENVARC:AmiAuth/cryptoasm=off` forces the C reference back on.
+portable C reference. On Amiga, `src/amiga/crypto_select.c` repoints SHA-1 at
+hand-written m68k assembly (`src/core/sha1_asm.s`) at startup, unless
+`ENVARC:AmiAuth/cryptoasm=off` forces the C reference back on.
 
 Unlike a typical "020+ accelerated path", this asm is restricted to
 instructions available on the plain 68000 baseline (verified in CI under
@@ -107,7 +107,17 @@ amitools' `vamos`, on both `-C 000` and `-C 020`), so it's the *default* on
 every CPU tier this project supports, not an opt-in extra - 68020+ still runs
 it faster purely by being a faster CPU on the same instructions. Faster
 primitives convert directly into security margin, since PBKDF2 iterations are
-calibrated to ~1s of wall time.
+calibrated to ~1s of wall time. Measured on a real 68000 under Copperline
+(PAL EClock, real Kickstart 3.1 ROM): the SHA-1 asm cuts PBKDF2-HMAC-SHA1 time
+by ~17% versus the C reference.
+
+ChaCha20 has no asm path: a hand-written attempt measured ~17% *slower* than
+its C reference on the same real-hardware setup - the naive per-quarter-round
+design reloads all 16 state words from the stack every round instead of
+keeping them register-resident the way GCC's `-O2` output does, and closing
+that gap needs a substantially more involved rewrite that wasn't judged worth
+the risk for this pass. `g_chacha20_block` stays on the C default; see
+`src/amiga/crypto_select.c` and `src/core/crypto_dispatch.h`.
 
 An optional AmiSSL-backed provider (`CRYPTO=BUILTIN|AMISSL|AUTO`) plugging
 into the same dispatch seam is tracked separately as #85 - AmiSSL itself

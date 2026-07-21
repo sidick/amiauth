@@ -171,21 +171,17 @@ m68k-docker:
 	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make m68k'
 
-# --- m68k asm crypto tests (#47): the hand-written hot loops, validated
-# against every existing SHA-1/HMAC/PBKDF2/ChaCha20 RFC vector by forcing
-# the dispatch pointer onto the asm before running them (tests/asm/). Run
-# under amitools' vamos (a separate, optional install:
-# pip install 'amitools[vamos]' - not needed for any other target here).
-asm-tests: $(BUILD)/asm-test-sha1 $(BUILD)/asm-test-chacha20
+# --- m68k asm crypto tests (#47): the hand-written SHA-1 hot loop, validated
+# against every existing SHA-1/HMAC/PBKDF2 RFC vector by forcing the dispatch
+# pointer onto the asm before running them (tests/asm/). ChaCha20 has no asm
+# path - see src/core/crypto_dispatch.h. Run under amitools' vamos (a
+# separate, optional install: pip install 'amitools[vamos]' - not needed for
+# any other target here).
+asm-tests: $(BUILD)/asm-test-sha1
 
 $(BUILD)/asm-test-sha1: | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) -Itests tests/asm/test_sha1_asm.c \
 		tests/test_sha1.c tests/test_hmac.c tests/test_pbkdf2.c tests/test_kdf.c \
-		$(CORE_SRCS) $(ASM_SRCS) src/amiga/prefs.c -lamiga -o $@
-
-$(BUILD)/asm-test-chacha20: | $(BUILD)
-	$(M68K_CC) $(M68K_CFLAGS) -Itests tests/asm/test_chacha20_asm.c \
-		tests/test_chacha20.c \
 		$(CORE_SRCS) $(ASM_SRCS) src/amiga/prefs.c -lamiga -o $@
 
 asm-tests-docker:

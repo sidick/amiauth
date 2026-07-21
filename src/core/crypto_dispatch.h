@@ -4,10 +4,13 @@
  * crypto core (HMAC and PBKDF2 have none of their own - they're built
  * entirely on calls into SHA-1, so speeding up sha1_compress() transitively
  * speeds up both). Each has a portable C reference (always present, the
- * host/test path and the permanent 68000 fallback) and a function-pointer
- * seam an Amiga front-end can repoint at runtime-selected 68020+ assembly
- * after checking AttnFlags. Nothing outside sha1.c/chacha20.c and the
- * front-end's CPU-detection code should need this header. */
+ * host/test path and the default on Amiga) and a function-pointer seam an
+ * Amiga front-end can repoint at a hand-written 68000-safe assembly
+ * implementation (#47). In practice only SHA-1 has one: a ChaCha20 asm
+ * attempt measured slower than its C reference on real hardware, so
+ * g_chacha20_block stays on the C path - see src/amiga/crypto_select.c.
+ * Nothing outside sha1.c/chacha20.c and the front-end's crypto-selection
+ * code should need this header. */
 #ifndef AMIAUTH_CRYPTO_DISPATCH_H
 #define AMIAUTH_CRYPTO_DISPATCH_H
 
