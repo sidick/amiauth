@@ -1,0 +1,1478 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A native two-factor authentication (2FA) code generator for classic AmigaOS">
+      
+      
+      
+        <link rel="canonical" href="https://sidick.github.io/amiauth/v1.0/GUI-Guide/">
+      
+      
+        <link rel="prev" href="../CLI-Reference/">
+      
+      
+        <link rel="next" href="../Commodity-and-Tooltypes/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>GUI Guide - AmiAuth</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#gui-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="AmiAuth" class="md-header__button md-logo" aria-label="AmiAuth" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            AmiAuth
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              GUI Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sidick/amiauth" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sidick/amiauth
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="AmiAuth" class="md-nav__button md-logo" aria-label="AmiAuth" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    AmiAuth
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sidick/amiauth" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sidick/amiauth
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting going
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting going
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Getting-Started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using AmiAuth
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Using AmiAuth
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Managing-Accounts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Managing Accounts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CLI-Reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GUI Guide
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GUI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The window
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#copying-a-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Copying a code
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-accounts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding accounts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#editing-and-removing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing and removing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#menus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Menus
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keyboard shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First launch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unlocking-locking-and-auto-lock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unlocking, locking and auto-lock
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements-and-graceful-degradation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements and graceful degradation
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Commodity-and-Tooltypes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commodity and Tooltypes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Time-and-Clock-Sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Time and Clock Sync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Under the hood
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Under the hood
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Vault-and-Passphrases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault and Passphrases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Settings-Reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Security-Model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Help
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Help
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Troubleshooting-and-FAQ/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting and FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Building-from-Source/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building from Source
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The window
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#copying-a-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Copying a code
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-accounts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding accounts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#editing-and-removing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing and removing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#menus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Menus
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keyboard shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First launch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unlocking-locking-and-auto-lock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unlocking, locking and auto-lock
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements-and-graceful-degradation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements and graceful degradation
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/sidick/amiauth/edit/main/userdocs/GUI-Guide.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="gui-guide">GUI Guide<a class="headerlink" href="#gui-guide" title="Permanent link">&para;</a></h1>
+<p><code>AmiAuthGUI</code> is a ReAction application for AmigaOS 3.0+ showing all your
+accounts with live codes. It is designed to run resident as a <strong>commodity</strong>
+(hotkey popup, Exchange integration) — that side is covered in
+<a href="../Commodity-and-Tooltypes/">Commodity and Tooltypes</a>; this page covers the window itself.</p>
+<p><img alt="AmiAuthGUI on Workbench 3.2" src="../images/amiauthgui-wb32.png" /></p>
+<h2 id="the-window">The window<a class="headerlink" href="#the-window" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Account list</strong> — one row per account, three columns: the account name
+  (<code>issuer:label</code>), its current <strong>code</strong>, and the seconds <strong>left</strong> before the
+  code changes. Each row refreshes when <em>that account's</em> code actually
+  changes (every 30 seconds by default), not every second — the <strong>left</strong>
+  column shows the seconds remaining as of that refresh rather than counting
+  down continuously. This is deliberate: repainting the whole list every
+  second turned out to briefly stall unrelated Workbench drag gestures
+  system-wide, so it's throttled to only repaint when there's actually new
+  code to show.</li>
+<li><strong>Large code display</strong> — the selected account's code, big enough to read
+  across the room. Shows <code>------</code> when nothing is selected or the vault is
+  locked.</li>
+<li><strong>Countdown bar</strong> — a fuelgauge draining through the current TOTP period for
+  the selected account, updating every second — this is where to watch a
+  live countdown; the account list's <strong>left</strong> column is a periodic snapshot,
+  not a live counter.</li>
+<li><strong>Clock status line</strong> — a coloured LED plus text such as <code>Clock: synced
+  +0:15</code>. The GUI runs one SNTP sync automatically at startup (if a TCP/IP
+  stack is up), so normally this simply lights green:</li>
+<li>🟢 <strong>green</strong> — offset verified by SNTP this session;</li>
+<li>🟠 <strong>amber</strong> — the startup sync wasn't possible; a stored or
+    locale-derived offset is applied (<code>Clock: manual …</code>);</li>
+<li>🔴 <strong>red</strong> — <code>Clock: unverified</code>: nothing has corrected the clock, codes
+    may be wrong. See <a href="../Time-and-Clock-Sync/">Time and Clock Sync</a>.</li>
+</ul>
+<p>Flanking the status line, <strong><code>D -10s</code></strong> / <strong><code>U +10s</code></strong> buttons nudge the
+  offset by ten seconds each click — for dialling an offline clock in by eye
+  against a known-good code, without leaving the window. Always available,
+  independent of the vault's lock state (the clock affects every account's
+  codes). The status text updates immediately with each click. Equivalent to
+  the CLI's <code>AmiAuth NUDGE &lt;seconds&gt;</code> — see <a href="../Time-and-Clock-Sync/">Time and Clock Sync</a> for a
+  worked example.
+- <strong>Buttons</strong> — <strong>Add</strong>, <strong>Edit</strong>, <strong>Remove</strong>, <strong>Copy</strong> (each also available
+  from the menus).</p>
+<h2 id="copying-a-code">Copying a code<a class="headerlink" href="#copying-a-code" title="Permanent link">&para;</a></h2>
+<p><strong>Double-click an account</strong> — or select it and press <strong>Copy</strong> — and the
+current code is placed on the clipboard as standard text (IFF FTXT), ready to
+paste into a browser or terminal. The button briefly shows "Copied".</p>
+<p><strong>Auto-clear:</strong> 30 seconds after the copy, AmiAuth clears the clipboard again —
+but only if the clipboard still holds that code; anything you copied in the
+meantime is left alone. This stops a stale 2FA code lingering in the clipboard.</p>
+<h2 id="adding-accounts">Adding accounts<a class="headerlink" href="#adding-accounts" title="Permanent link">&para;</a></h2>
+<p>Three ways, all under the <strong>Account</strong> menu:</p>
+<ul>
+<li><strong>Add from clipboard</strong> — copy an <code>otpauth://</code> URI from anywhere, then select
+  this item.</li>
+<li><strong>Add (type URI)…</strong> — a requester to type or paste the URI directly.</li>
+<li><strong>Add from QR image…</strong> — pick an image file of the enrolment QR code
+  (PNG/JPEG/GIF/IFF/ILBM/BMP — anything a picture datatype can load); AmiAuth
+  decodes the QR and imports the account. You can also <strong>drag an image file
+  onto the window</strong> from Workbench. See <a href="../Managing-Accounts/">Managing Accounts</a> for details and
+  requirements.</li>
+</ul>
+<h2 id="editing-and-removing">Editing and removing<a class="headerlink" href="#editing-and-removing" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Edit selected…</strong> opens a requester for the <strong>issuer</strong>, <strong>label</strong>,
+  <strong>digits</strong> (6–8) and <strong>period</strong> (1–86400 s). The label is required. The
+  secret and account type are deliberately not editable — re-add the account
+  if the secret changes.</li>
+<li><strong>Remove selected…</strong> asks for confirmation, then deletes the account and
+  saves the vault. There is no undo.</li>
+</ul>
+<h2 id="menus">Menus<a class="headerlink" href="#menus" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Menu</th>
+<th>Item</th>
+<th>Shortcut</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Project</td>
+<td>Quit</td>
+<td>Q</td>
+</tr>
+<tr>
+<td>Account</td>
+<td>Add from clipboard</td>
+<td><em>(none)</em></td>
+</tr>
+<tr>
+<td></td>
+<td>Add (type URI)…</td>
+<td>A</td>
+</tr>
+<tr>
+<td></td>
+<td>Add from QR image…</td>
+<td>I</td>
+</tr>
+<tr>
+<td></td>
+<td>Edit selected…</td>
+<td>E</td>
+</tr>
+<tr>
+<td></td>
+<td>Copy code</td>
+<td>C</td>
+</tr>
+<tr>
+<td></td>
+<td>Remove selected…</td>
+<td>R</td>
+</tr>
+</tbody>
+</table>
+<p>(Standard Right-Amiga menu shortcuts — hold Right-Amiga and press the letter;
+the item fires without opening the menu.)</p>
+<h2 id="keyboard-shortcuts">Keyboard shortcuts<a class="headerlink" href="#keyboard-shortcuts" title="Permanent link">&para;</a></h2>
+<p>Every action in the window is reachable without the mouse:</p>
+<ul>
+<li><strong>Buttons</strong> — each button's underlined letter activates it directly, no
+  modifier key: <strong>_A_dd</strong>, <strong>_E_dit</strong>, <strong>_R_emove</strong>, <strong>_C_opy</strong>, <strong><em>D</em> -10s</strong>,
+  <strong><em>U</em> +10s</strong>. These match the equivalent Account-menu letters (A/E/R/C), so
+  either route works.</li>
+<li><strong>Menu items</strong> — Right-Amiga + the letter shown in <a href="#menus">Menus</a> above,
+  from anywhere in the window (no need to open the pull-down first).</li>
+<li><strong>Account list</strong> — <strong>Cursor Up/Down</strong> move the selection one row at a time;
+  the code display and countdown follow.</li>
+</ul>
+<p>Left-Amiga is deliberately never used for AmiAuth's own shortcuts — it's
+reserved system-wide (Workbench-to-front, screen-to-back, and the standard
+requester gadgets), so using it here would fight the system rather than
+follow it.</p>
+<h2 id="first-launch">First launch<a class="headerlink" href="#first-launch" title="Permanent link">&para;</a></h2>
+<p>If no vault exists yet, AmiAuthGUI offers to create one — the CLI is not
+needed for setup:</p>
+<ol>
+<li>A welcome requester shows where the vault will be created (normally
+   <code>PROGDIR:AmiAuth.vault</code>, next to the program).</li>
+<li>Choose a master passphrase and confirm it. For an encrypted vault the
+   PBKDF2 work factor is then calibrated to about one second on your machine
+   (a brief pause), exactly as the CLI's <code>INIT</code> does.</li>
+<li><strong>Leaving the passphrase empty</strong> creates an <em>always-unlocked</em> vault,
+   behind an explicit warning — there is no at-rest protection in that mode
+   (see <a href="../Security-Model/">Security Model</a>); it is convertible later.</li>
+<li>If the location isn't writable (a read-only or protected install), a file
+   requester lets you choose somewhere else.</li>
+</ol>
+<p>The created vault's absolute path is recorded in <code>ENVARC:AmiAuth/vault</code>, so
+later launches — including from a WBStartup icon, where <code>PROGDIR:</code> differs —
+find the same vault.</p>
+<p>When started <strong>hidden</strong> (<code>CX_POPUP=no</code>, the WBStartup way), both this
+first-run dialog and the encrypted-vault unlock prompt are deferred to the
+first time the window is summoned — the boot stays silent. See
+<a href="../Commodity-and-Tooltypes/">Commodity and Tooltypes</a>.</p>
+<h2 id="unlocking-locking-and-auto-lock">Unlocking, locking and auto-lock<a class="headerlink" href="#unlocking-locking-and-auto-lock" title="Permanent link">&para;</a></h2>
+<p>For an <strong>encrypted vault</strong>, the GUI prompts for the passphrase at startup in a
+requester (input shown as <code>*</code> with a trailing <code>|</code> cursor so it's obvious you
+can start typing right away; never stored in a gadget; Esc cancels). A wrong
+passphrase re-prompts with "Wrong passphrase - try again:".</p>
+<p><strong>Idle auto-lock:</strong> after 2 minutes without input in an open window (default;
+configurable — see <a href="../Settings-Reference/">Settings Reference</a>, <code>idlelock</code>, <code>0</code> disables), the GUI
+locks the vault (keys and decrypted secrets are wiped from memory) and hides
+the window, the same as the close gadget — the commodity stays resident. The
+next time you summon it (hotkey, Exchange <em>Show</em>, or <code>AmiAuth SHOW</code>), it
+re-prompts for the passphrase before the window reopens. A <strong>hidden</strong>
+commodity window does not tick the idle timer — the point of the resident
+commodity is keeping the vault unlocked; set <code>idlelock</code> to taste if you want
+stricter behaviour.</p>
+<p>While unlocked, remember what that means on AmigaOS: any running program can
+read any memory. See <a href="../Security-Model/">Security Model</a>.</p>
+<p><strong>Always-unlocked vaults</strong> never prompt and never lock.</p>
+<p>An encrypted vault may also trigger a <strong>re-key offer</strong> right after unlock if
+this machine is much faster or slower than the vault's creator — "Strengthen"
+is safe to accept; "Re-key lower" weakens security and asks twice. Choosing
+"Never here" (or setting <code>ENVARC:AmiAuth/rekey</code> to <code>off</code>) silences the offers.
+Background in <a href="../Security-Model/">Security Model</a>.</p>
+<h2 id="requirements-and-graceful-degradation">Requirements and graceful degradation<a class="headerlink" href="#requirements-and-graceful-degradation" title="Permanent link">&para;</a></h2>
+<p>The GUI needs AmigaOS 3.0+ with the ReAction/ClassAct classes (<code>window</code>,
+<code>layout</code>, <code>listbrowser</code>, <code>fuelgauge</code>, <code>button</code>). Everything else is optional
+and simply switches a feature off if missing:</p>
+<table>
+<thead>
+<tr>
+<th>Missing library</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>commodities.library</code></td>
+<td>No hotkey/Exchange; runs as a plain window (close = quit)</td>
+</tr>
+<tr>
+<td><code>iffparse.library</code></td>
+<td>Clipboard copy disabled</td>
+</tr>
+<tr>
+<td><code>gadtools.library</code></td>
+<td>No menus (buttons still work)</td>
+</tr>
+<tr>
+<td><code>string.gadget</code> class</td>
+<td>"Add (type URI)" and "Edit" disabled</td>
+</tr>
+<tr>
+<td><code>datatypes.library</code> (v39) or <code>asl.library</code></td>
+<td>QR-image import disabled</td>
+</tr>
+<tr>
+<td><code>workbench.library</code></td>
+<td>No drag-and-drop QR import</td>
+</tr>
+<tr>
+<td><code>graphics.library</code> pens</td>
+<td>LED falls back to monochrome</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../CLI-Reference/" class="md-footer__link md-footer__link--prev" aria-label="Previous: CLI Reference">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                CLI Reference
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../Commodity-and-Tooltypes/" class="md-footer__link md-footer__link--next" aria-label="Next: Commodity and Tooltypes">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Commodity and Tooltypes
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      AmiAuth — a native 2FA authenticator for classic AmigaOS. BSD 2-Clause.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.footer", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
