@@ -3,10 +3,15 @@
 #include <string.h>
 
 #include "sha1.h"
+#include "crypto_dispatch.h"
 
 #define ROTL32(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
 
-static void sha1_compress(uint32_t state[5], const uint8_t block[SHA1_BLOCK_SIZE])
+/* Defaults to the C reference below; an Amiga front-end may repoint this at
+ * runtime-selected 68020+ asm after checking AttnFlags (#47). */
+sha1_compress_fn g_sha1_compress = sha1_compress_c;
+
+void sha1_compress_c(uint32_t state[5], const uint8_t block[SHA1_BLOCK_SIZE])
 {
     uint32_t w[80];
     uint32_t a, b, c, d, e;
@@ -65,14 +70,14 @@ void sha1_update(sha1_ctx *ctx, const void *data, size_t len)
         p += take;
         len -= take;
         if (ctx->buflen == SHA1_BLOCK_SIZE) {
-            sha1_compress(ctx->state, ctx->buf);
+            g_sha1_compress(ctx->state, ctx->buf);
             ctx->buflen = 0;
         }
     }
 
     /* Whole blocks straight from the input. */
     while (len >= SHA1_BLOCK_SIZE) {
-        sha1_compress(ctx->state, p);
+        g_sha1_compress(ctx->state, p);
         p += SHA1_BLOCK_SIZE;
         len -= SHA1_BLOCK_SIZE;
     }
@@ -97,7 +102,7 @@ void sha1_final(sha1_ctx *ctx, uint8_t out[SHA1_DIGEST_SIZE])
     ctx->buf[ctx->buflen++] = 0x80;
     if (ctx->buflen > 56) {
         while (ctx->buflen < SHA1_BLOCK_SIZE) ctx->buf[ctx->buflen++] = 0;
-        sha1_compress(ctx->state, ctx->buf);
+        g_sha1_compress(ctx->state, ctx->buf);
         ctx->buflen = 0;
     }
     while (ctx->buflen < 56) ctx->buf[ctx->buflen++] = 0;
@@ -105,7 +110,7 @@ void sha1_final(sha1_ctx *ctx, uint8_t out[SHA1_DIGEST_SIZE])
     /* 64-bit big-endian bit length. */
     for (i = 0; i < 8; i++)
         ctx->buf[56 + i] = (uint8_t)(bits >> (56 - 8 * i));
-    sha1_compress(ctx->state, ctx->buf);
+    g_sha1_compress(ctx->state, ctx->buf);
 
     for (i = 0; i < 5; i++) {
         out[i * 4]     = (uint8_t)(ctx->state[i] >> 24);

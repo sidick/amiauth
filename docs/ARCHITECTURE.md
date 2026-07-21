@@ -88,17 +88,28 @@ Resolves corrected UTC without touching the system clock (full design in
   and RFC 4226 Appendix D vectors without an emulator.
 - **m68k** — `amiga-gcc`. **Plain 68000 (`-m68000`) is the baseline target**:
   all code (CLI and GUI) must build and run on a stock 68000 to maximise reach.
-  Requiring 020+ needs a very good reason; the only 020+ code is the *optional*
-  AmiSSL/hand-asm crypto providers below, selected by runtime CPU detection and
-  never required.
+  Requiring 020+ needs a very good reason; the only 020+-*specific* code path
+  left is the optional AmiSSL provider (#85, not yet implemented), gated by
+  runtime detection and never required.
 
-## Planned optimisation (post-vectors)
+## Crypto hot-loop dispatch (#47)
 
-Hand-written 68k assembler for the crypto hot loops (SHA-1/HMAC, ChaCha20),
-selected at runtime via function pointers set from `AttnFlags` CPU detection. The
-C implementations stay permanently as reference and fallback. Asm paths are
-validated in CI under amitools' `vamos`. An optional AmiSSL-backed provider
-(`CRYPTO=BUILTIN|AMISSL|AUTO`, default `BUILTIN`) plugs into the same dispatch
-table; the vault format is provider-agnostic so vaults move freely between
-configurations. Faster primitives convert directly into security margin, since
-PBKDF2 iterations are calibrated to ~1s of wall time.
+`sha1_compress()` and `chacha20_block()` (HMAC and PBKDF2 have no hot loops of
+their own - they're built entirely on SHA-1) are reached through a
+function-pointer seam (`src/core/crypto_dispatch.h`), defaulting to the
+portable C reference. On Amiga, `src/amiga/crypto_select.c` repoints both at
+hand-written m68k assembly (`src/core/sha1_asm.s` / `chacha20_asm.s`) at
+startup, unless `ENVARC:AmiAuth/cryptoasm=off` forces the C reference back on.
+
+Unlike a typical "020+ accelerated path", this asm is restricted to
+instructions available on the plain 68000 baseline (verified in CI under
+amitools' `vamos`, on both `-C 000` and `-C 020`), so it's the *default* on
+every CPU tier this project supports, not an opt-in extra - 68020+ still runs
+it faster purely by being a faster CPU on the same instructions. Faster
+primitives convert directly into security margin, since PBKDF2 iterations are
+calibrated to ~1s of wall time.
+
+An optional AmiSSL-backed provider (`CRYPTO=BUILTIN|AMISSL|AUTO`) plugging
+into the same dispatch seam is tracked separately as #85 - AmiSSL itself
+requires AmigaOS 3.0+/68020+, so unlike the asm above it can only ever sit
+behind that gate.

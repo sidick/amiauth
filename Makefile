@@ -46,6 +46,11 @@ CORE_SRCS  := $(wildcard src/core/*.c)
 TEST_SRCS  := $(wildcard tests/*.c)
 CLI_SRCS   := src/cli/main.c
 
+# Hand-written m68k asm for the crypto hot loops (#47) - m68k builds only,
+# never the host (CORE_SRCS' *.c wildcard doesn't pick these up, so nothing
+# extra is needed to keep them out of `make test`/`make cli`).
+ASM_SRCS   := $(wildcard src/core/*.s)
+
 # --- Vendored QR decoder (quirc, ISC) + our portable wrapper -----------------
 # quirc is third-party, so it's compiled to objects with warnings OFF (it isn't
 # our lint to enforce); our qr.c wrapper builds under the normal warning set.
@@ -115,7 +120,7 @@ $(BUILD)/run-diff: $(CORE_SRCS) $(DIFF_SRCS) | $(BUILD)
 
 # --- m68k: Amiga CLI binary (amiga-gcc on PATH) ---
 m68k: | $(BUILD)
-	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) -o $(BUILD)/AmiAuth
+	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) -o $(BUILD)/AmiAuth
 
 # --- m68k: ReAction GUI binary (Amiga only; needs intuition + ReAction classes) ---
 # Includes the QR decoder: qrimage.c (datatypes glue) + our qr.c wrapper + the
@@ -128,7 +133,7 @@ $(BUILD)/qr-m68k/%.o: src/qr/%.c | $(BUILD)
 	$(M68K_CC) -std=c99 -O2 -m68000 -noixemul -w $(QR_CPPFLAGS) -c $< -o $@
 
 gui: $(QUIRC_M68K_OBJS) | $(BUILD)
-	$(M68K_CC) $(M68K_CFLAGS) $(VERSION_DEFS) $(QR_CPPFLAGS) $(CORE_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) \
+	$(M68K_CC) $(M68K_CFLAGS) $(VERSION_DEFS) $(QR_CPPFLAGS) $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) \
 		$(QR_WRAP) $(QUIRC_M68K_OBJS) -lm -lamiga -o $(BUILD)/AmiAuthGUI
 
 gui-docker:
@@ -165,6 +170,27 @@ qr-onhw-smoke:
 m68k-docker:
 	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make m68k'
+
+# --- m68k asm crypto tests (#47): the hand-written hot loops, validated
+# against every existing SHA-1/HMAC/PBKDF2/ChaCha20 RFC vector by forcing
+# the dispatch pointer onto the asm before running them (tests/asm/). Run
+# under amitools' vamos (a separate, optional install:
+# pip install 'amitools[vamos]' - not needed for any other target here).
+asm-tests: $(BUILD)/asm-test-sha1 $(BUILD)/asm-test-chacha20
+
+$(BUILD)/asm-test-sha1: | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) -Itests tests/asm/test_sha1_asm.c \
+		tests/test_sha1.c tests/test_hmac.c tests/test_pbkdf2.c tests/test_kdf.c \
+		$(CORE_SRCS) $(ASM_SRCS) src/amiga/prefs.c -lamiga -o $@
+
+$(BUILD)/asm-test-chacha20: | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) -Itests tests/asm/test_chacha20_asm.c \
+		tests/test_chacha20.c \
+		$(CORE_SRCS) $(ASM_SRCS) src/amiga/prefs.c -lamiga -o $@
+
+asm-tests-docker:
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make asm-tests'
 
 # --- Copperline: headless on-target core smoke test (spike) ------------------
 # Boots a stock A500/68000 under Copperline, runs the RFC 4226 HOTP vectors on

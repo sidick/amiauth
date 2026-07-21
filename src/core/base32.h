@@ -1,5 +1,4 @@
-/* base32.h — RFC 4648 Base32 decode, tolerant of padding, whitespace and case.
- * Stub: see docs/ROADMAP.md Phase 1. */
+/* base32.h — RFC 4648 Base32 decode, tolerant of padding, whitespace and case. */
 #ifndef AMIAUTH_BASE32_H
 #define AMIAUTH_BASE32_H
 

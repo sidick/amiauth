@@ -45,6 +45,7 @@
 #  define AMIAUTH_AMIGA 1
 #  define DEFAULT_VAULT "PROGDIR:AmiAuth.vault"
 #  include "entropy.h"          /* amiga_random / amiga_read_passphrase */
+#  include "../amiga/crypto_select.h"  /* select crypto hot-loop impl, #47 */
 #else
 #  define DEFAULT_VAULT "AmiAuth.vault"
 #endif
@@ -850,6 +851,7 @@ int main(int argc, char **argv)
     int rc;
 
     if (argc > 0 && argv[0] && argv[0][0]) g_prog = argv[0];
+    crypto_select_init();
     memset(opt, 0, sizeof opt);
     rda = ReadArgs((STRPTR)TMPL, opt, NULL);
     if (!rda) { PrintFault(IoErr(), (STRPTR)g_prog); return 20; }  /* RETURN_FAIL */

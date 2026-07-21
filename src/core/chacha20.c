@@ -1,6 +1,7 @@
 /* chacha20.c — ChaCha20 stream cipher (RFC 8439).
  * Validated against RFC 8439 §2.4.2 in tests/test_chacha20.c. */
 #include "chacha20.h"
+#include "crypto_dispatch.h"
 
 #define ROTL32(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
 
@@ -20,8 +21,12 @@ static uint32_t load32_le(const uint8_t *p)
          | ((uint32_t)p[3] << 24);
 }
 
+/* Defaults to the C reference below; an Amiga front-end may repoint this at
+ * runtime-selected 68020+ asm after checking AttnFlags (#47). */
+chacha20_block_fn g_chacha20_block = chacha20_block_c;
+
 /* Produce one 64-byte keystream block from the 16-word state. */
-static void chacha20_block(const uint32_t in[16], uint8_t out[64])
+void chacha20_block_c(const uint32_t in[16], uint8_t out[64])
 {
     uint32_t x[16];
     int i;
@@ -72,7 +77,7 @@ void chacha20_xor(const uint8_t key[CHACHA20_KEY_SIZE],
     while (off < len) {
         size_t n = len - off < 64 ? len - off : 64;
         size_t j;
-        chacha20_block(state, block);
+        g_chacha20_block(state, block);
         /* `in` may be NULL to emit the raw keystream. */
         for (j = 0; j < n; j++)
             out[off + j] = (uint8_t)((in ? in[off + j] : 0) ^ block[j]);
