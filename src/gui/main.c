@@ -1751,23 +1751,6 @@ int main(int argc, char **argv)
     }
 
     clock_setup(&clk);
-    /* One SNTP sync at startup so the resident instance has accurate (green) time
-     * without a manual CLI SYNC. Server precedence mirrors the CLI: the TIMESERVER
-     * tooltype, then the saved "server" pref, then the default pool. Fails
-     * fast/quiet with no TCP/IP stack (or no response), leaving the persisted
-     * offset in place (clock_sntp_sync only updates clk on success). */
-    {
-        STRPTR ts = ArgString((CONST_STRPTR *)tt, (CONST_STRPTR)"TIMESERVER", NULL);
-        char cfg[128];
-        const char *server;
-        if (ts && ts[0])                                              server = (const char *)ts;
-        else if (prefs_get("server", cfg, sizeof cfg) == 0 && cfg[0]) server = cfg;
-        else                                                         server = "pool.ntp.org";
-        if (clock_sntp_sync(&clk, server) == 0) {
-            prefs_set("server", server);
-            prefs_set_long("offset", clk.offset_seconds);
-        }
-    }
     naccounts = v.count;
     /* Idle auto-lock (encrypted vaults only): scrub + re-prompt after this many
      * idle seconds. Pref "idlelock" overrides; 0 disables. */
@@ -1804,6 +1787,39 @@ int main(int argc, char **argv)
         if (!win && !broker) {                /* a plain window app needs its window */
             if (gw.winobj) Printf((CONST_STRPTR)"AmiAuth: could not open the window\n");
             goto cleanup;
+        }
+    }
+
+    /* One SNTP sync at startup so the resident instance has accurate (green)
+     * time without a manual CLI SYNC. Server precedence mirrors the CLI: the
+     * TIMESERVER tooltype, then the saved "server" pref, then the default
+     * pool. Fails fast/quiet with no TCP/IP stack (or no response), leaving
+     * the persisted offset in place (clock_sntp_sync only updates clk on
+     * success).
+     *
+     * Deliberately AFTER the window opens (#71): the sync blocks - up to
+     * SNTP_TIMEOUT_SECS on the UDP wait, and gethostbyname() can hang far
+     * longer against a dead resolver. Run before win_show, that stall sat
+     * between the passphrase requester closing and the window appearing,
+     * which reads as a crash/hang. Now the window is already up (painted,
+     * amber/red LED) and merely unresponsive for the duration; the status
+     * line + LED refresh the moment the sync returns. */
+    {
+        STRPTR ts = ArgString((CONST_STRPTR *)tt, (CONST_STRPTR)"TIMESERVER", NULL);
+        char cfg[128];
+        const char *server;
+        if (ts && ts[0])                                              server = (const char *)ts;
+        else if (prefs_get("server", cfg, sizeof cfg) == 0 && cfg[0]) server = cfg;
+        else                                                         server = "pool.ntp.org";
+        if (clock_sntp_sync(&clk, server) == 0) {
+            prefs_set("server", server);
+            prefs_set_long("offset", clk.offset_seconds);
+            if (win) {                        /* went green - show it right away */
+                clock_status_text(&clk, statbuf);
+                SetGadgetAttrs((struct Gadget *)gw.statobj, win, NULL,
+                               GA_Text, (ULONG)statbuf, TAG_END);
+                led_draw(win, gw.statobj, clk.state);
+            }
         }
     }
 
