@@ -2,7 +2,7 @@
  *
  * The offset model, SNTP packet build/parse and offset computation are portable
  * and host-tested. Only the bsdsocket UDP transport is Amiga glue (see
- * clock_sntp_sync). See docs/ROADMAP.md Phase 3. */
+ * clock_sntp_sync). */
 #ifndef AMIAUTH_CLOCK_H
 #define AMIAUTH_CLOCK_H
 

@@ -1,5 +1,4 @@
-/* otp.h — HOTP (RFC 4226) and TOTP (RFC 6238) code generation.
- * Stub: see docs/ROADMAP.md Phase 1. */
+/* otp.h — HOTP (RFC 4226) and TOTP (RFC 6238) code generation. */
 #ifndef AMIAUTH_OTP_H
 #define AMIAUTH_OTP_H
 

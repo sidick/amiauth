@@ -80,6 +80,30 @@ jobs:
       - name: Cross-build CLI for 68000
         run: PATH="/opt/amiga/bin:$PATH" make m68k M68K_CC=m68k-amigaos-gcc
 
+  asm-crypto-tests:
+    name: m68k asm crypto tests (vamos)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install amitools (vamos)
+        run: pip install 'amitools[vamos]'
+      - name: Cross-build the asm test binaries
+        run: make asm-tests-docker
+      # Every existing SHA-1/HMAC/PBKDF2 RFC vector, run against the
+      # hand-written asm (#47) instead of the C reference, on both the plain
+      # 68000 baseline and 68020+ - the asm is meant to be correct on every
+      # CPU tier this project supports, not just an accelerated one. ChaCha20
+      # has no asm path (measured slower than C on real hardware; see
+      # src/core/crypto_dispatch.h), so there's nothing to validate here.
+      - name: Validate against RFC vectors (68000 + 68020)
+        run: |
+          for cpu in 000 020; do
+            echo "--- CPU $cpu ---"
+            vamos -C "$cpu" build/asm-test-sha1
+          done
+
   copperline-smoke:
     name: Copperline on-target smoke test (AROS)
     runs-on: ubuntu-latest

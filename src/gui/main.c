@@ -68,6 +68,7 @@
 AMIAUTH_VERSTAG("AmiAuthGUI")
 #include "qrimage.h"                /* qrimage_load_gray (datatypes glue) */
 #include "guiport.h"                /* CLI->GUI IPC (Stage 3b public port) */
+#include "crypto_select.h"          /* select crypto hot-loop impl, #47 */
 
 /* Request a larger stack (libnix): the QR decoder still needs more than the
  * few KB a shell hands a Run/WBench program. qr_decode_gray keeps its big
@@ -1501,6 +1502,7 @@ int main(int argc, char **argv)
     ULONG pubsig = 0;
 
     curcode[0] = '\0';
+    crypto_select_init();
 
     NewList(&lblist);
 

@@ -1,5 +1,4 @@
-/* uri.h — otpauth:// URI parsing and the account record it yields.
- * Stub: see docs/ROADMAP.md Phase 2. */
+/* uri.h — otpauth:// URI parsing and the account record it yields. */
 #ifndef AMIAUTH_URI_H
 #define AMIAUTH_URI_H
 

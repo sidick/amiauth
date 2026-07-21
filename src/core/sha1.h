@@ -1,5 +1,4 @@
-/* sha1.h — SHA-1 (FIPS 180-1), used by HMAC, OTP, PBKDF2 and the vault MAC.
- * Stub: see docs/ROADMAP.md Phase 1. */
+/* sha1.h — SHA-1 (FIPS 180-1), used by HMAC, OTP, PBKDF2 and the vault MAC. */
 #ifndef AMIAUTH_SHA1_H
 #define AMIAUTH_SHA1_H
 

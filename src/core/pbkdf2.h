@@ -1,5 +1,4 @@
-/* pbkdf2.h — PBKDF2-HMAC-SHA1 (RFC 2898), the vault KDF.
- * Stub: see docs/ROADMAP.md Phase 2. */
+/* pbkdf2.h — PBKDF2-HMAC-SHA1 (RFC 2898), the vault KDF. */
 #ifndef AMIAUTH_PBKDF2_H
 #define AMIAUTH_PBKDF2_H
 

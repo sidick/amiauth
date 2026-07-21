@@ -1,5 +1,4 @@
-/* chacha20.h — ChaCha20 stream cipher (RFC 8439), the vault cipher.
- * Stub: see docs/ROADMAP.md Phase 2. */
+/* chacha20.h — ChaCha20 stream cipher (RFC 8439), the vault cipher. */
 #ifndef AMIAUTH_CHACHA20_H
 #define AMIAUTH_CHACHA20_H
 

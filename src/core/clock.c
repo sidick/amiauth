@@ -1,6 +1,6 @@
 /* clock.c — corrected-UTC resolution. The offset model and SNTP packet/offset
  * logic are portable and host-tested; only the bsdsocket UDP transport is Amiga
- * glue (clock_sntp_sync). See docs/ROADMAP.md Phase 3. */
+ * glue (clock_sntp_sync). */
 #include <string.h>
 #include <time.h>
 
