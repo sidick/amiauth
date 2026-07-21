@@ -29,7 +29,8 @@ RAM-backed and would be lost on reboot.
 Additionally the **`AMIAUTH_VAULT`** environment variable (a conventional
 variable read via `getenv`, so `ENV:AMIAUTH_VAULT` on AmigaOS) overrides the
 saved vault path — handy for temporarily pointing everything at a test vault.
-Precedence details in [Vault and Passphrases](Vault-and-Passphrases.md).
+An explicit `VAULT` — the CLI keyword or the GUI tooltype/argument — beats
+both. Precedence details in [Vault and Passphrases](Vault-and-Passphrases.md).
 
 ## Resetting AmiAuth
 

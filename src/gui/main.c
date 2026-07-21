@@ -119,6 +119,10 @@ static WORD g_winleft = -1, g_wintop = -1, g_winw = -1, g_winh = -1;
  * open when we try. */
 static char g_pubscreen[MAXPUBSCREENNAME + 1] = "";
 
+/* Explicit vault override for this launch (VAULT tooltype/arg), read once at
+ * startup; same precedence and session-only scope as the CLI's VAULT/K. */
+static char g_vault_arg[256] = "";
+
 /* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none),
  * drawn in a recessed bevel (shadow/shine pens from the screen's DrawInfo). */
 static LONG g_ledpen[3] = { -1, -1, -1 };
@@ -474,11 +478,14 @@ static void clock_setup(clock_ctx *c)
     else if ((off = locale_offset()) != 0)   clock_set_offset(c, off);
 }
 
-/* --- vault path: VAULT pref, else env, else default --- */
+/* --- vault path: VAULT arg, else env, else pref, else default ---
+ * (mirrors the CLI's resolve_vault precedence) */
 static const char *vault_path(void)
 {
     static char buf[256];
-    const char *env = getenv("AMIAUTH_VAULT");
+    const char *env;
+    if (g_vault_arg[0]) return g_vault_arg;
+    env = getenv("AMIAUTH_VAULT");
     if (env && env[0]) return env;
     if (prefs_get("vault", buf, sizeof buf) == 0 && buf[0]) return buf;
     return VAULT_PATH_DEFAULT;
@@ -977,10 +984,11 @@ static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted,
         gui_requester(NULL, "Creating the vault failed.", "Quit", NULL);
         return 0;
     }
-    {   /* an AMIAUTH_VAULT override is session-scoped: don't make it sticky
-         * (mirrors the CLI, which only records a non-overridden INIT path) */
+    {   /* a VAULT= or AMIAUTH_VAULT override is session-scoped: don't make
+         * it sticky (mirrors the CLI, which only records a non-overridden
+         * INIT path) */
         const char *env = getenv("AMIAUTH_VAULT");
-        if (!(env && env[0])) record_vault_path(path);
+        if (!g_vault_arg[0] && !(env && env[0])) record_vault_path(path);
     }
     return 1;
 }
@@ -1524,6 +1532,17 @@ int main(int argc, char **argv)
         if (ps && ps[0]) {
             strncpy(g_pubscreen, (const char *)ps, sizeof g_pubscreen - 1);
             g_pubscreen[sizeof g_pubscreen - 1] = '\0';
+        }
+    }
+
+    /* VAULT=<path>: explicit vault for this launch (also no CX_ prefix - not
+     * commodity behaviour). Copied out because ArgArrayDone frees the
+     * array's strings. */
+    {
+        STRPTR va = ArgString((CONST_STRPTR *)tt, (CONST_STRPTR)"VAULT", NULL);
+        if (va && va[0]) {
+            strncpy(g_vault_arg, (const char *)va, sizeof g_vault_arg - 1);
+            g_vault_arg[sizeof g_vault_arg - 1] = '\0';
         }
     }
 
