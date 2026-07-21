@@ -164,3 +164,31 @@ int otpauth_parse(const char *uri, otp_account *out)
     if (!have_secret) return -1;   /* the secret is mandatory */
     return 0;
 }
+
+int otpauth_is_uri(const char *s)
+{
+    return s != NULL && ci_startswith(s, "otpauth://");
+}
+
+int otp_account_from_secret(const char *issuer, const char *label,
+                            const char *secret_b32, otp_account *out)
+{
+    int n;
+
+    if (!out) return -1;
+    memset(out, 0, sizeof(*out));
+    if (!label || !label[0] || !secret_b32) return -1;
+
+    strcpy(out->type, "totp");
+    strcpy(out->algorithm, "SHA1");
+    out->digits = OTP_DEFAULT_DIGITS;
+    out->period = OTP_DEFAULT_PERIOD;
+
+    n = base32_decode(secret_b32, out->secret, sizeof(out->secret));
+    if (n <= 0) { memset(out, 0, sizeof(*out)); return -1; }
+    out->secret_len = (size_t)n;
+
+    if (issuer) copy_str(out->issuer, sizeof(out->issuer), issuer);
+    copy_str(out->label, sizeof(out->label), label);
+    return 0;
+}

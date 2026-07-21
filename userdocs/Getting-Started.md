@@ -49,9 +49,10 @@ When you enable 2FA on a website, it shows a QR code and (usually behind a
 use *Account → Add from QR image…* or drag the image file onto the AmiAuth
 window. See [Managing Accounts](Managing-Accounts.md).
 
-**From a bare secret**: wrap it in a minimal URI:
+**From a bare secret** (the raw "setup key" some services show): supply the
+name it doesn't carry:
 
-    AmiAuth ADD "otpauth://totp/MyLabel?secret=JBSWY3DPEHPK3PXP"
+    AmiAuth ADD JBSWY3DPEHPK3PXP ISSUER GitHub LABEL you@example.com
 
 ## 4. Get a code
 

@@ -83,6 +83,8 @@ typedef struct {
                               * OFFSET seconds */
     const char *digits;      /* CODE (2nd positional) */
     const char *period;      /* CODE (3rd positional) */
+    const char *issuer;      /* ISSUER / --issuer (bare-secret ADD) */
+    const char *label;       /* LABEL / --label (bare-secret ADD) */
     const char *vault;       /* VAULT / -v (NULL = env / pref / default) */
     int         open;        /* OPEN / --open */
     long        iterations;  /* ITERATIONS / --iterations (-1 = auto) */
@@ -669,6 +671,55 @@ static int cmd_add(const char *path, const char *uri)
     return 0;
 }
 
+/* ADD with a bare Base32 secret (no otpauth:// wrapper): the common case for
+ * services that show only the raw secret. Defaults to a SHA-1/6-digit/30s
+ * TOTP; anything else still needs the full URI form (#83). */
+static int cmd_add_secret(const char *path, const char *secret,
+                          const char *issuer, const char *label)
+{
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
+    static char packed[320];   /* issuer \n label \n secret for the GUI port */
+    otp_account acct;
+    vault_result rc;
+    int fc;
+
+    if (!issuer || !issuer[0] || !label || !label[0]) {
+        fprintf(stderr,
+            "AmiAuth: adding a bare secret needs ISSUER and LABEL, e.g.\n"
+            "  %s ADD %s ISSUER GitHub LABEL you@example.com\n"
+            "(makes a 6-digit/30s TOTP; use the otpauth:// URI form for "
+            "anything else)\n", g_prog, secret);
+        return 2;
+    }
+    if (otp_account_from_secret(issuer, label, secret, &acct) != 0) {
+        fprintf(stderr, "AmiAuth: that does not look like a Base32 secret\n");
+        return 2;
+    }
+
+    /* Resident GUI owns the vault? Same routing as the URI form. */
+    if (strlen(issuer) + strlen(label) + strlen(secret) + 3 <= sizeof packed) {
+        sprintf(packed, "%s\n%s\n%s", issuer, label, secret);
+        fc = try_forward(AAP_ADD_SECRET, packed);
+        memset(packed, 0, sizeof packed);
+        if (fc >= 0) { memset(&acct, 0, sizeof acct); return fc; }
+    }
+
+    rc = open_vault(&v, path);
+    if (rc != VAULT_OK) {
+        memset(&acct, 0, sizeof acct);
+        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
+        return 2;
+    }
+    rc = vault_add(&v, &acct);
+    if (rc == VAULT_OK) rc = save_vault(&v, path);
+    memset(&acct, 0, sizeof acct);
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+
+    printf("Added %s:%s\n", issuer, label);
+    vault_lock(&v);
+    return 0;
+}
+
 static int cmd_list(const char *path)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
@@ -755,7 +806,9 @@ static int usage(void)
         "Run as '%s <COMMAND> ...'  ('%s ?' shows the arg template):\n"
         "  CODE   <secret> [digits] [period]  Print a code (no vault)\n"
         "  INIT   [OPEN]                      Create a vault\n"
-        "  ADD    \"<otpauth://...>\"           Import an account\n"
+        "  ADD    \"<otpauth://...>\"           Import an account from a URI\n"
+        "  ADD    <secret> ISSUER <name> LABEL <acct>  Import a bare Base32\n"
+        "                                     secret (6-digit/30s SHA-1 TOTP)\n"
         "  LIST                               List account names\n"
         "  GET    <account>                   Print an account's code\n"
         "  REMOVE <account>                   Delete an account\n"
@@ -769,14 +822,16 @@ static int usage(void)
         p, p);
 #ifdef AMIAUTH_AMIGA
     fprintf(stderr,
-        "Options: VAULT <path>  OPEN/S  ITERATIONS/N/K (INIT)  NOREKEY/S\n"
+        "Options: ISSUER/K LABEL/K (bare-secret ADD)  VAULT <path>  OPEN/S\n"
+        "         ITERATIONS/N/K (INIT)  NOREKEY/S\n"
         "Quote URIs (they contain '?'). Default vault (first set wins):\n"
         "  VAULT <path>; env AMIAUTH_VAULT; pref AmiAuth/vault\n"
         "  (SetEnv SAVE AmiAuth/vault <path>); else %s\n",
         DEFAULT_VAULT);
 #else
     fprintf(stderr,
-        "Options: -v/--vault PATH  --iterations N  --no-rekey\n"
+        "Options: --issuer S --label S (bare-secret ADD)  -v/--vault PATH\n"
+        "         --iterations N  --no-rekey\n"
         "Default vault: -v, else $AMIAUTH_VAULT, else the 'vault' pref, else %s\n",
         DEFAULT_VAULT);
 #endif
@@ -821,7 +876,12 @@ static int dispatch(const cli_args *a)
         int defaulted = !a->vault && !(env && env[0]);
         return cmd_init(vault, a->open, a->iterations, defaulted);
     }
-    if (ci_streq(a->command, "ADD"))    return a->value ? cmd_add(vault, a->value) : usage();
+    if (ci_streq(a->command, "ADD")) {
+        if (!a->value) return usage();
+        return otpauth_is_uri(a->value)
+             ? cmd_add(vault, a->value)
+             : cmd_add_secret(vault, a->value, a->issuer, a->label);
+    }
     if (ci_streq(a->command, "LIST"))   return cmd_list(vault);
     if (ci_streq(a->command, "GET"))    return a->value ? cmd_get(vault, a->value) : usage();
     if (ci_streq(a->command, "REMOVE")) return a->value ? cmd_remove(vault, a->value) : usage();
@@ -842,9 +902,10 @@ static int dispatch(const cli_args *a)
 int main(int argc, char **argv)
 {
     static const char TMPL[] =
-        "COMMAND,VALUE,DIGITS,PERIOD,VAULT/K,OPEN/S,ITERATIONS/N/K,NOREKEY/S";
-    enum { P_COMMAND, P_VALUE, P_DIGITS, P_PERIOD, P_VAULT, P_OPEN,
-           P_ITERATIONS, P_NOREKEY, P_N };
+        "COMMAND,VALUE,DIGITS,PERIOD,ISSUER/K,LABEL/K,VAULT/K,OPEN/S,"
+        "ITERATIONS/N/K,NOREKEY/S";
+    enum { P_COMMAND, P_VALUE, P_DIGITS, P_PERIOD, P_ISSUER, P_LABEL, P_VAULT,
+           P_OPEN, P_ITERATIONS, P_NOREKEY, P_N };
     LONG opt[P_N];
     struct RDArgs *rda;
     cli_args a;
@@ -861,6 +922,8 @@ int main(int argc, char **argv)
     a.value      = (const char *)opt[P_VALUE];
     a.digits     = (const char *)opt[P_DIGITS];
     a.period     = (const char *)opt[P_PERIOD];
+    a.issuer     = (const char *)opt[P_ISSUER];
+    a.label      = (const char *)opt[P_LABEL];
     a.vault      = (const char *)opt[P_VAULT];
     a.open       = opt[P_OPEN] ? 1 : 0;
     a.iterations = opt[P_ITERATIONS] ? *(LONG *)opt[P_ITERATIONS] : -1;
@@ -898,6 +961,14 @@ int main(int argc, char **argv)
             a.iterations = atol(argv[i] + 13);
         else if (strcmp(argv[i], "--no-rekey") == 0)
             a.no_rekey = 1;
+        else if (strcmp(argv[i], "--issuer") == 0 && i + 1 < argc)
+            a.issuer = argv[++i];
+        else if (strncmp(argv[i], "--issuer=", 9) == 0)
+            a.issuer = argv[i] + 9;
+        else if (strcmp(argv[i], "--label") == 0 && i + 1 < argc)
+            a.label = argv[++i];
+        else if (strncmp(argv[i], "--label=", 8) == 0)
+            a.label = argv[i] + 8;
         else if (npos < (int)(sizeof pos / sizeof pos[0]))
             pos[npos++] = argv[i];
     }

@@ -58,9 +58,12 @@ meantime is left alone. This stops a stale 2FA code lingering in the clipboard.
 
 Three ways, all under the **Account** menu:
 
-- **Add from clipboard** — copy an `otpauth://` URI from anywhere, then select
-  this item.
-- **Add (type URI)…** — a requester to type or paste the URI directly.
+- **Add from clipboard** — copy an `otpauth://` URI (or a bare Base32 secret)
+  from anywhere, then select this item.
+- **Add (type URI/secret)…** — a requester to type or paste an
+  `otpauth://` URI or a bare Base32 secret; a bare secret gets a
+  follow-up requester for the issuer and label (and the usual
+  TOTP/SHA-1/6-digit/30s defaults).
 - **Add from QR image…** — pick an image file of the enrolment QR code
   (PNG/JPEG/GIF/IFF/ILBM/BMP — anything a picture datatype can load); AmiAuth
   decodes the QR and imports the account. You can also **drag an image file
@@ -82,7 +85,7 @@ Three ways, all under the **Account** menu:
 |------|------|----------|
 | Project | Quit | Q |
 | Account | Add from clipboard | *(none)* |
-| | Add (type URI)… | A |
+| | Add (type URI/secret)… | A |
 | | Add from QR image… | I |
 | | Edit selected… | E |
 | | Copy code | C |
@@ -173,7 +176,7 @@ and simply switches a feature off if missing:
 | `commodities.library` | No hotkey/Exchange; runs as a plain window (close = quit) |
 | `iffparse.library` | Clipboard copy disabled |
 | `gadtools.library` | No menus (buttons still work) |
-| `string.gadget` class | "Add (type URI)" and "Edit" disabled |
+| `string.gadget` class | "Add (type URI/secret)" and "Edit" disabled |
 | `datatypes.library` (v39) or `asl.library` | QR-image import disabled |
 | `workbench.library` | No drag-and-drop QR import |
 | `graphics.library` pens | LED falls back to monochrome |

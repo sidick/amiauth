@@ -20,7 +20,7 @@ AmiAuth accepts all three forms.
 ### From an `otpauth://` URI
 
 - **CLI:** `AmiAuth ADD "otpauth://…"` — quote it, URIs contain `?` and `&`.
-- **GUI:** *Account → Add (type URI)…*, or copy the URI to the clipboard and
+- **GUI:** *Account → Add (type URI/secret)…*, or copy the URI to the clipboard and
   use *Account → Add from clipboard*.
 
 The URI's issuer, label, secret, algorithm, digits, period (TOTP) or counter
@@ -32,21 +32,20 @@ default), 6 or 8 digits, and any period.
 Some services show the raw secret instead of (or alongside) a QR code —
 usually behind a *"can't scan?"* or *"enter this text code"* link, e.g.
 GitHub's setup key. That string **is** the Base32 secret already; nothing
-needs decoding or converting. Drop it straight into a minimal URI, choosing
-your own issuer and account name:
+needs decoding or converting. Add it directly, choosing your own issuer and
+account name:
 
-    AmiAuth ADD "otpauth://totp/GitHub:you@example.com?secret=JGB5H6F66YNZKVM4&issuer=GitHub"
+    AmiAuth ADD JGB5H6F66YNZKVM4 ISSUER GitHub LABEL you@example.com
 
-`algorithm`, `digits` and `period` are all optional and default to SHA-1,
-6 digits and 30 seconds if left out — which is what GitHub (and almost every
-other service) actually uses, so the minimal form above is normally enough.
+In the GUI, *Account → Add (type URI/secret)…* accepts the same bare secret;
+a follow-up requester asks for the issuer and label.
+
+A bare secret gets the defaults that GitHub (and almost every other service)
+actually issues: TOTP, SHA-1, 6 digits, 30 seconds. Anything different —
+HOTP, 8 digits, a custom period — still needs the full `otpauth://` URI
+form, where those appear as query parameters.
 
 Base32 handling is tolerant: spaces, lower case and `=` padding are all fine.
-
-There's no `ADD`-with-a-bare-secret shortcut yet — you always wrap it in a
-`otpauth://` URI as above. Automatic wrapping (skip the URI entirely, just
-supply the secret + a name) is tracked as a future feature:
-[#83](https://github.com/sidick/amiauth/issues/83).
 
 ### From a QR image (GUI)
 

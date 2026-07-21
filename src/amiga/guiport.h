@@ -22,7 +22,9 @@ enum {
     AAP_LIST,       /* reply buf = "issuer:label\n" per account               */
     AAP_ADD,        /* arg = otpauth:// URI                                   */
     AAP_REMOVE,     /* arg = account name                                     */
-    AAP_SHOW        /* pop the GUI window to the front                        */
+    AAP_SHOW,       /* pop the GUI window to the front                        */
+    AAP_ADD_SECRET  /* arg = "issuer\nlabel\nbase32secret" (bare-secret ADD;
+                     * issuer may be empty, the other two must not be)        */
 };
 
 /* Result codes (aar_Result / *result). */

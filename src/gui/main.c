@@ -57,6 +57,7 @@
 #include <stdlib.h>
 
 #include "otp.h"
+#include "base32.h"                 /* pre-validate bare secrets (#83) */
 #include "vault.h"
 #include "clock.h"
 #include "prefs.h"
@@ -208,7 +209,7 @@ static struct NewMenu g_menu[] = {
      * URI and adds a new vault entry) - reusing that muscle memory here would
      * surprise users expecting an ordinary paste. */
     { NM_ITEM,  (STRPTR)"Add from clipboard",  NULL, 0, 0, (APTR)CMD_ADD_CLIP },
-    { NM_ITEM,  (STRPTR)"Add (type URI)...",   (STRPTR)"A", 0, 0, (APTR)CMD_ADD_TYPE },
+    { NM_ITEM,  (STRPTR)"Add (type URI/secret)...", (STRPTR)"A", 0, 0, (APTR)CMD_ADD_TYPE },
     { NM_ITEM,  (STRPTR)"Add from QR image...",(STRPTR)"I", 0, 0, (APTR)CMD_ADD_QR },
     { NM_ITEM,  (STRPTR)"Edit selected...",    (STRPTR)"E", 0, 0, (APTR)CMD_EDIT },
     { NM_ITEM,  (STRPTR)"Copy code",           (STRPTR)"C", 0, 0, (APTR)CMD_COPY },
@@ -1087,7 +1088,8 @@ static int uri_request(char *buf, size_t cap)
     cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID, PWID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)"Cancel", TAG_END);
     labelobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ReadOnly, TRUE, GA_Text, (ULONG)"Paste or type an otpauth:// URI:", TAG_END);
+        GA_ReadOnly, TRUE, GA_Text,
+        (ULONG)"Paste or type an otpauth:// URI or Base32 secret:", TAG_END);
     buttons = NewObject(LAYOUT_GetClass(), NULL,
         LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
         LAYOUT_AddChild, (ULONG)okobj,
@@ -1269,6 +1271,133 @@ static int edit_request(otp_account *acct)
     DoMethod(win, WM_CLOSE, NULL);
     DisposeObject(win);
     return done == 1 ? 1 : 0;
+}
+
+/* Modal form asking for the Issuer/Label a bare secret doesn't carry (#83).
+ * Both are required, matching the CLI's ISSUER/K LABEL/K. Returns 1 with the
+ * fields filled, 0 on cancel. Needs string.gadget; returns 0 if unavailable. */
+static int secret_meta_request(char *issuer, char *label)
+{
+    Object *win, *layoutobj, *issuerg, *labelg, *okobj, *cancelobj, *buttons;
+    struct Window *w;
+    ULONG sig = 0;
+    int done = -1;
+    static char ibuf[OTP_MAX_ISSUER], lbuf[OTP_MAX_LABEL];   /* gadget buffers */
+
+    if (!StringBase) return 0;
+    ibuf[0] = lbuf[0] = '\0';
+
+    issuerg = NewObject(STRING_GetClass(), NULL, GA_ID, EDID_ISSUER, GA_RelVerify, TRUE,
+        STRINGA_Buffer, (ULONG)ibuf, STRINGA_MaxChars, OTP_MAX_ISSUER - 1, TAG_END);
+    labelg  = NewObject(STRING_GetClass(), NULL, GA_ID, EDID_LABEL, GA_RelVerify, TRUE,
+        STRINGA_Buffer, (ULONG)lbuf, STRINGA_MaxChars, OTP_MAX_LABEL - 1, TAG_END);
+    okobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID, EDID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"Add",    TAG_END);
+    cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ID, EDID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)"Cancel", TAG_END);
+    buttons = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_AddChild, (ULONG)okobj,
+        LAYOUT_AddChild, (ULONG)cancelobj,
+        TAG_END);
+    layoutobj = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
+        LAYOUT_SpaceOuter, TRUE,
+        LAYOUT_AddChild, (ULONG)NewObject(NULL, (STRPTR)"button.gadget",
+            GA_ReadOnly, TRUE, GA_Text,
+            (ULONG)"A bare secret carries no name - who is this account for?",
+            TAG_END), CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)labeled_row("Issuer:", issuerg), CHILD_WeightedHeight, 0, CHILD_MinWidth, 300,
+        LAYOUT_AddChild, (ULONG)labeled_row("Label:",  labelg),  CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)buttons,                         CHILD_WeightedHeight, 0,
+        TAG_END);
+    win = NewObject(WINDOW_GetClass(), NULL,
+        WA_Title,        (ULONG)"AmiAuth - Add account",
+        WA_Activate,     TRUE,
+        WA_CloseGadget,  TRUE,
+        WA_DragBar,      TRUE,
+        WA_DepthGadget,  TRUE,
+        WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP | IDCMP_VANILLAKEY,
+        WINDOW_Position, WPOS_CENTERSCREEN,
+        WINDOW_Layout,   (ULONG)layoutobj,
+        TAG_END);
+    if (!win) return 0;
+
+    w = (struct Window *)DoMethod(win, WM_OPEN, NULL);
+    if (!w) { DisposeObject(win); return 0; }
+    GetAttr(WINDOW_SigMask, win, &sig);
+    ActivateLayoutGadget((struct Gadget *)layoutobj, w, NULL, EDID_ISSUER);
+
+    while (done < 0) {
+        ULONG got = Wait(sig | SIGBREAKF_CTRL_C);
+        ULONG r;
+        UWORD code;
+        if (got & SIGBREAKF_CTRL_C) { done = 0; break; }
+        while ((r = DoMethod(win, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
+            ULONG gid = r & WMHI_GADGETMASK;
+            switch (r & WMHI_CLASSMASK) {
+                case WMHI_CLOSEWINDOW: done = 0; break;
+                case WMHI_VANILLAKEY:  if (code == 0x1B) done = 0; break;
+                case WMHI_GADGETUP:
+                    if (gid == EDID_CANCEL) done = 0;
+                    else if (gid == EDID_OK || gid == EDID_ISSUER || gid == EDID_LABEL) {
+                        STRPTR t = NULL;
+                        issuer[0] = label[0] = '\0';
+                        GetAttr(STRINGA_TextVal, issuerg, (ULONG *)&t);
+                        if (t) { strncpy(issuer, (char *)t, OTP_MAX_ISSUER - 1); issuer[OTP_MAX_ISSUER - 1] = '\0'; }
+                        GetAttr(STRINGA_TextVal, labelg, (ULONG *)&t);
+                        if (t) { strncpy(label, (char *)t, OTP_MAX_LABEL - 1); label[OTP_MAX_LABEL - 1] = '\0'; }
+                        if (issuer[0] && label[0]) done = 1;
+                        else gui_requester(w, "Issuer and Label are both required.",
+                                           "OK", NULL);          /* stay open to fix */
+                    }
+                    break;
+            }
+            if (done >= 0) break;
+        }
+    }
+
+    memset(ibuf, 0, sizeof ibuf);
+    memset(lbuf, 0, sizeof lbuf);
+    DoMethod(win, WM_CLOSE, NULL);
+    DisposeObject(win);
+    return done == 1 ? 1 : 0;
+}
+
+/* Add a bare Base32 secret: validate it, ask for issuer/label, then build the
+ * account with the common defaults (SHA-1/6-digit/30s TOTP) via the same core
+ * helper the CLI uses (#83). Returns 1 if the vault changed. */
+static int gui_add_secret(struct Window *win, vault *v, const char *path, const char *secret)
+{
+    static char issuer[OTP_MAX_ISSUER], label[OTP_MAX_LABEL];
+    static uint8_t probe[OTP_MAX_SECRET];
+    otp_account acct;
+    int changed = 0;
+    vault_result rc;
+
+    /* Cheap validation first, so a typo doesn't cost filling in the form. */
+    if (base32_decode(secret, probe, sizeof probe) <= 0) {
+        memset(probe, 0, sizeof probe);
+        gui_requester(win, "That is not an otpauth:// URI or a Base32 secret.", "OK", NULL);
+        return 0;
+    }
+    memset(probe, 0, sizeof probe);
+
+    if (!secret_meta_request(issuer, label)) return 0;
+    if (otp_account_from_secret(issuer, label, secret, &acct) != 0) {
+        gui_requester(win, "That is not an otpauth:// URI or a Base32 secret.", "OK", NULL);
+    } else {
+        rc = vault_add(v, &acct);
+        if (rc == VAULT_OK) { changed = 1; rc = gui_save(v, path); }
+        if (rc != VAULT_OK)
+            gui_requester(win, rc == VAULT_ERR_FULL
+                          ? "The vault is full (max 64 accounts)."
+                          : "Could not save the vault.", "OK", NULL);
+    }
+    memset(&acct, 0, sizeof acct);
+    memset(issuer, 0, sizeof issuer);
+    memset(label, 0, sizeof label);
+    return changed;
 }
 
 /* Match an account by label, issuer, or "issuer:label" (case-insensitive) —
@@ -1807,6 +1936,30 @@ int main(int argc, char **argv)
                         memset(&acct, 0, sizeof acct);
                         break;
                     }
+                    case AAP_ADD_SECRET: {   /* arg = "issuer\nlabel\nsecret" (#83) */
+                        static char meta[320];   /* our own copy: never scribble on the CLI's buffer */
+                        otp_account acct;
+                        char *lab, *sec;
+                        if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
+                        if (!arg || strlen(arg) >= sizeof meta) { req->aar_Result = AAR_BADARG; break; }
+                        strcpy(meta, arg);
+                        lab = strchr(meta, '\n');
+                        sec = lab ? strchr(lab + 1, '\n') : NULL;
+                        if (!sec) { memset(meta, 0, sizeof meta); req->aar_Result = AAR_BADARG; break; }
+                        *lab++ = '\0';
+                        *sec++ = '\0';
+                        if (otp_account_from_secret(meta, lab, sec, &acct) != 0)
+                            req->aar_Result = AAR_BADARG;
+                        else {
+                            vault_result r = vault_add(&v, &acct);
+                            if (r == VAULT_ERR_FULL) req->aar_Result = AAR_FULL;
+                            else if (r != VAULT_OK)  req->aar_Result = AAR_SAVEFAIL;
+                            else { if (gui_save(&v, path) != VAULT_OK) req->aar_Result = AAR_SAVEFAIL; changed = 1; }
+                        }
+                        memset(&acct, 0, sizeof acct);
+                        memset(meta, 0, sizeof meta);
+                        break;
+                    }
                     case AAP_REMOVE: {
                         int idx;
                         if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
@@ -1945,11 +2098,13 @@ int main(int argc, char **argv)
                 copied = 2;                           /* revert after ~2 ticks */
             }
 
-            /* --- Add (clipboard or typed URI) --- */
+            /* --- Add (clipboard or typed; otpauth:// URI or bare secret) --- */
             if (doadd_clip || doadd_type) {
                 int ok = doadd_clip ? (clip_read_text(uribuf, sizeof uribuf) > 0)
                                     : uri_request(uribuf, sizeof uribuf);
-                if (ok) changed |= gui_add_uri(win, &v, path, uribuf);
+                if (ok) changed |= otpauth_is_uri(uribuf)
+                                 ? gui_add_uri(win, &v, path, uribuf)
+                                 : gui_add_secret(win, &v, path, uribuf);
                 memset(uribuf, 0, sizeof uribuf);
             }
 

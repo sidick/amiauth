@@ -26,4 +26,17 @@ typedef struct {
  * input. Unspecified fields are filled with sensible defaults (SHA1/6/30). */
 int otpauth_parse(const char *uri, otp_account *out);
 
+/* Does `s` look like an otpauth:// URI (case-insensitive prefix test)? Used
+ * to route add-account input between URI parsing and the bare-secret path. */
+int otpauth_is_uri(const char *s);
+
+/* Build an account directly from a bare Base32 secret, with the defaults
+ * nearly every service issues (TOTP, SHA-1, 6 digits, 30 s) — the shortcut
+ * for services that show only the raw secret, no URI. `label` must be
+ * non-empty; `issuer` may be NULL/empty. Overlong issuer/label truncate,
+ * matching the URI path. Returns 0 on success, -1 on a missing label or an
+ * empty/undecodable secret (out is scrubbed on failure). */
+int otp_account_from_secret(const char *issuer, const char *label,
+                            const char *secret_b32, otp_account *out);
+
 #endif /* AMIAUTH_URI_H */
