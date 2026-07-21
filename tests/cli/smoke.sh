@@ -40,6 +40,23 @@ match() {
 }
 if ! match && ! match; then fail "GET != CODE for the same secret"; fi
 
+# Bare-secret ADD (#83): no otpauth:// wrapper, metadata via --issuer/--label,
+# and the stored account must produce the same code as the raw secret.
+if ! "$BIN" -v "$VAULT" ADD JBSWY3DPEHPK3PXP --issuer Bare --label carol >/dev/null; \
+then fail "ADD (bare secret)"; fi
+if ! "$BIN" -v "$VAULT" LIST | grep -q '^Bare:carol$'; then fail "LIST missing Bare:carol"; fi
+match_bare() {
+    A="$("$BIN" -v "$VAULT" GET carol | tail -1)"
+    B="$("$BIN" CODE JBSWY3DPEHPK3PXP | tail -1)"
+    [ -n "$A" ] && [ "$A" = "$B" ]
+}
+if ! match_bare && ! match_bare; then fail "bare-secret GET != CODE for the same secret"; fi
+if "$BIN" -v "$VAULT" ADD JBSWY3DPEHPK3PXP >/dev/null 2>&1; \
+then fail "bare ADD without ISSUER/LABEL should be rejected"; fi
+if "$BIN" -v "$VAULT" ADD 'not!base32' --issuer X --label y >/dev/null 2>&1; \
+then fail "invalid Base32 secret should be rejected"; fi
+if ! "$BIN" -v "$VAULT" REMOVE carol >/dev/null; then fail "REMOVE (bare)"; fi
+
 if ! "$BIN" -v "$VAULT" REMOVE github >/dev/null; then fail "REMOVE"; fi
 LIST="$("$BIN" -v "$VAULT" LIST)"
 if echo "$LIST" | grep -qi 'github';      then fail "REMOVE did not remove the account"; fi

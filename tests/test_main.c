@@ -12,6 +12,7 @@ void run_pbkdf2_tests(void);
 void run_drbg_tests(void);
 void run_kdf_tests(void);
 void run_uri_tests(void);
+void run_bare_secret_tests(void);
 void run_vault_tests(void);
 void run_clock_tests(void);
 void run_prefs_tests(void);
@@ -28,6 +29,7 @@ int main(void)
     run_drbg_tests();
     run_kdf_tests();
     run_uri_tests();
+    run_bare_secret_tests();
     run_vault_tests();
     run_clock_tests();
     run_prefs_tests();
