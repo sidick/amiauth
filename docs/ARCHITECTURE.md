@@ -107,9 +107,19 @@ amitools' `vamos`, on both `-C 000` and `-C 020`), so it's the *default* on
 every CPU tier this project supports, not an opt-in extra - 68020+ still runs
 it faster purely by being a faster CPU on the same instructions. Faster
 primitives convert directly into security margin, since PBKDF2 iterations are
-calibrated to ~1s of wall time. Measured on a real 68000 under Copperline
-(PAL EClock, real Kickstart 3.1 ROM): the SHA-1 asm cuts PBKDF2-HMAC-SHA1 time
-by ~17% versus the C reference.
+calibrated to ~1s of wall time.
+
+Measured under Copperline (PAL EClock, real Kickstart 3.1 ROM), timing
+PBKDF2-HMAC-SHA1 (600 iterations) on each CPU tier Copperline models:
+
+| CPU     | C reference | asm    | asm speedup |
+|---------|-------------|--------|--------------|
+| 68000   | 13.65 iters/s | 15.97 iters/s | ~17.0% |
+| 68020   | 46.28 iters/s | 55.55 iters/s | ~20.1% |
+| 68030   | 61.46 iters/s | 70.87 iters/s | ~15.3% |
+
+The advantage holds at every tier - the "faster CPU, same instructions" claim
+above is measured, not assumed.
 
 ChaCha20 has no asm path: a hand-written attempt measured ~17% *slower* than
 its C reference on the same real-hardware setup - the naive per-quarter-round
