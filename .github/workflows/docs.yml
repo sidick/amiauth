@@ -35,7 +35,7 @@ jobs:
         with:
           fetch-depth: 0    # mike commits to gh-pages; needs the full branch
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
