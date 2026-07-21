@@ -41,9 +41,6 @@ jobs:
             grep -aqF "\$VER: $b $v (" "build/$b" || { echo "::error::build/$b lacks \"\$VER: $b $v (...)\""; exit 1; }
           done
 
-      - name: Clone the wiki (source of the AmigaGuide docs)
-        run: git clone --depth 1 https://github.com/sidick/amiauth.wiki.git ../amiauth.wiki
-
       # `make dist` builds its own pinned lha (Ubuntu's lhasa is extract-only)
       - name: Package the Aminet upload pair
         run: make dist
@@ -74,7 +71,7 @@ jobs:
               echo
               sed -n '/^Features$/,/^Requirements$/p' AmiAuth.readme | sed '1d;$d;/^--------$/d;/^$/d'
               echo
-              echo "See the [wiki](https://github.com/sidick/amiauth/wiki) for full documentation, and [docs/SECURITY.md](https://github.com/sidick/amiauth/blob/main/docs/SECURITY.md) for the honest threat model."
+              echo "See the [documentation site](https://sidick.github.io/amiauth/) for full documentation, and [docs/SECURITY.md](https://github.com/sidick/amiauth/blob/main/docs/SECURITY.md) for the honest threat model."
             } > /tmp/release-notes.md
             gh release create "$GITHUB_REF_NAME" \
               --title "AmiAuth $GITHUB_REF_NAME" \

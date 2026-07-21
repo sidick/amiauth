@@ -210,15 +210,11 @@ copperline-smoke: serialtest-m68k-docker
 pbkdf2-bench:
 	sh tests/copperline/bench.sh
 
-# --- guide: AmigaGuide user documentation, generated from the wiki -----------
-# The GitHub wiki is the single source of truth for user docs; this converts
-# it for on-Amiga reading (MultiView/AmigaGuide). Clone it as a sibling:
-#   git clone https://github.com/sidick/amiauth.wiki.git ../amiauth.wiki
-WIKI_DIR ?= ../amiauth.wiki
+# --- guide: AmigaGuide user documentation, generated from userdocs/ ----------
+# userdocs/ is the single source of truth for user docs (published as the
+# MkDocs site); this converts it for on-Amiga reading (MultiView/AmigaGuide).
 guide: | $(BUILD)
-	@test -f $(WIKI_DIR)/Home.md || \
-		{ echo "guide: wiki clone not found at $(WIKI_DIR) (set WIKI_DIR=)"; exit 1; }
-	python3 tools/wiki2guide.py $(WIKI_DIR) $(BUILD)/AmiAuth.guide
+	python3 tools/docs2guide.py userdocs $(BUILD)/AmiAuth.guide
 
 # --- lha: build the real LHa for UNIX (archive-capable), pinned --------------
 # Homebrew's and Ubuntu's `lha` is Lhasa — extract-only, useless for packaging

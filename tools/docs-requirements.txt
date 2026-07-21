@@ -1,0 +1,4 @@
+# Pinned docs-site toolchain (mkdocs.yml + .github/workflows/docs.yml).
+# Material 9.x targets MkDocs 1.x; do not float across the MkDocs 2.0 rewrite.
+mkdocs-material==9.7.7
+mike==2.2.0

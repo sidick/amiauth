@@ -1,0 +1,60 @@
+# User documentation site (MkDocs Material), published per release via mike
+# to GitHub Pages — see .github/workflows/docs.yml and userdocs/README note
+# in CLAUDE.md. Developer design notes stay in docs/ and are not part of
+# this site.
+
+site_name: AmiAuth
+site_description: A native two-factor authentication (2FA) code generator for classic AmigaOS
+site_url: https://sidick.github.io/amiauth/
+repo_url: https://github.com/sidick/amiauth
+repo_name: sidick/amiauth
+edit_uri: edit/main/userdocs/
+copyright: AmiAuth — a native 2FA authenticator for classic AmigaOS. BSD 2-Clause.
+
+docs_dir: userdocs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.footer
+    - content.action.edit
+
+extra:
+  version:
+    provider: mike
+
+markdown_extensions:
+  - toc:
+      permalink: true
+
+# Mirrors the old wiki _Sidebar.md grouping.
+nav:
+  - Home: index.md
+  - Getting going:
+      - Installation: Installation.md
+      - Getting Started: Getting-Started.md
+  - Using AmiAuth:
+      - Managing Accounts: Managing-Accounts.md
+      - CLI Reference: CLI-Reference.md
+      - GUI Guide: GUI-Guide.md
+      - Commodity and Tooltypes: Commodity-and-Tooltypes.md
+      - Time and Clock Sync: Time-and-Clock-Sync.md
+  - Under the hood:
+      - Vault and Passphrases: Vault-and-Passphrases.md
+      - Settings Reference: Settings-Reference.md
+      - Security Model: Security-Model.md
+  - Help:
+      - Troubleshooting and FAQ: Troubleshooting-and-FAQ.md
+      - Building from Source: Building-from-Source.md

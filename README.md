@@ -127,10 +127,12 @@ degrades to a plain window (close = quit).
 
 ## Documentation
 
-**User documentation lives on the [project wiki](https://github.com/sidick/amiauth/wiki)** —
+**User documentation lives at [sidick.github.io/amiauth](https://sidick.github.io/amiauth/)** —
 installation, getting started, the CLI command reference, the GUI and
 commodity/tooltypes, vault and passphrases, time sync, settings, and
-troubleshooting/FAQ.
+troubleshooting/FAQ. The site is versioned per release (version picker in
+the header); its source is [`userdocs/`](userdocs/) in this repository, and
+the same pages become the `AmiAuth.guide` shipped in the release archive.
 
 Developer-facing design notes live in `docs/`:
 
