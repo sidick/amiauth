@@ -38,8 +38,9 @@ If a TCP/IP stack is running (`bsdsocket.library` present — AmiTCP, Roadshow,
 Miami, an emulator's bsdsocket, …), AmiAuth can measure your clock's offset
 with a single small UDP exchange against an NTP server. Zero configuration.
 
-- **GUI:** performs one SNTP sync automatically at startup, so a resident
-  commodity has verified (green) time for its whole session with no
+- **GUI:** performs one SNTP sync automatically at startup (right after the
+  window opens — the clock LED goes green the moment it succeeds), so a
+  resident commodity has verified time for its whole session with no
   configuration. The server can be chosen with the `TIMESERVER` tooltype (see
   [Commodity and Tooltypes](Commodity-and-Tooltypes.md)); offline it fails quietly and falls back to the
   stored offset.

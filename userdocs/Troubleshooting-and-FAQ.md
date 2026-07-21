@@ -82,6 +82,16 @@ it. There is no software fix for this on classic AmigaOS: once a task has been
 killed outside its own control, it never gets the chance to unregister itself,
 and nothing else on the system can force that cleanup on its behalf.
 
+### The window opens but ignores clicks for a few seconds after unlocking
+
+The automatic SNTP sync at startup blocks the GUI briefly: normally well
+under a second, but with a TCP/IP stack running and the network down or the
+DNS server unreachable it can take many seconds to give up. The window opens
+first and stays visible the whole time (this used to look like a hang, with
+no window at all until the sync timed out); the clock status line and LED
+update the moment the sync finishes. If it bothers you regularly, take the
+stack offline (the sync then skips instantly) or fix the name server.
+
 ### The hotkey does nothing
 
 Another commodity may own the combination — check in Exchange, and change
