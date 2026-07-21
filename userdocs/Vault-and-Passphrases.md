@@ -20,7 +20,8 @@ explicitly overridden path (`VAULT` keyword / `AMIAUTH_VAULT`) deliberately
 does not touch the recorded pref. To use a different location — a shared or read-only
 install, a separately-encrypted partition — the precedence is:
 
-1. `VAULT <path>` on the CLI command line (this run only);
+1. `VAULT <path>` on the CLI command line, or the GUI's `VAULT` icon
+   tooltype / Shell argument (this run only);
 2. the `AMIAUTH_VAULT` environment variable;
 3. the saved `ENVARC:AmiAuth/vault` path;
 4. the `PROGDIR:AmiAuth.vault` default.

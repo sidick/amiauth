@@ -63,14 +63,16 @@ cp -Rc "$WB" "$BOOT" 2>/dev/null || { rm -rf "$BOOT"; cp -R "$WB" "$BOOT"; }
 cp "$GUI"   "$BOOT/AmiAuthGUI"
 cp "$VAULT" "$BOOT/AmiAuth.vault"
 
-# Launch after LoadWB (the ReAction window needs the Workbench screen up), and
-# point the vault pref at our copy — the guest SetEnv overrides the stale
-# ENVARC pref in the in-memory volume only.
+# Launch after LoadWB (the ReAction window needs the Workbench screen up).
+# The vault is passed via the VAULT= Shell argument (#42); the pref is
+# deliberately set to a nonexistent decoy, so the window only renders if the
+# argument is honoured *and* outranks the saved pref — a broken VAULT= would
+# land in the first-run requester instead and fail the colour assertion.
 SEQ="$BOOT/S/Startup-Sequence"
 [ -f "$SEQ" ] || fail "clone missing S/Startup-Sequence"
 awk '{ print }
-     /^LoadWB/ { print "SetEnv AmiAuth/vault SYS:AmiAuth.vault"
-                 print "Run >NIL: SYS:AmiAuthGUI" }' "$SEQ" > "$SEQ.new" && mv "$SEQ.new" "$SEQ"
+     /^LoadWB/ { print "SetEnv AmiAuth/vault SYS:Decoy-does-not-exist.vault"
+                 print "Run >NIL: SYS:AmiAuthGUI VAULT=SYS:AmiAuth.vault" }' "$SEQ" > "$SEQ.new" && mv "$SEQ.new" "$SEQ"
 grep -q 'SYS:AmiAuthGUI' "$SEQ" || fail "could not patch Startup-Sequence (no LoadWB line?)"
 
 # --- config: A1200 / AGA / KS 3.2, boot from the clone -----------------------
