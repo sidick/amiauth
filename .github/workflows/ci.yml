@@ -21,6 +21,7 @@ jobs:
       core: ${{ steps.filter.outputs.core }}
       build: ${{ steps.filter.outputs.build }}
       target: ${{ steps.filter.outputs.target }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -29,7 +30,7 @@ jobs:
         name: Classify changed files
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            for k in host core build target; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            for k in host core build target docs; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
           files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD")
@@ -41,7 +42,25 @@ jobs:
             echo "core=$(match "$always|^(src/core/|tests/diff/)")"
             echo "build=$(match "$always|^src/")"
             echo "target=$(match "$always|^(src/|tests/copperline/)")"
+            echo "docs=$(match "$always|^(userdocs/|mkdocs\.yml|tools/docs2guide\.py|tools/docs-requirements\.txt)")"
           } >> "$GITHUB_OUTPUT"
+
+  docs-build:
+    name: Docs site + AmigaGuide build
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install docs toolchain
+        run: pip install -r tools/docs-requirements.txt
+      - name: Strict MkDocs build
+        run: mkdocs build --strict
+      - name: AmigaGuide conversion
+        run: make guide
 
   host-tests:
     name: Host vector tests

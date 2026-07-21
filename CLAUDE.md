@@ -1,24 +1,30 @@
 # AmiAuth — project instructions
 
-## Documentation lives on the wiki
+## Documentation lives in userdocs/
 
-**User-facing documentation is on the GitHub wiki**
-(https://github.com/sidick/amiauth/wiki), not in this repo. It is a separate
-git repo — `git@github.com:sidick/amiauth.wiki.git` — conventionally cloned as
-a sibling of this checkout (`../amiauth.wiki`, branch `master`).
+**User-facing documentation is `userdocs/` in this repo** — published as a
+versioned MkDocs Material site at https://sidick.github.io/amiauth/ (one
+docs version per release plus a `latest` alias, deployed by
+`.github/workflows/docs.yml` on release tags via `mike`), and converted to
+the `AmiAuth.guide` shipped in the release archive
+(`tools/docs2guide.py`, `make guide`). The old GitHub wiki is retired and
+redirects here; don't edit it.
 
-**Whenever you change user-visible behaviour, update the affected wiki pages
-as part of the same piece of work** — commit and push the wiki clone. That
-includes: CLI commands/arguments and their output, GUI gadgets/menus/dialogs,
-tooltypes, `ENVARC:AmiAuth/` settings, vault behaviour, clock/SNTP behaviour,
-error messages worth documenting, and OS/library requirements. If a change is
-purely internal, no wiki edit is needed — but say so explicitly.
+**Whenever you change user-visible behaviour, update the affected
+`userdocs/` pages in the same PR.** That includes: CLI commands/arguments
+and their output, GUI gadgets/menus/dialogs, tooltypes, `ENVARC:AmiAuth/`
+settings, vault behaviour, clock/SNTP behaviour, error messages worth
+documenting, and OS/library requirements. If a change is purely internal,
+no docs edit is needed — but say so explicitly. Use standard Markdown links
+between pages (`[GUI Guide](GUI-Guide.md)`); `mkdocs build --strict` in CI
+validates them. Adding a page means updating the `nav` in `mkdocs.yml` and
+`PAGES` in `tools/docs2guide.py`. Keep pages within docs2guide's Markdown
+subset (headings, bold, inline/fenced code, pipe tables, lists,
+blockquotes, links) so the AmigaGuide stays faithful.
 
-The wiki is the single source of truth for user docs; a planned AmigaGuide
-(`.guide`) version will be generated from it. `docs/` in this repo holds
-developer-facing design notes only (architecture, vault format, clock design,
-security model rationale) — keep those in sync too when the design itself
-changes.
+`docs/` in this repo holds developer-facing design notes only
+(architecture, vault format, clock design, security model rationale) — keep
+those in sync too when the design itself changes.
 
 ## Key project rules
 

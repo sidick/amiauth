@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""wiki2guide.py - build AmiAuth.guide from the GitHub wiki pages.
+"""docs2guide.py - build AmiAuth.guide from the userdocs/ pages.
 
-The wiki (github.com/sidick/amiauth/wiki) is the single source of truth for
-user documentation; this converts its Markdown into one hyperlinked AmigaGuide
-document for on-Amiga reading (AmigaGuide/MultiView, OS 2.x+).
+userdocs/ in this repository is the single source of truth for user
+documentation (published as the versioned MkDocs site); this converts its
+Markdown into one hyperlinked AmigaGuide document for on-Amiga reading
+(AmigaGuide/MultiView, OS 2.x+).
 
-Usage: wiki2guide.py <wiki-clone-dir> <output.guide>
+Usage: docs2guide.py <userdocs-dir> <output.guide>
 
-Deliberately a pragmatic subset-of-Markdown converter, tuned to how the wiki
+Deliberately a pragmatic subset-of-Markdown converter, tuned to how the
 pages are actually written (see PAGES): headings, bold, inline code, fenced
-code blocks, pipe tables, lists, blockquotes, [[wiki links]], [md](links).
-Output is plain non-wordwrapped AmigaGuide (works in every viewer back to
-2.x): paragraphs are hard-wrapped here, code/tables pass through verbatim.
+code blocks, pipe tables, lists, blockquotes, [md](links) - links to sibling
+.md pages become guide node links. Output is plain non-wordwrapped
+AmigaGuide (works in every viewer back to 2.x): paragraphs are hard-wrapped
+here, code/tables pass through verbatim.
 """
 
 import re
@@ -20,9 +22,9 @@ import os
 
 WIDTH = 76
 
-# Sidebar order; (file-slug, node title). MAIN is Home.
+# Site nav order; (file-slug, node title). MAIN is index (the old wiki Home).
 PAGES = [
-    ('Home', 'AmiAuth'),
+    ('index', 'AmiAuth'),
     ('Installation', 'Installation'),
     ('Getting-Started', 'Getting Started'),
     ('Managing-Accounts', 'Managing Accounts'),
@@ -44,6 +46,7 @@ TRANSLIT = {
     '“': '"', '”': '"', '…': '...', '→': '->',
     '≈': '~', '≤': '<=', '≥': '>=', ' ': ' ',
     '\U0001f7e2': '', '\U0001f7e0': '', '\U0001f534': '',  # LED emoji
+    '\U0001f389': '',                                      # party popper
 }
 
 
@@ -58,42 +61,32 @@ def esc(s):
     return s.replace('\\', '\\\\').replace('@', '\\@')
 
 
-def slugify(name):
-    return name.strip().replace(' ', '-')
-
-
 def inline(s):
     """Markdown inline -> AmigaGuide markup. Escapes literal text as it goes."""
     s = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', s)   # images have no guide analogue
     out = []
     i = 0
-    # [[Text|Page]] / [[Page]] / [text](url) / **bold** / `code`
+    # [text](url) / **bold** / `code`
     pat = re.compile(
-        r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]'   # 1: text-or-page, 2: page
-        r'|\[([^\]]+)\]\(([^)]+)\)'           # 3: text, 4: url
-        r'|\*\*([^*]+)\*\*'                   # 5: bold
-        r'|`([^`]+)`')                        # 6: code
+        r'\[([^\]]+)\]\(([^)]+)\)'            # 1: text, 2: url
+        r'|\*\*([^*]+)\*\*'                   # 3: bold
+        r'|`([^`]+)`')                        # 4: code
     for m in pat.finditer(s):
         out.append(esc(s[i:m.start()]))
         if m.group(1) is not None:
-            text = m.group(1).strip()
-            page = m.group(2).strip() if m.group(2) else text
-            slug = slugify(page)
-            if slug in SLUGS:
-                out.append('@{"%s" link "%s"}' % (esc(text), slug))
-            else:
-                out.append(esc(text))
-        elif m.group(3) is not None:
-            text = esc(m.group(3).replace('`', ''))
-            url = m.group(4)
-            if url.startswith('#'):
+            text = esc(m.group(1).replace('`', ''))
+            url = m.group(2)
+            page = re.fullmatch(r'([A-Za-z0-9-]+)\.md(?:#\S*)?', url)
+            if page and page.group(1) in SLUGS:
+                out.append('@{"%s" link "%s"}' % (text, page.group(1)))
+            elif url.startswith('#'):
                 out.append('@{b}%s@{ub}' % text)   # in-page anchor: text only
             else:
                 out.append('%s <%s>' % (text, esc(url)))
-        elif m.group(5) is not None:
-            out.append('@{b}%s@{ub}' % esc(m.group(5)))
+        elif m.group(3) is not None:
+            out.append('@{b}%s@{ub}' % esc(m.group(3)))
         else:
-            out.append(esc(m.group(6)))
+            out.append(esc(m.group(4)))
         i = m.end()
     out.append(esc(s[i:]))
     return ''.join(out)
@@ -282,8 +275,8 @@ def version(root):
 
 def main():
     if len(sys.argv) != 3:
-        sys.exit('usage: wiki2guide.py <wiki-dir> <output.guide>')
-    wikidir, outpath = sys.argv[1], sys.argv[2]
+        sys.exit('usage: docs2guide.py <userdocs-dir> <output.guide>')
+    docsdir, outpath = sys.argv[1], sys.argv[2]
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ver, vdate = version(root)
 
@@ -297,9 +290,9 @@ def main():
     ]
     body = []
     for n, (slug, title) in enumerate(PAGES):
-        path = os.path.join(wikidir, slug + '.md')
+        path = os.path.join(docsdir, slug + '.md')
         md = open(path, encoding='utf-8').read()
-        node = 'MAIN' if slug == 'Home' else slug
+        node = 'MAIN' if slug == 'index' else slug
         body.append('@node %s "%s"' % (node, latin1(title)))
         if n > 0:
             body.append('@toc MAIN')
@@ -312,7 +305,7 @@ def main():
         if n + 1 < len(PAGES):
             body.append('@next %s' % PAGES[n + 1][0])
         body.append('')
-        if slug == 'Home':
+        if slug == 'index':
             body.append('@{b}AmiAuth %s@{ub} - two-factor authentication '
                         'for classic AmigaOS' % ver)
             body.append('')
@@ -321,9 +314,9 @@ def main():
         body.append('@endnode')
         body.append('')
 
-    # Fix node cross-references: pages link with slugs; Home's node is MAIN.
+    # Fix node cross-references: pages link with slugs; index's node is MAIN.
     text = '\n'.join(head + body)
-    text = text.replace('link "Home"', 'link "MAIN"')
+    text = text.replace('link "index"', 'link "MAIN"')
     with open(outpath, 'w', encoding='latin-1', errors='replace') as f:
         f.write(text + '\n')
     print('%s: %d nodes, %d bytes' % (outpath, len(PAGES),

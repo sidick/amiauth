@@ -87,8 +87,9 @@ Security
 Documentation
 -------------
   Full user documentation - installation, CLI reference, GUI/commodity guide,
-  tooltypes, time sync and troubleshooting - is on the project wiki:
-      https://github.com/sidick/amiauth/wiki
+  tooltypes, time sync and troubleshooting - is online (versioned per
+  release), and included as AmiAuth.guide in this archive:
+      https://sidick.github.io/amiauth/
 
 Source and licence
 -------------------

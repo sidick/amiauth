@@ -1,0 +1,54 @@
+name: Docs
+
+# Publishes the versioned user-docs site (MkDocs Material + mike) to GitHub
+# Pages: each release tag deploys its docs as a named version (v1.0, v1.1,
+# ...) plus the floating `latest` alias, giving the site a per-release
+# version picker. Day-to-day docs edits on main do NOT deploy - the site is
+# refreshed at release time (PRs get a strict build check in ci.yml).
+#
+# workflow_dispatch exists for the initial publish (the v1.0 tag predates
+# this workflow, so its docs deploy from current main) and for re-publishing
+# a version after a docs-only fix.
+#
+# One-time repo setup: Settings -> Pages -> Source: "GitHub Actions" is NOT
+# used here - mike works by committing the built site to the gh-pages
+# branch, so Pages must be set to serve from gh-pages / root.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. v1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Publish versioned docs site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0    # mike commits to gh-pages; needs the full branch
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install docs toolchain
+        run: pip install -r tools/docs-requirements.txt
+
+      - name: Strict build first (fail before touching gh-pages)
+        run: mkdocs build --strict
+
+      - name: Deploy versioned site with mike
+        run: |
+          version="${{ inputs.version || github.ref_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mike deploy --push --update-aliases "$version" latest
+          mike set-default --push latest
