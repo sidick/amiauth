@@ -129,6 +129,20 @@ that gap needs a substantially more involved rewrite that wasn't judged worth
 the risk for this pass. `g_chacha20_block` stays on the C default; see
 `src/amiga/crypto_select.c` and `src/core/crypto_dispatch.h`.
 
+SHA-256/SHA-512 (`sha256.c`/`sha512.c`, added for the RFC 6238 algorithm
+variants in #43) and Steam Guard's renderer (`steamguard.c`, #44) deliberately
+have no asm path either, but for a different reason than ChaCha20: they aren't
+hot loops in the first place. Unlike SHA-1, which backs PBKDF2's
+iteration-heavy vault KDF (the table above), SHA-256/512 and Steam Guard each
+compute at most one HMAC per TOTP code render - seconds apart, not thousands
+of iterations back-to-back - so there's no wall-clock bottleneck for
+hand-written asm to fix, and no measured case (per the ChaCha20 lesson above)
+to justify writing one speculatively. Steam Guard's HMAC-SHA1 truncation
+already goes through the existing `g_sha1_compress` dispatch at no extra cost.
+Revisit only if either primitive ends up in a genuine hot loop, the same way
+ChaCha20's asm case was decided on real-hardware measurement rather than
+assumption.
+
 An optional AmiSSL-backed provider (`CRYPTO=BUILTIN|AMISSL|AUTO`) plugging
 into the same dispatch seam is tracked separately as #85 - AmiSSL itself
 requires AmigaOS 3.0+/68020+, so unlike the asm above it can only ever sit
