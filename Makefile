@@ -192,7 +192,8 @@ asm-tests-docker:
 # Boots a stock A500/68000 under Copperline, runs the RFC 4226 HOTP vectors on
 # real m68k, and checks the codes it emits over serial. See tests/copperline.
 # OTP core chain (hotp_sha1 -> hmac -> sha1) + the DRBG; no vault/prefs/front-end.
-SERIALTEST_SRCS := src/core/otp.c src/core/hmac.c src/core/sha1.c src/core/drbg.c \
+SERIALTEST_SRCS := src/core/otp.c src/core/hmac.c src/core/sha1.c \
+                   src/core/sha256.c src/core/sha512.c src/core/drbg.c \
                    tests/copperline/serialtest.c
 
 serialtest-m68k: | $(BUILD)

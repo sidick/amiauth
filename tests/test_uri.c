@@ -45,6 +45,24 @@ void run_uri_tests(void)
         "otpauth://totp/OldName:acct?secret=JBSWY3DP&issuer=NewName", &a) == 0);
     TEST_CHECK(strcmp(a.issuer, "NewName") == 0);
 
+    /* algorithm= parses case-insensitively to the canonical name. */
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/x?secret=JBSWY3DP&algorithm=SHA256", &a) == 0);
+    TEST_CHECK(strcmp(a.algorithm, "SHA256") == 0);
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/x?secret=JBSWY3DP&algorithm=sha512", &a) == 0);
+    TEST_CHECK(strcmp(a.algorithm, "SHA512") == 0);
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/x?secret=JBSWY3DP&algorithm=Sha1", &a) == 0);
+    TEST_CHECK(strcmp(a.algorithm, "SHA1") == 0);
+
+    /* An algorithm we don't implement is rejected outright — importing it and
+     * generating SHA-1 codes would be silently wrong. */
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/x?secret=JBSWY3DP&algorithm=MD5", &a) == -1);
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/x?secret=JBSWY3DP&algorithm=SHA224", &a) == -1);
+
     /* Rejections: missing secret, wrong scheme, malformed input. */
     TEST_CHECK(otpauth_parse("otpauth://totp/x?issuer=Y", &a) == -1);
     TEST_CHECK(otpauth_parse("otpauth://weird/x?secret=JBSWY3DP", &a) == -1);

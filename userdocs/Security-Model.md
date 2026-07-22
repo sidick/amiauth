@@ -121,8 +121,9 @@ general secret vault.
 
 ## Verifying the crypto yourself
 
-- All primitives (SHA-1, HMAC, PBKDF2, ChaCha20) and both OTP algorithms are
-  validated against their published RFC test vectors in CI on every commit.
+- All primitives (SHA-1, SHA-256, SHA-512, HMAC, PBKDF2, ChaCha20) and both
+  OTP modes (TOTP/HOTP) across all three hash algorithms are validated
+  against their published RFC test vectors in CI on every commit.
 - An opt-in CI job differentially fuzzes the primitives against OpenSSL.
 - The full source is BSD-licensed:
   [github.com/sidick/amiauth](https://github.com/sidick/amiauth). The frozen

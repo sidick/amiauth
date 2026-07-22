@@ -756,21 +756,24 @@ static int cmd_get(const char *path, const char *account)
     if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
     a = &v.accounts[idx];
 
-    if (strcmp(a->type, "hotp") == 0) {
-        printf("%0*lu\n", a->digits,
-               (unsigned long)hotp_sha1(a->secret, a->secret_len, a->counter, a->digits));
-        a->counter++;                       /* HOTP is stateful: advance and persist */
-        rc = save_vault(&v, path);
-        if (rc != VAULT_OK)
-            fprintf(stderr, "AmiAuth: warning: could not persist HOTP counter (%s)\n",
-                    vault_err(rc));
-    } else {
-        cli_clock_init(&clk);
-        now = clock_now_utc(&clk);
-        printf("%0*lu\n", a->digits,
-               (unsigned long)totp_sha1(a->secret, a->secret_len, now, 0, a->period, a->digits));
-        fprintf(stderr, "(%u seconds remaining)\n",
-                totp_seconds_remaining(now, 0, a->period));
+    {
+        char code[OTP_CODE_BUF];
+        if (strcmp(a->type, "hotp") == 0) {
+            otp_render(a, 0, code);
+            printf("%s\n", code);
+            a->counter++;                   /* HOTP is stateful: advance and persist */
+            rc = save_vault(&v, path);
+            if (rc != VAULT_OK)
+                fprintf(stderr, "AmiAuth: warning: could not persist HOTP counter (%s)\n",
+                        vault_err(rc));
+        } else {
+            cli_clock_init(&clk);
+            now = clock_now_utc(&clk);
+            otp_render(a, now, code);
+            printf("%s\n", code);
+            fprintf(stderr, "(%u seconds remaining)\n",
+                    totp_seconds_remaining(now, 0, a->period));
+        }
     }
     vault_lock(&v);
     return 0;
