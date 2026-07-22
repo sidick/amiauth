@@ -89,6 +89,7 @@ typedef struct {
     int         open;        /* OPEN / --open */
     long        iterations;  /* ITERATIONS / --iterations (-1 = auto) */
     int         no_rekey;    /* NOREKEY / --no-rekey */
+    int         steam;       /* STEAM / --steam (bare-secret ADD; #44) */
 } cli_args;
 
 /* ---- platform hooks ---- */
@@ -673,9 +674,10 @@ static int cmd_add(const char *path, const char *uri)
 
 /* ADD with a bare Base32 secret (no otpauth:// wrapper): the common case for
  * services that show only the raw secret. Defaults to a SHA-1/6-digit/30s
- * TOTP; anything else still needs the full URI form (#83). */
+ * TOTP, or a Steam Guard account when `steam` is set (#44); anything else
+ * still needs the full URI form (#83). */
 static int cmd_add_secret(const char *path, const char *secret,
-                          const char *issuer, const char *label)
+                          const char *issuer, const char *label, int steam)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     static char packed[320];   /* issuer \n label \n secret for the GUI port */
@@ -687,11 +689,12 @@ static int cmd_add_secret(const char *path, const char *secret,
         fprintf(stderr,
             "AmiAuth: adding a bare secret needs ISSUER and LABEL, e.g.\n"
             "  %s ADD %s ISSUER GitHub LABEL you@example.com\n"
-            "(makes a 6-digit/30s TOTP; use the otpauth:// URI form for "
-            "anything else)\n", g_prog, secret);
+            "(makes a 6-digit/30s TOTP, or a Steam Guard account with STEAM; "
+            "use the otpauth:// URI form for anything else)\n", g_prog, secret);
         return 2;
     }
-    if (otp_account_from_secret(issuer, label, secret, &acct) != 0) {
+    if ((steam ? otp_account_from_secret_steam : otp_account_from_secret)
+            (issuer, label, secret, &acct) != 0) {
         fprintf(stderr, "AmiAuth: that does not look like a Base32 secret\n");
         return 2;
     }
@@ -699,7 +702,7 @@ static int cmd_add_secret(const char *path, const char *secret,
     /* Resident GUI owns the vault? Same routing as the URI form. */
     if (strlen(issuer) + strlen(label) + strlen(secret) + 3 <= sizeof packed) {
         sprintf(packed, "%s\n%s\n%s", issuer, label, secret);
-        fc = try_forward(AAP_ADD_SECRET, packed);
+        fc = try_forward(steam ? AAP_ADD_SECRET_STEAM : AAP_ADD_SECRET, packed);
         memset(packed, 0, sizeof packed);
         if (fc >= 0) { memset(&acct, 0, sizeof acct); return fc; }
     }
@@ -811,7 +814,8 @@ static int usage(void)
         "  INIT   [OPEN]                      Create a vault\n"
         "  ADD    \"<otpauth://...>\"           Import an account from a URI\n"
         "  ADD    <secret> ISSUER <name> LABEL <acct>  Import a bare Base32\n"
-        "                                     secret (6-digit/30s SHA-1 TOTP)\n"
+        "                                     secret (6-digit/30s SHA-1 TOTP;\n"
+        "                                     add STEAM for a Steam Guard code)\n"
         "  LIST                               List account names\n"
         "  GET    <account>                   Print an account's code\n"
         "  REMOVE <account>                   Delete an account\n"
@@ -825,7 +829,7 @@ static int usage(void)
         p, p);
 #ifdef AMIAUTH_AMIGA
     fprintf(stderr,
-        "Options: ISSUER/K LABEL/K (bare-secret ADD)  VAULT <path>  OPEN/S\n"
+        "Options: ISSUER/K LABEL/K STEAM/S (bare-secret ADD)  VAULT <path>  OPEN/S\n"
         "         ITERATIONS/N/K (INIT)  NOREKEY/S\n"
         "Quote URIs (they contain '?'). Default vault (first set wins):\n"
         "  VAULT <path>; env AMIAUTH_VAULT; pref AmiAuth/vault\n"
@@ -833,7 +837,7 @@ static int usage(void)
         DEFAULT_VAULT);
 #else
     fprintf(stderr,
-        "Options: --issuer S --label S (bare-secret ADD)  -v/--vault PATH\n"
+        "Options: --issuer S --label S --steam (bare-secret ADD)  -v/--vault PATH\n"
         "         --iterations N  --no-rekey\n"
         "Default vault: -v, else $AMIAUTH_VAULT, else the 'vault' pref, else %s\n",
         DEFAULT_VAULT);
@@ -883,7 +887,7 @@ static int dispatch(const cli_args *a)
         if (!a->value) return usage();
         return otpauth_is_uri(a->value)
              ? cmd_add(vault, a->value)
-             : cmd_add_secret(vault, a->value, a->issuer, a->label);
+             : cmd_add_secret(vault, a->value, a->issuer, a->label, a->steam);
     }
     if (ci_streq(a->command, "LIST"))   return cmd_list(vault);
     if (ci_streq(a->command, "GET"))    return a->value ? cmd_get(vault, a->value) : usage();
@@ -906,9 +910,9 @@ int main(int argc, char **argv)
 {
     static const char TMPL[] =
         "COMMAND,VALUE,DIGITS,PERIOD,ISSUER/K,LABEL/K,VAULT/K,OPEN/S,"
-        "ITERATIONS/N/K,NOREKEY/S";
+        "ITERATIONS/N/K,NOREKEY/S,STEAM/S";
     enum { P_COMMAND, P_VALUE, P_DIGITS, P_PERIOD, P_ISSUER, P_LABEL, P_VAULT,
-           P_OPEN, P_ITERATIONS, P_NOREKEY, P_N };
+           P_OPEN, P_ITERATIONS, P_NOREKEY, P_STEAM, P_N };
     LONG opt[P_N];
     struct RDArgs *rda;
     cli_args a;
@@ -931,6 +935,7 @@ int main(int argc, char **argv)
     a.open       = opt[P_OPEN] ? 1 : 0;
     a.iterations = opt[P_ITERATIONS] ? *(LONG *)opt[P_ITERATIONS] : -1;
     a.no_rekey   = opt[P_NOREKEY] ? 1 : 0;
+    a.steam      = opt[P_STEAM] ? 1 : 0;
 
     rc = dispatch(&a);
     FreeArgs(rda);
@@ -972,6 +977,8 @@ int main(int argc, char **argv)
             a.label = argv[++i];
         else if (strncmp(argv[i], "--label=", 8) == 0)
             a.label = argv[i] + 8;
+        else if (strcmp(argv[i], "--steam") == 0)
+            a.steam = 1;
         else if (npos < (int)(sizeof pos / sizeof pos[0]))
             pos[npos++] = argv[i];
     }

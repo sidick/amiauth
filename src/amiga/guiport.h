@@ -23,8 +23,10 @@ enum {
     AAP_ADD,        /* arg = otpauth:// URI                                   */
     AAP_REMOVE,     /* arg = account name                                     */
     AAP_SHOW,       /* pop the GUI window to the front                        */
-    AAP_ADD_SECRET  /* arg = "issuer\nlabel\nbase32secret" (bare-secret ADD;
+    AAP_ADD_SECRET, /* arg = "issuer\nlabel\nbase32secret" (bare-secret ADD;
                      * issuer may be empty, the other two must not be)        */
+    AAP_ADD_SECRET_STEAM  /* same arg shape; builds a Steam Guard account
+                           * instead of an ordinary TOTP one (#44)            */
 };
 
 /* Result codes (aar_Result / *result). */

@@ -9,6 +9,7 @@
 #include "uri.h"
 #include "otp.h"
 #include "base32.h"
+#include "steamguard.h"
 
 static int hexval(int c)
 {
@@ -101,8 +102,9 @@ int otpauth_parse(const char *uri, otp_account *out)
     slash = strchr(p, '/');
     if (!slash) return -1;
     typelen = (size_t)(slash - p);
-    if      (typelen == 4 && ci_eq(p, "totp", 4)) strcpy(out->type, "totp");
-    else if (typelen == 4 && ci_eq(p, "hotp", 4)) strcpy(out->type, "hotp");
+    if      (typelen == 4 && ci_eq(p, "totp", 4))  strcpy(out->type, "totp");
+    else if (typelen == 4 && ci_eq(p, "hotp", 4))  strcpy(out->type, "hotp");
+    else if (typelen == 5 && ci_eq(p, "steam", 5)) strcpy(out->type, "steam");
     else return -1;
 
     /* LABEL up to '?' (or end) */
@@ -166,6 +168,15 @@ int otpauth_parse(const char *uri, otp_account *out)
     }
 
     if (!have_secret) return -1;   /* the secret is mandatory */
+
+    /* Steam Guard is not itself configurable: force SHA1/5 regardless of any
+     * algorithm=/digits= query parameter, rather than storing values the
+     * renderer (otp_render, which dispatches on type before consulting
+     * either) will never actually use. */
+    if (strcmp(out->type, "steam") == 0) {
+        strcpy(out->algorithm, "SHA1");
+        out->digits = STEAM_CODE_DIGITS;
+    }
     return 0;
 }
 
@@ -174,8 +185,8 @@ int otpauth_is_uri(const char *s)
     return s != NULL && ci_startswith(s, "otpauth://");
 }
 
-int otp_account_from_secret(const char *issuer, const char *label,
-                            const char *secret_b32, otp_account *out)
+static int account_from_secret(const char *issuer, const char *label,
+                               const char *secret_b32, otp_account *out)
 {
     int n;
 
@@ -183,16 +194,33 @@ int otp_account_from_secret(const char *issuer, const char *label,
     memset(out, 0, sizeof(*out));
     if (!label || !label[0] || !secret_b32) return -1;
 
-    strcpy(out->type, "totp");
-    strcpy(out->algorithm, "SHA1");
-    out->digits = OTP_DEFAULT_DIGITS;
-    out->period = OTP_DEFAULT_PERIOD;
-
     n = base32_decode(secret_b32, out->secret, sizeof(out->secret));
     if (n <= 0) { memset(out, 0, sizeof(*out)); return -1; }
     out->secret_len = (size_t)n;
 
     if (issuer) copy_str(out->issuer, sizeof(out->issuer), issuer);
     copy_str(out->label, sizeof(out->label), label);
+    return 0;
+}
+
+int otp_account_from_secret(const char *issuer, const char *label,
+                            const char *secret_b32, otp_account *out)
+{
+    if (account_from_secret(issuer, label, secret_b32, out) != 0) return -1;
+    strcpy(out->type, "totp");
+    strcpy(out->algorithm, "SHA1");
+    out->digits = OTP_DEFAULT_DIGITS;
+    out->period = OTP_DEFAULT_PERIOD;
+    return 0;
+}
+
+int otp_account_from_secret_steam(const char *issuer, const char *label,
+                                  const char *secret_b32, otp_account *out)
+{
+    if (account_from_secret(issuer, label, secret_b32, out) != 0) return -1;
+    strcpy(out->type, "steam");
+    strcpy(out->algorithm, "SHA1");
+    out->digits = STEAM_CODE_DIGITS;
+    out->period = STEAM_PERIOD;
     return 0;
 }

@@ -28,7 +28,7 @@ When the GUI is running as a resident commodity, `ADD`, `LIST`, `GET`,
 ## The ReadArgs template
 
     AmiAuth ?
-    COMMAND,VALUE,DIGITS,PERIOD,ISSUER/K,LABEL/K,VAULT/K,OPEN/S,ITERATIONS/N/K,NOREKEY/S
+    COMMAND,VALUE,DIGITS,PERIOD,ISSUER/K,LABEL/K,VAULT/K,OPEN/S,ITERATIONS/N/K,NOREKEY/S,STEAM/S
 
 - `COMMAND` — one of the commands above (case-insensitive).
 - `VALUE` — the command's main argument (secret, URI, account name, seconds or
@@ -36,6 +36,8 @@ When the GUI is running as a resident commodity, `ADD`, `LIST`, `GET`,
 - `DIGITS`, `PERIOD` — optional positionals for `CODE`.
 - `ISSUER <name>`, `LABEL <account>` — keywords for `ADD` with a bare
   secret (both required in that form; unused with a URI).
+- `STEAM` — switch for `ADD` with a bare secret: build a Steam Guard account
+  (5-character code) instead of an ordinary TOTP one.
 - `VAULT <path>` — use this vault file instead of the configured one.
 - `OPEN` — switch for `INIT`: create an always-unlocked vault, no prompts.
 - `ITERATIONS <n>` — keyword for `INIT`: explicit PBKDF2 iteration count.
@@ -43,7 +45,7 @@ When the GUI is running as a resident commodity, `ADD`, `LIST`, `GET`,
 
 The host (development) build takes the equivalent Unix-style options:
 `--vault PATH`, `--open`, `--iterations N`, `--no-rekey`, `--issuer S`,
-`--label S`.
+`--label S`, `--steam`.
 
 ## Commands
 
@@ -93,18 +95,22 @@ you at the `VAULT` keyword.
 
     AmiAuth ADD "otpauth://totp/GitHub:you@example.com?secret=JBSWY3DPEHPK3PXP&issuer=GitHub"
     AmiAuth ADD JBSWY3DPEHPK3PXP ISSUER GitHub LABEL you@example.com
+    AmiAuth ADD 5J8K2Q9F3M7XW4NP ISSUER Steam LABEL you STEAM
 
 Imports an account, in either of two forms:
 
 - **`otpauth://` URI** (the format behind enrolment QR codes; most services
   show it under a "can't scan the code?" link). Issuer, label, secret,
   algorithm, digits, period/counter are all taken from the URI. **Quote the
-  URI** — it contains `?` and `&`.
+  URI** — it contains `?` and `&`. A `TYPE` of `steam` (`otpauth://steam/...`)
+  imports a Steam Guard account; see [Managing Accounts](Managing-Accounts.md#steam-guard).
 - **Bare Base32 secret** — the raw "setup key" some services show instead.
   A bare secret carries no name, so `ISSUER` and `LABEL` are required, and
   the account gets the defaults nearly every service issues: TOTP, SHA-1,
-  6 digits, 30 seconds. Anything else (HOTP, 8 digits, a custom period)
-  still needs the URI form.
+  6 digits, 30 seconds. Add `STEAM` to build a Steam Guard account instead
+  (Steam's own shared secret, not an otpauth URI — see
+  [Managing Accounts](Managing-Accounts.md#steam-guard)). Anything else
+  (HOTP, 8 digits, a custom period) still needs the URI form.
 
 Prints `Added issuer:label`. The vault holds up to 64 accounts. See
 [Managing Accounts](Managing-Accounts.md) for URI details.

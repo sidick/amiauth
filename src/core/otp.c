@@ -5,6 +5,7 @@
 #include "otp.h"
 #include "uri.h"
 #include "hmac.h"
+#include "steamguard.h"
 
 int otp_alg_from_name(const char *name)
 {
@@ -32,16 +33,13 @@ const char *otp_alg_name(otp_alg alg)
     }
 }
 
-uint32_t hotp(otp_alg alg, const uint8_t *key, size_t keylen,
-              uint64_t counter, int digits)
+uint32_t otp_truncate(otp_alg alg, const uint8_t *key, size_t keylen,
+                      uint64_t counter)
 {
     uint8_t msg[8];
     uint8_t mac[SHA512_DIGEST_SIZE];   /* big enough for every variant */
     size_t maclen;
-    uint32_t bin, mod;
     int i, offset;
-
-    if (digits < 1 || digits > 9) digits = OTP_DEFAULT_DIGITS;
 
     /* 8-byte big-endian counter. */
     for (i = 7; i >= 0; i--) {
@@ -67,12 +65,20 @@ uint32_t hotp(otp_alg alg, const uint8_t *key, size_t keylen,
     /* Dynamic truncation (RFC 4226 §5.3): low nibble of the last byte selects a
      * 4-byte window; mask the high bit to stay positive. */
     offset = mac[maclen - 1] & 0x0f;
-    bin = ((uint32_t)(mac[offset] & 0x7f) << 24)
-        | ((uint32_t)mac[offset + 1]      << 16)
-        | ((uint32_t)mac[offset + 2]      <<  8)
-        | ((uint32_t)mac[offset + 3]);
+    return ((uint32_t)(mac[offset] & 0x7f) << 24)
+         | ((uint32_t)mac[offset + 1]      << 16)
+         | ((uint32_t)mac[offset + 2]      <<  8)
+         | ((uint32_t)mac[offset + 3]);
+}
 
-    mod = 1;
+uint32_t hotp(otp_alg alg, const uint8_t *key, size_t keylen,
+              uint64_t counter, int digits)
+{
+    uint32_t bin = otp_truncate(alg, key, keylen, counter);
+    uint32_t mod = 1;
+    int i;
+
+    if (digits < 1 || digits > 9) digits = OTP_DEFAULT_DIGITS;
     for (i = 0; i < digits; i++) mod *= 10;
     return bin % mod;
 }
@@ -109,10 +115,17 @@ uint32_t totp_seconds_remaining(uint64_t unix_time, uint64_t t0, uint32_t period
 void otp_render(const struct otp_account *a, uint64_t unix_time,
                 char buf[OTP_CODE_BUF])
 {
-    int alg = otp_alg_from_name(a->algorithm);
-    int digits = (a->digits >= 1 && a->digits <= 9) ? a->digits : OTP_DEFAULT_DIGITS;
+    int alg, digits;
     uint32_t code;
     int i;
+
+    if (strcmp(a->type, "steam") == 0) {
+        steam_totp(a->secret, a->secret_len, unix_time, buf);
+        return;
+    }
+
+    alg = otp_alg_from_name(a->algorithm);
+    digits = (a->digits >= 1 && a->digits <= 9) ? a->digits : OTP_DEFAULT_DIGITS;
 
     /* Both entry points (otpauth parse, vault load) reject algorithms we don't
      * implement, so this is only a defensive fallback. */

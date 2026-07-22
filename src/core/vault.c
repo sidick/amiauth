@@ -130,7 +130,9 @@ static size_t serialize_payload(const vault *v, uint8_t *out)
         size_t ll = strlen(a->label);
 
         int alg = otp_alg_from_name(a->algorithm);
-        out[p++] = (uint8_t)(strcmp(a->type, "hotp") == 0 ? 1 : 0);
+        uint8_t type = strcmp(a->type, "hotp") == 0  ? 1
+                      : strcmp(a->type, "steam") == 0 ? 2 : 0;
+        out[p++] = type;                              /* 0/1/2 = TOTP/HOTP/Steam */
         out[p++] = (uint8_t)(alg > 0 ? alg : 0);      /* 0/1/2 = SHA1/256/512 */
         out[p++] = (uint8_t)a->digits;
         put_u32(out + p, a->period);   p += 4;
@@ -168,11 +170,11 @@ static vault_result parse_payload(vault *v, const uint8_t *in, size_t len)
         a.digits  = in[p++];
         a.period  = get_u32(in + p); p += 4;
         a.counter = get_u64(in + p); p += 8;
-        /* Reject algorithm ids we don't implement: guessing would produce
-         * plausible-looking but wrong codes (the format doc says new ids
-         * extend the scheme and old readers must refuse them). */
-        if (alg > OTP_ALG_SHA512) return VAULT_ERR_FORMAT;
-        strcpy(a.type, type ? "hotp" : "totp");
+        /* Reject algorithm/type ids we don't implement: guessing would
+         * produce plausible-looking but wrong codes (the format doc says new
+         * ids extend the scheme and old readers must refuse them). */
+        if (alg > OTP_ALG_SHA512 || type > 2) return VAULT_ERR_FORMAT;
+        strcpy(a.type, type == 1 ? "hotp" : type == 2 ? "steam" : "totp");
         strcpy(a.algorithm, otp_alg_name((otp_alg)alg));
 
         if (p + 1 > len) return VAULT_ERR_FORMAT;

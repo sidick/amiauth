@@ -23,6 +23,13 @@ typedef enum {
 int otp_alg_from_name(const char *name);
 const char *otp_alg_name(otp_alg alg);
 
+/* RFC 4226 §5.3 dynamic truncation: HMAC(alg, key, 8-byte BE counter), then
+ * select/mask a 31-bit value. Shared by hotp() (reduced mod 10^digits below)
+ * and other code-rendering schemes built on the same primitive but a
+ * different final encoding (Steam Guard's base-26, src/core/steamguard.c). */
+uint32_t otp_truncate(otp_alg alg, const uint8_t *key, size_t keylen,
+                      uint64_t counter);
+
 /* HOTP: HMAC over an 8-byte counter, dynamic truncation, modulo 10^digits.
  * Returns the code as an integer (zero-pad to `digits` when displaying). */
 uint32_t hotp(otp_alg alg, const uint8_t *key, size_t keylen,

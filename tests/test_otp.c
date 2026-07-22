@@ -111,5 +111,18 @@ void run_otp_tests(void)
         a.counter = 5;
         otp_render(&a, 999999ULL, buf);
         TEST_CHECK(strcmp(buf, "254676") == 0);
+
+        /* Steam Guard dispatch (#44) — algorithm/digits stored on the account
+         * are irrelevant; otp_render always renders the 5-char base-26 code.
+         * Same vector as tests/test_steamguard.c's independent derivation. */
+        memset(&a, 0, sizeof(a));
+        strcpy(a.type, "steam");
+        strcpy(a.algorithm, "SHA1");
+        memcpy(a.secret, secret, slen);
+        a.secret_len = slen;
+        a.digits = 5;
+        a.period = 30;
+        otp_render(&a, 1234567890ULL, buf);
+        TEST_CHECK(strcmp(buf, "VHHQY") == 0);
     }
 }

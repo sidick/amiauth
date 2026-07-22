@@ -53,6 +53,39 @@ static int accounts_equal(const otp_account *x, const otp_account *y)
         && x->counter == y->counter;
 }
 
+/* Hand-write a minimal always-unlocked vault (cipher/kdf = none) from a
+ * pre-built payload, computing the empty-key HMAC-SHA1 MAC the format
+ * requires — for exercising parse_payload's per-record rejection rules
+ * directly, without vault_add's own validation getting in the way. */
+static void write_raw_vault(const char *path, const uint8_t *payload, size_t plen)
+{
+    uint8_t header[44];
+    uint8_t mac[20];
+    FILE *f;
+
+    memset(header, 0, sizeof(header));
+    memcpy(header, "AAVT", 4);
+    header[4] = 0x01;                          /* format_version */
+    header[43] = (uint8_t)plen;                /* payload_len (u32 BE, plen < 256 here) */
+
+    {
+        hmac_sha1_ctx m;
+        hmac_sha1_init(&m, NULL, 0);
+        hmac_sha1_update(&m, header, sizeof(header));
+        hmac_sha1_update(&m, payload, plen);
+        hmac_sha1_final(&m, mac);
+    }
+
+    f = fopen(path, "wb");
+    TEST_CHECK(f != NULL);
+    if (f) {
+        fwrite(header, 1, sizeof(header), f);
+        fwrite(mac, 1, sizeof(mac), f);
+        fwrite(payload, 1, plen, f);
+        fclose(f);
+    }
+}
+
 void run_vault_tests(void)
 {
     const char *path = tmp_path();
@@ -136,12 +169,27 @@ void run_vault_tests(void)
         TEST_CHECK(accounts_equal(&w.accounts[1], &c));
     }
 
+    /* --- a Steam Guard account round-trips via type id 2 (#44) --- */
+    {
+        otp_account s;
+        sample_account(&s);
+        strcpy(s.type, "steam");
+        s.digits = 5;
+        s.period = 30;
+
+        TEST_CHECK(vault_create(&v, NULL, 0, NULL) == VAULT_OK);
+        TEST_CHECK(vault_add(&v, &s) == VAULT_OK);
+        TEST_CHECK(vault_save(&v, path, NULL) == VAULT_OK);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_OK);
+        TEST_CHECK(w.count == 1);
+        TEST_CHECK(accounts_equal(&w.accounts[0], &s));
+    }
+
     /* --- an algorithm id we don't implement is refused (format rule) --- */
     {
-        /* Hand-build a minimal always-unlocked vault whose one record claims
-         * algorithm id 9, with a valid (empty-key) MAC so only the id check
-         * can reject it. Payload: count=1; type 0, alg 9, digits 6,
-         * period 30, counter 0, secret "K", no issuer, label "x". */
+        /* One record claiming algorithm id 9, with a valid (empty-key) MAC so
+         * only the id check can reject it. Payload: count=1; type 0, alg 9,
+         * digits 6, period 30, counter 0, secret "K", no issuer, label "x". */
         static const uint8_t payload[] = {
             0x00, 0x01,
             0x00, 0x09, 0x06,
@@ -151,31 +199,23 @@ void run_vault_tests(void)
             0x00,
             0x01, 'x'
         };
-        uint8_t header[44];
-        uint8_t mac[20];
-        FILE *f;
+        write_raw_vault(path, payload, sizeof(payload));
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+    }
 
-        memset(header, 0, sizeof(header));
-        memcpy(header, "AAVT", 4);
-        header[4] = 0x01;                          /* format_version */
-        header[43] = (uint8_t)sizeof(payload);     /* payload_len (u32 BE) */
-
-        {
-            hmac_sha1_ctx m;
-            hmac_sha1_init(&m, NULL, 0);
-            hmac_sha1_update(&m, header, sizeof(header));
-            hmac_sha1_update(&m, payload, sizeof(payload));
-            hmac_sha1_final(&m, mac);
-        }
-
-        f = fopen(path, "wb");
-        TEST_CHECK(f != NULL);
-        if (f) {
-            fwrite(header, 1, sizeof(header), f);
-            fwrite(mac, 1, sizeof(mac), f);
-            fwrite(payload, 1, sizeof(payload), f);
-            fclose(f);
-        }
+    /* --- a type id we don't implement is refused the same way (#44) --- */
+    {
+        /* Same record, but type 9 (valid algorithm 0) instead. */
+        static const uint8_t payload[] = {
+            0x00, 0x01,
+            0x09, 0x00, 0x06,
+            0x00, 0x00, 0x00, 0x1e,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x01, 'K',
+            0x00,
+            0x01, 'x'
+        };
+        write_raw_vault(path, payload, sizeof(payload));
         TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
     }
 
