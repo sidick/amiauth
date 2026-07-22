@@ -1925,17 +1925,15 @@ int main(int argc, char **argv)
                         if (idx < 0) { req->aar_Result = AAR_NOTFOUND; break; }
                         {
                             otp_account *a = &v.accounts[idx];
-                            char fmt[8];
-                            unsigned long code;
+                            char code[OTP_CODE_BUF];
                             if (strcmp(a->type, "hotp") == 0) {
-                                code = (unsigned long)hotp_sha1(a->secret, a->secret_len, a->counter, a->digits);
+                                otp_render(a, 0, code);
                                 a->counter++;                     /* stateful: persist */
                                 if (gui_save(&v, path) != VAULT_OK) req->aar_Result = AAR_SAVEFAIL;
                             } else {
-                                uint64_t now = clock_now_utc(&clk);
-                                code = (unsigned long)totp_sha1(a->secret, a->secret_len, now, 0, a->period, a->digits);
+                                otp_render(a, clock_now_utc(&clk), code);
                             }
-                            if (rb && rbcap) { sprintf(fmt, "%%0%dlu\n", (int)a->digits); sprintf(rb, fmt, code); }
+                            if (rb && rbcap > strlen(code) + 1) { strcpy(rb, code); strcat(rb, "\n"); }
                         }
                         break;
                     }
@@ -2228,17 +2226,17 @@ int main(int argc, char **argv)
         if (have_timer && (sigs & timersig) && win && running && v.count > 0) {
             uint64_t now = clock_now_utc(&clk);
             uint32_t sel_period = OTP_DEFAULT_PERIOD, sel_rem = 0;
-            char fmt[8], newcode[sizeof g_code[0]];
+            char newcode[OTP_CODE_BUF];
             int list_changed = 0;
             if (sel >= v.count) sel = 0;
             for (i = 0; i < v.count; i++) {
                 const otp_account *a = &v.accounts[i];
                 uint32_t period = a->period ? a->period : OTP_DEFAULT_PERIOD;
-                uint32_t code = totp_sha1(a->secret, a->secret_len, now, 0, period, a->digits);
                 uint32_t rem  = totp_seconds_remaining(now, 0, period);
-                /* libnix sprintf lacks '*' width, so build "%06lu"/"%08lu". */
-                sprintf(fmt, "%%0%dlu", (int)a->digits);
-                sprintf(newcode, fmt, (unsigned long)code);
+                /* Dispatches on the account's type and algorithm; for HOTP the
+                 * row shows the code at the current counter (it changes when a
+                 * GET advances the counter, not with the clock). */
+                otp_render(a, now, newcode);
                 /* A full LISTBROWSER_Labels reset stalls unrelated Workbench
                  * drag gestures system-wide (#62 - closed-source ReAction
                  * cost, not fixable on our side), so only pay for it when a

@@ -20,6 +20,8 @@
 #include <openssl/hmac.h>
 
 #include "sha1.h"
+#include "sha256.h"
+#include "sha512.h"
 #include "hmac.h"
 #include "chacha20.h"
 #include "pbkdf2.h"
@@ -81,6 +83,44 @@ static void diff_sha1(int iters)
     }
 }
 
+static void diff_sha256(int iters)
+{
+    uint8_t buf[4096], a[32], b[32];
+    unsigned int blen;
+    int i;
+    for (i = 0; i < iters; i++) {
+        size_t n = rng_len(sizeof(buf));
+        rng_bytes(buf, n);
+        sha256(buf, n, a);
+        EVP_Digest(buf, n, b, &blen, EVP_sha256(), NULL);
+        g_checks++;
+        if (memcmp(a, b, 32) != 0) {
+            char d[64];
+            sprintf(d, "len=%lu", (unsigned long)n);
+            report_fail("sha256", d);
+        }
+    }
+}
+
+static void diff_sha512(int iters)
+{
+    uint8_t buf[4096], a[64], b[64];
+    unsigned int blen;
+    int i;
+    for (i = 0; i < iters; i++) {
+        size_t n = rng_len(sizeof(buf));
+        rng_bytes(buf, n);
+        sha512(buf, n, a);
+        EVP_Digest(buf, n, b, &blen, EVP_sha512(), NULL);
+        g_checks++;
+        if (memcmp(a, b, 64) != 0) {
+            char d[64];
+            sprintf(d, "len=%lu", (unsigned long)n);
+            report_fail("sha512", d);
+        }
+    }
+}
+
 static void diff_hmac(int iters)
 {
     uint8_t key[128], msg[4096], a[20], b[20];
@@ -97,7 +137,49 @@ static void diff_hmac(int iters)
         if (memcmp(a, b, 20) != 0) {
             char d[64];
             sprintf(d, "keylen=%lu msglen=%lu", (unsigned long)kl, (unsigned long)ml);
-            report_fail("hmac", d);
+            report_fail("hmac-sha1", d);
+        }
+    }
+}
+
+static void diff_hmac_sha256(int iters)
+{
+    uint8_t key[137], msg[4096], a[32], b[32];
+    unsigned int blen;
+    int i;
+    for (i = 0; i < iters; i++) {
+        size_t kl = rng_len(sizeof(key));   /* spans <, =, > the 64-byte block */
+        size_t ml = rng_len(sizeof(msg));
+        rng_bytes(key, kl);
+        rng_bytes(msg, ml);
+        hmac_sha256(key, kl, msg, ml, a);
+        HMAC(EVP_sha256(), key, (int)kl, msg, ml, b, &blen);
+        g_checks++;
+        if (memcmp(a, b, 32) != 0) {
+            char d[64];
+            sprintf(d, "keylen=%lu msglen=%lu", (unsigned long)kl, (unsigned long)ml);
+            report_fail("hmac-sha256", d);
+        }
+    }
+}
+
+static void diff_hmac_sha512(int iters)
+{
+    uint8_t key[137], msg[4096], a[64], b[64];
+    unsigned int blen;
+    int i;
+    for (i = 0; i < iters; i++) {
+        size_t kl = rng_len(sizeof(key));   /* spans <, =, > the 128-byte block */
+        size_t ml = rng_len(sizeof(msg));
+        rng_bytes(key, kl);
+        rng_bytes(msg, ml);
+        hmac_sha512(key, kl, msg, ml, a);
+        HMAC(EVP_sha512(), key, (int)kl, msg, ml, b, &blen);
+        g_checks++;
+        if (memcmp(a, b, 64) != 0) {
+            char d[64];
+            sprintf(d, "keylen=%lu msglen=%lu", (unsigned long)kl, (unsigned long)ml);
+            report_fail("hmac-sha512", d);
         }
     }
 }
@@ -177,7 +259,11 @@ int main(int argc, char **argv)
            iters, (unsigned long long)seed);
 
     diff_sha1(iters);
+    diff_sha256(iters);
+    diff_sha512(iters);
     diff_hmac(iters);
+    diff_hmac_sha256(iters);
+    diff_hmac_sha512(iters);
     diff_chacha20(iters);
     diff_pbkdf2(iters);
 

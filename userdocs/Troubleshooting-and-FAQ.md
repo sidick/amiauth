@@ -145,14 +145,17 @@ Vault: `PROGDIR:AmiAuth.vault` (one file — copy it to back up). Settings:
 The data is unrecoverable — that is the point of the encryption. Re-enrol each
 account using the services' recovery codes or a second enrolled device.
 
-**Steam Guard? SHA-256 codes? Exporting QR codes?**
+**Steam Guard? Exporting QR codes?**
 On the v2 candidate list, along with an ARexx port and translations. See the
-[v2 milestone](https://github.com/sidick/amiauth/milestone/2).
+[v2 milestone](https://github.com/sidick/amiauth/milestone/2). (SHA-256/512
+TOTP is already supported — see [Managing Accounts](Managing-Accounts.md).)
 
 **Why SHA-1? Isn't that broken?**
 SHA-1's collision attacks do not affect HMAC-SHA1 as used by TOTP/HOTP (it
-remains the algorithm virtually every service issues secrets for), nor the
-vault's HMAC/PBKDF2 constructions. See [Security Model](Security-Model.md).
+remains the algorithm virtually every service issues secrets for, and the one
+the vault itself uses for its HMAC/PBKDF2 constructions), and AmiAuth also
+supports SHA-256/SHA-512 for the rare service that issues those instead. See
+[Security Model](Security-Model.md).
 
 **Was this really written by an AI?**
 Largely, yes — under human direction, review and on-hardware testing; it's

@@ -8,6 +8,7 @@
 
 #include "test.h"
 #include "vault.h"
+#include "hmac.h"
 
 static const char *tmp_path(void)
 {
@@ -42,6 +43,7 @@ static void sample_account(otp_account *a)
 static int accounts_equal(const otp_account *x, const otp_account *y)
 {
     return strcmp(x->type, y->type) == 0
+        && strcmp(x->algorithm, y->algorithm) == 0
         && strcmp(x->issuer, y->issuer) == 0
         && strcmp(x->label, y->label) == 0
         && x->secret_len == y->secret_len
@@ -114,6 +116,68 @@ void run_vault_tests(void)
     TEST_CHECK(vault_save(&v, path, NULL) == VAULT_OK);
     TEST_CHECK(vault_load(&w, path, NULL) == VAULT_OK);
     TEST_CHECK(w.count == 1 && accounts_equal(&w.accounts[0], &a));
+
+    /* --- SHA-256/512 accounts round-trip via algorithm ids 1/2 (#43) --- */
+    {
+        otp_account b, c;
+        sample_account(&b);
+        strcpy(b.algorithm, "SHA256");
+        sample_account(&c);
+        strcpy(c.algorithm, "SHA512");
+        strcpy(c.label, "bob@example.com");
+
+        TEST_CHECK(vault_create(&v, NULL, 0, NULL) == VAULT_OK);
+        TEST_CHECK(vault_add(&v, &b) == VAULT_OK);
+        TEST_CHECK(vault_add(&v, &c) == VAULT_OK);
+        TEST_CHECK(vault_save(&v, path, NULL) == VAULT_OK);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_OK);
+        TEST_CHECK(w.count == 2);
+        TEST_CHECK(accounts_equal(&w.accounts[0], &b));
+        TEST_CHECK(accounts_equal(&w.accounts[1], &c));
+    }
+
+    /* --- an algorithm id we don't implement is refused (format rule) --- */
+    {
+        /* Hand-build a minimal always-unlocked vault whose one record claims
+         * algorithm id 9, with a valid (empty-key) MAC so only the id check
+         * can reject it. Payload: count=1; type 0, alg 9, digits 6,
+         * period 30, counter 0, secret "K", no issuer, label "x". */
+        static const uint8_t payload[] = {
+            0x00, 0x01,
+            0x00, 0x09, 0x06,
+            0x00, 0x00, 0x00, 0x1e,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x01, 'K',
+            0x00,
+            0x01, 'x'
+        };
+        uint8_t header[44];
+        uint8_t mac[20];
+        FILE *f;
+
+        memset(header, 0, sizeof(header));
+        memcpy(header, "AAVT", 4);
+        header[4] = 0x01;                          /* format_version */
+        header[43] = (uint8_t)sizeof(payload);     /* payload_len (u32 BE) */
+
+        {
+            hmac_sha1_ctx m;
+            hmac_sha1_init(&m, NULL, 0);
+            hmac_sha1_update(&m, header, sizeof(header));
+            hmac_sha1_update(&m, payload, sizeof(payload));
+            hmac_sha1_final(&m, mac);
+        }
+
+        f = fopen(path, "wb");
+        TEST_CHECK(f != NULL);
+        if (f) {
+            fwrite(header, 1, sizeof(header), f);
+            fwrite(mac, 1, sizeof(mac), f);
+            fwrite(payload, 1, sizeof(payload), f);
+            fclose(f);
+        }
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+    }
 
     /* --- encrypted lock clears secrets --- */
     TEST_CHECK(vault_create(&v, "pw", 1024, SALT) == VAULT_OK);

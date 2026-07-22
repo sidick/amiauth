@@ -132,7 +132,7 @@ always-unlocked) is the ordered account list:
         then account_count records, each:
 +------+------------------------------------------------------------+
 |  1   | type       (0 = TOTP, 1 = HOTP)                            |
-|  1   | algorithm  (0 = SHA1; 1/2 reserved for SHA256/512 in v2)   |
+|  1   | algorithm  (0 = SHA1, 1 = SHA256, 2 = SHA512)              |
 |  1   | digits     (6 or 8)                                         |
 |  4   | period     (u32, seconds; TOTP)                            |
 |  8   | counter    (u64; HOTP)                                     |
@@ -167,7 +167,8 @@ always-unlocked) is the ordered account list:
 6. Recover the payload: `cipher_id = chacha20` → decrypt; `none` → payload is the
    ciphertext bytes.
 7. Parse the payload into accounts. Any inconsistency (bad count, a length prefix
-   running past `payload_len`) → `VAULT_ERR_FORMAT`.
+   running past `payload_len`, or a per-record `algorithm` id the reader does
+   not implement) → `VAULT_ERR_FORMAT`.
 8. Mark the vault unlocked; retain `salt`, `enc_key`, `mac_key` while resident.
 
 ## Save algorithm

@@ -12,6 +12,7 @@
 
 #include "vault.h"
 #include "chacha20.h"
+#include "otp.h"
 #include "pbkdf2.h"
 #include "hmac.h"
 
@@ -128,8 +129,9 @@ static size_t serialize_payload(const vault *v, uint8_t *out)
         size_t il = strlen(a->issuer);
         size_t ll = strlen(a->label);
 
+        int alg = otp_alg_from_name(a->algorithm);
         out[p++] = (uint8_t)(strcmp(a->type, "hotp") == 0 ? 1 : 0);
-        out[p++] = 0;                          /* algorithm: SHA1 (v1) */
+        out[p++] = (uint8_t)(alg > 0 ? alg : 0);      /* 0/1/2 = SHA1/256/512 */
         out[p++] = (uint8_t)a->digits;
         put_u32(out + p, a->period);   p += 4;
         put_u64(out + p, a->counter);  p += 8;
@@ -157,17 +159,21 @@ static vault_result parse_payload(vault *v, const uint8_t *in, size_t len)
     v->count = 0;
     for (i = 0; i < count; i++) {
         otp_account a;
-        uint8_t type, sl, il, ll;
+        uint8_t type, alg, sl, il, ll;
 
         memset(&a, 0, sizeof(a));
         if (p + 15 > len) return VAULT_ERR_FORMAT;   /* fixed fields */
         type      = in[p++];
-        p++;                                          /* algorithm (SHA1 in v1) */
+        alg       = in[p++];
         a.digits  = in[p++];
         a.period  = get_u32(in + p); p += 4;
         a.counter = get_u64(in + p); p += 8;
+        /* Reject algorithm ids we don't implement: guessing would produce
+         * plausible-looking but wrong codes (the format doc says new ids
+         * extend the scheme and old readers must refuse them). */
+        if (alg > OTP_ALG_SHA512) return VAULT_ERR_FORMAT;
         strcpy(a.type, type ? "hotp" : "totp");
-        strcpy(a.algorithm, "SHA1");
+        strcpy(a.algorithm, otp_alg_name((otp_alg)alg));
 
         if (p + 1 > len) return VAULT_ERR_FORMAT;
         sl = in[p++];

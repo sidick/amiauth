@@ -9,10 +9,11 @@
 #define OTP_MAX_ISSUER  64
 #define OTP_MAX_LABEL   128
 
-/* A single OTP account. This is the unit stored in the vault. */
-typedef struct {
+/* A single OTP account. This is the unit stored in the vault. (The struct tag
+ * lets otp.h's renderer take a pointer without pulling in this header.) */
+typedef struct otp_account {
     char     type[8];                 /* "totp" or "hotp" */
-    char     algorithm[8];            /* "SHA1" (v1); SHA256/512 are v2 */
+    char     algorithm[8];            /* "SHA1", "SHA256" or "SHA512" */
     char     issuer[OTP_MAX_ISSUER];
     char     label[OTP_MAX_LABEL];
     uint8_t  secret[OTP_MAX_SECRET];  /* raw key bytes (Base32-decoded) */

@@ -145,7 +145,11 @@ int otpauth_parse(const char *uri, otp_account *out)
                 } else if (key_is(q, klen, "issuer")) {
                     copy_str(out->issuer, sizeof(out->issuer), dec);
                 } else if (key_is(q, klen, "algorithm")) {
-                    copy_str(out->algorithm, sizeof(out->algorithm), dec);
+                    /* Only SHA-1/256/512 exist (RFC 6238); refuse anything
+                     * else rather than silently mint wrong codes with SHA-1. */
+                    int alg = otp_alg_from_name(dec);
+                    if (alg < 0) return -1;
+                    strcpy(out->algorithm, otp_alg_name((otp_alg)alg));
                 } else if (key_is(q, klen, "digits")) {
                     int d = atoi(dec);
                     if (d == 6 || d == 8) out->digits = d;
