@@ -8,16 +8,15 @@ for the platform — solves the accurate-time problem that TOTP depends on. Smal
 self-contained, and designed to run on anything from a stock 68000 A500 up to an
 accelerated or emulated machine.
 
-> **Status:** feature-complete for v1, pending a first release. The portable core
-> (crypto, OTP, vault, `otpauth://` import), the **CLI**, and a resident **ReAction
-> GUI commodity** (live all-accounts view, add/remove/edit, clipboard copy,
-> QR-image import, hotkey/Exchange/WBStartup, single-instance) are all done and
-> RFC-verified, cross-build to real AmigaOS binaries, and have passed an
-> interactive on-hardware verification pass on OS 3.2. Remaining: a
-> release-workflow rehearsal, a live demo, and the v1.0 tag/Aminet upload
-> itself — see the
-> [v1.0 milestone](https://github.com/sidick/amiauth/milestone/1). Post-v1.0
-> ideas are tracked in the
+> **Status:** [v1.0 released](https://github.com/sidick/amiauth/releases/tag/v1.0)
+> (see the [v1.0 milestone](https://github.com/sidick/amiauth/milestone/1)).
+> The portable core (crypto, OTP, vault, `otpauth://` import), the **CLI**, and
+> a resident **ReAction GUI commodity** (live all-accounts view,
+> add/remove/edit, clipboard copy, QR-image import, hotkey/Exchange/WBStartup,
+> single-instance) are all RFC-verified, cross-build to real AmigaOS binaries,
+> and have passed an interactive on-hardware verification pass on OS 3.2,
+> including logging into GitHub with a code generated on real hardware.
+> Post-v1.0 ideas are tracked in the
 > [v2 milestone](https://github.com/sidick/amiauth/milestone/2).
 
 ## AI-assisted development
