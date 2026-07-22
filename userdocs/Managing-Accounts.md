@@ -64,6 +64,33 @@ runs on-Amiga using the bundled quirc decoder — the image never leaves your
 machine. A busy pointer shows while decoding; clear, screen-sized screenshots
 decode most reliably.
 
+## Steam Guard
+
+Steam's own mobile authenticator is a TOTP variant: the same HMAC-SHA1/30-second
+construction as ordinary TOTP, but rendered as **5 characters from Steam's own
+26-symbol alphabet** (no vowels, no `0`/`1`/`O`/`I`) instead of decimal digits.
+AmiAuth supports it as a distinct account type.
+
+Unlike most services, Steam does not hand out its shared secret through a
+scannable `otpauth://` QR code or setup-key link — it is enrolled through
+Steam's own app-linking flow, and the secret is normally recovered from a
+Steam Guard export (e.g. a `maFile`'s `shared_secret`) or a third-party tool.
+Once you have that Base32 secret:
+
+- **CLI:** add `STEAM` to a bare-secret `ADD`:
+
+      AmiAuth ADD <secret> ISSUER Steam LABEL you STEAM
+
+- **GUI:** *Account → Add (type URI/secret)…*, then type or paste a
+  `otpauth://steam/Steam:you?secret=…` URI — the typed-URI field accepts any
+  `otpauth://` scheme, including `steam`.
+
+`LIST` and `GET` (CLI) and the account list (GUI) work exactly the same as any
+other account; `GET` just prints the 5-character code. Digits and period
+aren't independently configurable for Steam Guard (always 5 characters on a
+fixed 30-second step) — the *Edit* form still shows those fields for layout
+consistency, but only issuer and label are actually applied.
+
 ## Listing and generating codes
 
 See [CLI Reference](CLI-Reference.md) (`LIST`, `GET`) and the [GUI Guide](GUI-Guide.md) (live list,
@@ -73,9 +100,12 @@ against the label, the issuer, or `issuer:label`.
 ## Editing
 
 *Account → Edit selected…* in the GUI lets you change the **issuer**, **label**
-(required), **digits** (6–8) and **period** (1–86400 seconds).
+(required), **digits** (6–8) and **period** (1–86400 seconds) — except for
+Steam Guard accounts, where digits/period are fixed and only issuer/label
+apply (see [Steam Guard](#steam-guard) above).
 
-The **secret and the account type (TOTP/HOTP) are deliberately not editable** —
+The **secret and the account type (TOTP/HOTP/Steam) are deliberately not
+editable** —
 if a service issues you a new secret, remove the account and re-add the new
 enrolment. There is no CLI edit command; edit in the GUI, or remove and
 re-add.

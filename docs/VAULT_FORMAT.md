@@ -131,7 +131,7 @@ always-unlocked) is the ordered account list:
 +------+------------------------------------------------------------+
         then account_count records, each:
 +------+------------------------------------------------------------+
-|  1   | type       (0 = TOTP, 1 = HOTP)                            |
+|  1   | type       (0 = TOTP, 1 = HOTP, 2 = Steam Guard)           |
 |  1   | algorithm  (0 = SHA1, 1 = SHA256, 2 = SHA512)              |
 |  1   | digits     (6 or 8)                                         |
 |  4   | period     (u32, seconds; TOTP)                            |
@@ -145,8 +145,11 @@ always-unlocked) is the ordered account list:
 +------+------------------------------------------------------------+
 ```
 
-- `period` is ignored for HOTP; `counter` is ignored for TOTP. Both are always
-  present for a fixed record shape.
+- `period` is ignored for HOTP; `counter` is ignored for TOTP and Steam Guard.
+  `digits` and `period` are both ignored for Steam Guard — its code is always
+  5 characters on a fixed 30-second step (`src/core/steamguard.c`), not
+  independently configurable like ordinary TOTP. All fields are always
+  present for a fixed record shape regardless of which the type consults.
 - Length prefixes are single bytes; the field caps (`OTP_MAX_SECRET = 64`,
   `issuer ≤ 64`, `label ≤ 128`, `VAULT_MAX_ACCOUNTS = 64`) all fit in a byte /
   the u16 count.

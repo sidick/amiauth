@@ -8,6 +8,7 @@ void run_sha256_tests(void);
 void run_sha512_tests(void);
 void run_hmac_tests(void);
 void run_otp_tests(void);
+void run_steamguard_tests(void);
 void run_base32_tests(void);
 void run_chacha20_tests(void);
 void run_pbkdf2_tests(void);
@@ -27,6 +28,7 @@ int main(void)
     run_sha512_tests();
     run_hmac_tests();
     run_otp_tests();
+    run_steamguard_tests();
     run_base32_tests();
     run_chacha20_tests();
     run_pbkdf2_tests();

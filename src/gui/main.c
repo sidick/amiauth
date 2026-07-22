@@ -1244,6 +1244,11 @@ static int edit_request(otp_account *acct)
                         STRPTR t = NULL;
                         char issuer[OTP_MAX_ISSUER], label[OTP_MAX_LABEL];
                         int d; long p;
+                        /* Steam Guard's digits/period aren't independently
+                         * configurable (otp_render never consults them for
+                         * this type, #44) — the fields still show for layout
+                         * consistency, but only issuer/label are applied. */
+                        int is_steam = strcmp(acct->type, "steam") == 0;
                         issuer[0] = label[0] = '\0';
                         GetAttr(STRINGA_TextVal, issuerg, (ULONG *)&t);
                         if (t) { strncpy(issuer, (char *)t, OTP_MAX_ISSUER - 1); issuer[OTP_MAX_ISSUER - 1] = '\0'; }
@@ -1251,15 +1256,16 @@ static int edit_request(otp_account *acct)
                         if (t) { strncpy(label, (char *)t, OTP_MAX_LABEL - 1); label[OTP_MAX_LABEL - 1] = '\0'; }
                         GetAttr(STRINGA_TextVal, digitsg, (ULONG *)&t); d = t ? atoi((char *)t) : 0;
                         GetAttr(STRINGA_TextVal, periodg, (ULONG *)&t); p = t ? atol((char *)t) : 0;
-                        if (label[0] && d >= 6 && d <= 8 && p > 0 && p <= 86400) {
+                        if (label[0] && (is_steam || (d >= 6 && d <= 8 && p > 0 && p <= 86400))) {
                             strcpy(acct->issuer, issuer);
                             strcpy(acct->label, label);
-                            acct->digits = d;
-                            acct->period = (uint32_t)p;
+                            if (!is_steam) { acct->digits = d; acct->period = (uint32_t)p; }
                             done = 1;
                         } else {
-                            gui_requester(w, "Label is required; digits must be 6-8, period 1-86400.",
-                                          "OK", NULL);           /* stay open to fix */
+                            gui_requester(w, is_steam
+                                ? "Label is required."
+                                : "Label is required; digits must be 6-8, period 1-86400.",
+                                "OK", NULL);                     /* stay open to fix */
                         }
                     }
                     break;
@@ -1950,10 +1956,12 @@ int main(int argc, char **argv)
                         memset(&acct, 0, sizeof acct);
                         break;
                     }
-                    case AAP_ADD_SECRET: {   /* arg = "issuer\nlabel\nsecret" (#83) */
+                    case AAP_ADD_SECRET:         /* arg = "issuer\nlabel\nsecret" (#83) */
+                    case AAP_ADD_SECRET_STEAM: { /* same arg shape, Steam Guard (#44) */
                         static char meta[320];   /* our own copy: never scribble on the CLI's buffer */
                         otp_account acct;
                         char *lab, *sec;
+                        int steam = (req->aar_Cmd == AAP_ADD_SECRET_STEAM);
                         if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
                         if (!arg || strlen(arg) >= sizeof meta) { req->aar_Result = AAR_BADARG; break; }
                         strcpy(meta, arg);
@@ -1962,7 +1970,8 @@ int main(int argc, char **argv)
                         if (!sec) { memset(meta, 0, sizeof meta); req->aar_Result = AAR_BADARG; break; }
                         *lab++ = '\0';
                         *sec++ = '\0';
-                        if (otp_account_from_secret(meta, lab, sec, &acct) != 0)
+                        if ((steam ? otp_account_from_secret_steam : otp_account_from_secret)
+                                (meta, lab, sec, &acct) != 0)
                             req->aar_Result = AAR_BADARG;
                         else {
                             vault_result r = vault_add(&v, &acct);

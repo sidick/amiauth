@@ -63,6 +63,18 @@ void run_uri_tests(void)
     TEST_CHECK(otpauth_parse(
         "otpauth://totp/x?secret=JBSWY3DP&algorithm=SHA224", &a) == -1);
 
+    /* otpauth://steam/... (#44): forces SHA1/5 regardless of any
+     * algorithm=/digits= parameter, since Steam Guard isn't configurable. */
+    TEST_CHECK(otpauth_parse(
+        "otpauth://steam/Steam:you?secret=JBSWY3DP&issuer=Steam", &a) == 0);
+    TEST_CHECK(strcmp(a.type, "steam") == 0);
+    TEST_CHECK(strcmp(a.algorithm, "SHA1") == 0);
+    TEST_CHECK(a.digits == 5);
+    TEST_CHECK(otpauth_parse(
+        "otpauth://steam/Steam:you?secret=JBSWY3DP&algorithm=SHA256&digits=8", &a) == 0);
+    TEST_CHECK(strcmp(a.algorithm, "SHA1") == 0);
+    TEST_CHECK(a.digits == 5);
+
     /* Rejections: missing secret, wrong scheme, malformed input. */
     TEST_CHECK(otpauth_parse("otpauth://totp/x?issuer=Y", &a) == -1);
     TEST_CHECK(otpauth_parse("otpauth://weird/x?secret=JBSWY3DP", &a) == -1);
@@ -106,4 +118,16 @@ void run_bare_secret_tests(void)
     TEST_CHECK(otp_account_from_secret("X", "y", "not!base32", &a) == -1);
     TEST_CHECK(a.secret_len == 0 && a.label[0] == '\0');
     TEST_CHECK(otp_account_from_secret("X", "y", "JBSWY3DP", NULL) == -1);
+
+    /* otp_account_from_secret_steam (#44): same argument rules, but forced
+     * "steam"/SHA1/5/30 rather than the ordinary TOTP defaults. */
+    TEST_CHECK(otp_account_from_secret_steam("Steam", "friend",
+                                             "JBSWY3DPEHPK3PXP", &a) == 0);
+    TEST_CHECK(strcmp(a.type, "steam") == 0);
+    TEST_CHECK(strcmp(a.algorithm, "SHA1") == 0);
+    TEST_CHECK(a.digits == 5 && a.period == 30);
+    TEST_CHECK(strcmp(a.issuer, "Steam") == 0 && strcmp(a.label, "friend") == 0);
+    TEST_CHECK(a.secret_len == 10 && memcmp(a.secret, "Hello", 5) == 0);
+    TEST_CHECK(otp_account_from_secret_steam("X", "", "JBSWY3DP", &a) == -1);
+    TEST_CHECK(otp_account_from_secret_steam("X", "y", "not!base32", &a) == -1);
 }
