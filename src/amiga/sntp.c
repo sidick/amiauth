@@ -62,14 +62,18 @@ int clock_sntp_sync(clock_ctx *c, const char *server)
         tv.tv_usec = 0;
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
 
-        t1 = (uint64_t)time(NULL);           /* local send time */
-        clock_ntp_build_request(req, t1);
-        if (sendto(sock, (char *)req, NTP_PACKET_SIZE, 0,
-                   (struct sockaddr *)&addr, sizeof(addr)) != NTP_PACKET_SIZE)
+        /* Bind the datagram socket to the resolved server address/port so the
+         * stack drops any reply not actually from the server we queried —
+         * without this, recvfrom() would accept a UDP packet from anyone. */
+        if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
             break;
 
-        if (recvfrom(sock, (char *)resp, NTP_PACKET_SIZE, 0, NULL, NULL)
-                != NTP_PACKET_SIZE)
+        t1 = (uint64_t)time(NULL);           /* local send time */
+        clock_ntp_build_request(req, t1);
+        if (send(sock, (char *)req, NTP_PACKET_SIZE, 0) != NTP_PACKET_SIZE)
+            break;
+
+        if (recv(sock, (char *)resp, NTP_PACKET_SIZE, 0) != NTP_PACKET_SIZE)
             break;
         t4 = (uint64_t)time(NULL);           /* local receive time */
 

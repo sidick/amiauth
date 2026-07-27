@@ -107,6 +107,12 @@ static void stir_eclock(void)
     sha1_update(&g_pool, &ev, sizeof ev);
 }
 
+void amiga_stir_keystroke(void)
+{
+    pool_ensure();
+    if (timer_ready()) stir_eclock();
+}
+
 /* Fold volatile system state that varies run-to-run. */
 static void stir_system_state(void)
 {
