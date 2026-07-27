@@ -33,7 +33,7 @@ endif
 
 # Containerised cross-build: same image as CI, so local m68k builds match.
 DOCKER          ?= docker
-AMIGA_GCC_IMAGE ?= stefanreinauer/amiga-gcc:latest
+AMIGA_GCC_IMAGE ?= ghcr.io/reinauer/container-amiga-gcc:latest
 # Run as the calling user, not root: the container bind-mounts $(CURDIR), and
 # without this, files it creates (build/, the m68k binaries) come out root-
 # owned on Linux hosts - breaking any later non-Docker step (e.g. `make dist`)
