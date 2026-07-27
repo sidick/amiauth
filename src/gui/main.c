@@ -729,7 +729,7 @@ static int qr_file_request(struct Window *win, char *path, size_t cap)
 static int passphrase_request(const char *msg, char *buf, size_t cap)
 {
     static char stars[130];                 /* mask display; kept off the stack */
-    Object *win, *maskobj, *okobj, *cancelobj;
+    Object *win, *maskobj, *okobj, *cancelobj, *layoutobj;
     struct Window *w;
     ULONG sig = 0;
     size_t len = 0;
@@ -758,7 +758,7 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
             LAYOUT_AddChild,    (ULONG)okobj,
             LAYOUT_AddChild,    (ULONG)cancelobj,
             TAG_END);
-        Object *layoutobj = NewObject(LAYOUT_GetClass(), NULL,
+        layoutobj = NewObject(LAYOUT_GetClass(), NULL,
             LAYOUT_Orientation,   LAYOUT_ORIENT_VERT,
             LAYOUT_SpaceOuter,    TRUE,
             LAYOUT_AddChild,      (ULONG)labelobj,
@@ -779,7 +779,7 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
             WINDOW_Layout,   (ULONG)layoutobj,
             TAG_END);
     }
-    if (!win) return 0;
+    if (!win) { DisposeObject(layoutobj); return 0; }
 
     w = (struct Window *)DoMethod(win, WM_OPEN, NULL);
     if (!w) { DisposeObject(win); return 0; }
@@ -800,6 +800,7 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
                     else if ((r & WMHI_GADGETMASK) == PWID_CANCEL) done = 0;
                     break;
                 case WMHI_VANILLAKEY:
+                    amiga_stir_keystroke();      /* per-keystroke timing entropy */
                     if      (code == 0x0D) done = 1;                 /* Return */
                     else if (code == 0x1B) done = 0;                 /* Escape */
                     else if (code == 0x08 || code == 0x7F) {         /* Backspace/Del */
@@ -1112,7 +1113,7 @@ static int uri_request(char *buf, size_t cap)
         WINDOW_Position, WPOS_CENTERSCREEN,
         WINDOW_Layout,   (ULONG)layoutobj,
         TAG_END);
-    if (!win) return 0;
+    if (!win) { DisposeObject(layoutobj); return 0; }
 
     w = (struct Window *)DoMethod(win, WM_OPEN, NULL);
     if (!w) { DisposeObject(win); return 0; }
@@ -1220,7 +1221,7 @@ static int edit_request(otp_account *acct)
         WINDOW_Position, WPOS_CENTERSCREEN,
         WINDOW_Layout,   (ULONG)layoutobj,
         TAG_END);
-    if (!win) return 0;
+    if (!win) { DisposeObject(layoutobj); return 0; }
 
     w = (struct Window *)DoMethod(win, WM_OPEN, NULL);
     if (!w) { DisposeObject(win); return 0; }
@@ -1327,7 +1328,7 @@ static int secret_meta_request(char *issuer, char *label)
         WINDOW_Position, WPOS_CENTERSCREEN,
         WINDOW_Layout,   (ULONG)layoutobj,
         TAG_END);
-    if (!win) return 0;
+    if (!win) { DisposeObject(layoutobj); return 0; }
 
     w = (struct Window *)DoMethod(win, WM_OPEN, NULL);
     if (!w) { DisposeObject(win); return 0; }

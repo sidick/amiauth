@@ -128,10 +128,9 @@ int qr_decode_gray(const unsigned char *gray, int w, int h,
 {
     int result;
 
-    if (cap > 0)
-        uri[0] = '\0';
     if (!gray || !uri || cap == 0 || w <= 0 || h <= 0)
         return QR_ERR_ARGS;
+    uri[0] = '\0';
 
     result = decode_once(gray, w, h, uri, cap);
     if (result == QR_ERR_NOCODE)

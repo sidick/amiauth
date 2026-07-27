@@ -37,6 +37,11 @@ static void pbkdf2_block(const uint8_t *pass, size_t passlen,
     }
 
     memcpy(out, t, SHA1_DIGEST_SIZE);
+
+    memset(idx, 0, sizeof(idx));
+    memset(u, 0, sizeof(u));
+    memset(t, 0, sizeof(t));
+    memset(&c, 0, sizeof(c));
 }
 
 void pbkdf2_hmac_sha1(const uint8_t *pass, size_t passlen,
@@ -59,4 +64,6 @@ void pbkdf2_hmac_sha1(const uint8_t *pass, size_t passlen,
         got += n;
         blockidx++;
     }
+
+    memset(block, 0, sizeof(block));
 }

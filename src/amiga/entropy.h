@@ -16,6 +16,12 @@ int amiga_random(uint8_t *buf, size_t n);
 /* Fold an application-supplied sample into the entropy pool. */
 void amiga_entropy_stir(const void *p, size_t n);
 
+/* Fold a fresh E-clock reading into the entropy pool — call this on every
+ * keystroke of any UI's own passphrase input loop (amiga_read_passphrase()
+ * already does this internally; front ends with their own event-driven
+ * keystroke handling, e.g. the GUI, must call it explicitly per keystroke). */
+void amiga_stir_keystroke(void);
+
 /* Prompt and read a passphrase with no echo, using RAW console mode. Each
  * keystroke's arrival time is stirred into the entropy pool. Returns 0 on
  * success, -1 if there is no interactive console or on error. */

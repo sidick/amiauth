@@ -30,6 +30,9 @@ void hmac_sha1_init(hmac_sha1_ctx *ctx, const uint8_t *key, size_t keylen)
 
     sha1_init(&ctx->inner);
     sha1_update(&ctx->inner, ipad, SHA1_BLOCK_SIZE);
+
+    memset(k, 0, sizeof(k));
+    memset(ipad, 0, sizeof(ipad));
 }
 
 void hmac_sha1_update(hmac_sha1_ctx *ctx, const void *data, size_t len)
@@ -86,6 +89,9 @@ void hmac_sha256_init(hmac_sha256_ctx *ctx, const uint8_t *key, size_t keylen)
 
     sha256_init(&ctx->inner);
     sha256_update(&ctx->inner, ipad, SHA256_BLOCK_SIZE);
+
+    memset(k, 0, sizeof(k));
+    memset(ipad, 0, sizeof(ipad));
 }
 
 void hmac_sha256_update(hmac_sha256_ctx *ctx, const void *data, size_t len)
@@ -142,6 +148,9 @@ void hmac_sha512_init(hmac_sha512_ctx *ctx, const uint8_t *key, size_t keylen)
 
     sha512_init(&ctx->inner);
     sha512_update(&ctx->inner, ipad, SHA512_BLOCK_SIZE);
+
+    memset(k, 0, sizeof(k));
+    memset(ipad, 0, sizeof(ipad));
 }
 
 void hmac_sha512_update(hmac_sha512_ctx *ctx, const void *data, size_t len)

@@ -656,7 +656,11 @@ static int cmd_add(const char *path, const char *uri)
         return 2;
     }
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) {
+        memset(&acct, 0, sizeof(acct));
+        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
+        return 2;
+    }
 
     rc = vault_add(&v, &acct);
     if (rc == VAULT_OK) rc = save_vault(&v, path);

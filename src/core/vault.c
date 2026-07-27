@@ -15,6 +15,7 @@
 #include "otp.h"
 #include "pbkdf2.h"
 #include "hmac.h"
+#include "steamguard.h"
 
 /* --- on-disk header layout (byte offsets) --- */
 #define OFF_MAGIC        0
@@ -174,6 +175,16 @@ static vault_result parse_payload(vault *v, const uint8_t *in, size_t len)
          * produce plausible-looking but wrong codes (the format doc says new
          * ids extend the scheme and old readers must refuse them). */
         if (alg > OTP_ALG_SHA512 || type > 2) return VAULT_ERR_FORMAT;
+        /* digits is ignored at render time for Steam Guard (always
+         * STEAM_CODE_DIGITS) and otherwise must be a length AmiAuth itself
+         * ever writes (6-8, see uri.c/GUI edit_request) — reject anything
+         * else as a defense-in-depth check against a corrupted/hand-edited
+         * vault, consistent with the alg/type checks above. */
+        if (type == 2) {
+            if (a.digits != STEAM_CODE_DIGITS) return VAULT_ERR_FORMAT;
+        } else if (a.digits < 6 || a.digits > 8) {
+            return VAULT_ERR_FORMAT;
+        }
         strcpy(a.type, type == 1 ? "hotp" : type == 2 ? "steam" : "totp");
         strcpy(a.algorithm, otp_alg_name((otp_alg)alg));
 
