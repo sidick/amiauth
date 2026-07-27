@@ -242,8 +242,8 @@ toolchain, no build deps, and it bundles AROS):
   retry fresh (a new session usually clears it) rather than waiting it out or
   concluding the source directory is corrupted; `du -sh` on it should read
   a few tens of MB, not more.
-- m68k cross-build: `make m68k-docker` (the `stefanreinauer/amiga-gcc` container;
-  no local toolchain needed).
+- m68k cross-build: `make m68k-docker` (the `ghcr.io/reinauer/container-amiga-gcc`
+  container; no local toolchain needed).
 - `/opt/amiga/bin/m68k-amigaos-gdb` also exists locally — **use this one, not
   the Docker container's gdb**, for the GDB workflow above: it's what worked
   in the confirmed recipe, and running gdb inside the container was the
