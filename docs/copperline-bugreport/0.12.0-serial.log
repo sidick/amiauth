@@ -1,0 +1,26 @@
+ROMInfo: 1MiB ROM detected
+ROMInfo: ROM region(s)..
+ROMInfo:     0x00e00000 - 0x00e7ffff
+ROMInfo:     0x00f80000 - 0x00ffffff
+Found board 00e80000: mfg=5192 prod=2 size=00010000 serial=00000c00 diag=00000000
+Configuring board: cd=00000468 mfg=5192 prod=2 size=00010000 type=c1
+-> configured, 00e90000 - 00e9ffff
+Found board 00e80000: mfg=5192 prod=5 size=00010000 serial=00000000 diag=00000048
+Configuring board: cd=000004b0 mfg=5192 prod=5 size=00010000 type=d1
+-> configured, 00ea0000 - 00eaffff
+callroms
+Read boot ROM base=00e90000 cd=00000468 type=c1
+Board without boot ROM
+Read boot ROM base=00ea0000 cd=000004b0 type=d1
+da_Config=90
+Size=0048 DiagPoint=000e BootPoint=0014 Name=003c
+Name='Copperline'
+Call boot rom @00c1ba66 board 00ea0000 diag 00c1ba58 configdev 000004b0
+->success
+callroms done
+00c00000: 00c00000 - 00c80000 00001705 -5 'memory'
+00000400: 00000400 - 00080000 00001703 -10 'chip memory'
+00c01108: 00f80000 - 01000000 00000400 -128 'Kickstart ROM'
+00c01128: 00e00000 - 00e80000 00000400 -128 'Kickstart ROM'
+romtaginit
+romtaginit done

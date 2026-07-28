@@ -6,10 +6,17 @@
 # The Kickstart ROM is passed as a positional CLI arg (which overrides `rom`
 # here), so this file stays portable across machines. See ../../Makefile
 # `copperline-smoke` and ./run.sh.
-
-[machine]
-profile = "A500"
-
+#
+# NOTE: any [[filesys]] host-directory mount hangs forever after
+# "romtaginit done" on this 68000 CPU under released Copperline
+# 0.12.0/0.13.0 (bundled AROS or a real ROM alike) — see
+# docs/copperline-bugreport/REPORT.md. Root cause: the services board's
+# MMIO doorbells only fired on a single 32-bit write, but a 68000/68010's
+# 16-bit bus splits every move.l into two word writes, so the doorbell
+# never rang and expansion init never ran. Fixed upstream in
+# CopperlineHQ/Copperline#312 (not yet released as of 0.13.0) — until a
+# release ships it, point COPPERLINE= (see ./run.sh) at a build off that
+# branch instead of downgrading this config's CPU.
 [cpu]
 model = "68000"
 

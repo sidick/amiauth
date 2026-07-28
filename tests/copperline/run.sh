@@ -10,7 +10,12 @@
 # debug path straight to the Paula serial registers.
 #
 # Prereqs:
-#   - copperline on PATH (brew install copperline)
+#   - copperline on PATH (brew install copperline), or COPPERLINE= pointing
+#     at another build (e.g. a local build of CopperlineHQ/Copperline#312,
+#     which fixes the [[filesys]]-hangs-on-68000 bug described in
+#     docs/copperline-bugreport/REPORT.md — not yet in a release). Such a
+#     build won't have the bundled AROS assets installed next to it, so pair
+#     COPPERLINE= with KICK= (a real ROM) when using one.
 #   - the cross-built harness                    SERIALTEST_M68K= (default build/serialtest)
 #   - KICK= (optional): a 512 KiB Kickstart ROM. If unset, boots Copperline's
 #     bundled AROS Kickstart replacement — redistributable, so CI needs no ROM.
@@ -19,6 +24,7 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 
+COPPERLINE=${COPPERLINE:-copperline}
 KICK=${KICK:-}            # empty => bundled AROS (no licensed ROM needed)
 BIN=${SERIALTEST_M68K:-$ROOT/build/serialtest}
 BENCH=${BENCH:-40}        # emulated seconds to run; enough for the slower AROS boot
@@ -28,7 +34,7 @@ VECTORS="0=755224 1=287082 2=359152 3=969429 4=338314 5=254676 6=287922 7=162583
 
 [ -e "$BIN" ] || { echo "FAIL: missing $BIN" >&2; exit 2; }
 [ -z "$KICK" ] || [ -e "$KICK" ] || { echo "FAIL: KICK set but missing: $KICK" >&2; exit 2; }
-command -v copperline >/dev/null || { echo "FAIL: copperline not on PATH" >&2; exit 2; }
+command -v "$COPPERLINE" >/dev/null || { echo "FAIL: $COPPERLINE not found" >&2; exit 2; }
 [ -n "$KICK" ] && echo "ROM: $KICK" || echo "ROM: bundled AROS"
 
 # --- stage the boot volume (just the harness binary) -------------------------
@@ -46,8 +52,8 @@ trap cleanup EXIT INT TERM
 # config's (absent) rom; with none, Copperline boots its bundled AROS.
 set -- --config machine.toml --noaudio --serial stdout --benchmark-until "$BENCH"
 [ -n "$KICK" ] && set -- "$@" "$KICK"
-( cd "$HERE" && copperline "$@" ) >"$OUT" 2>/dev/null \
-    || { echo "FAIL: copperline exited non-zero" >&2; cat "$OUT" >&2; exit 3; }
+( cd "$HERE" && "$COPPERLINE" "$@" ) >"$OUT" 2>/dev/null \
+    || { echo "FAIL: $COPPERLINE exited non-zero" >&2; cat "$OUT" >&2; exit 3; }
 
 tr -d '\r' <"$OUT" >"$OUT.n" && mv "$OUT.n" "$OUT"   # serial sends CRLF; drop CR
 echo "----- serial capture -----"; cat "$OUT"; echo "--------------------------"
