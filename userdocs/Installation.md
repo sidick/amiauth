@@ -92,7 +92,7 @@ Both binaries carry a standard AmigaOS version string, so the Shell `Version`
 command reports it:
 
     > Version AmiAuth
-    AmiAuth 1.0 (20.07.2026)
+    AmiAuth 1.1 (28.07.2026)
 
 (Also works for `AmiAuthGUI`, and matches the release tag on GitHub.)
 

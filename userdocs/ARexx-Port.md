@@ -16,7 +16,7 @@ unattended. See [Security Model](Security-Model.md).
 
 The port is named `AMIAUTH.<n>` (uppercase), where `<n>` is the lowest free
 slot — normally `AMIAUTH.1`. It's shown in the main window's title bar once
-open, e.g. `AmiAuth 1.0 (abc1234) [AMIAUTH.1]`. Override it with the
+open, e.g. `AmiAuth 1.1 (abc1234) [AMIAUTH.1]`. Override it with the
 `PORTNAME` tooltype/argument, the same way as `VAULT`/`PUBSCREEN` (see
 [Commodity and Tooltypes](Commodity-and-Tooltypes.md)):
 
