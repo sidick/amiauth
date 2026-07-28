@@ -126,4 +126,5 @@ void sha1(const void *data, size_t len, uint8_t out[SHA1_DIGEST_SIZE])
     sha1_init(&ctx);
     sha1_update(&ctx, data, len);
     sha1_final(&ctx, out);
+    memset(&ctx, 0, sizeof(ctx));   /* ctx.block may hold key material */
 }

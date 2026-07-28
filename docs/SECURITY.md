@@ -80,10 +80,17 @@ matters (vault creation), and — as everywhere in this document — a long,
 unpredictable **passphrase** is what actually protects an encrypted vault, not
 the salt's entropy.
 
-To keep the nonce safe even when entropy is thin, every request also folds in
-`DateStamp` and a monotonic counter, so successive nonces are *distinct*
-regardless of entropy quality; real entropy additionally makes them
-*unpredictable*.
+To keep the nonce safe even when entropy is thin, every request folds in
+`DateStamp` and a per-process counter (distinct nonces within one run), and
+every save first folds the previous vault file's header+MAC — which includes
+the last nonce — into the pool, chaining each save's nonce to the one before
+it. So even two runs started from an identical cold-boot state (deterministic
+emulator, frozen RTC) produce distinct nonces from their second-ever save
+onward, and once any real entropy has influenced a saved nonce that
+divergence persists across every later boot. The residual case — the very
+first save of each of two runs from a byte-identical cold state — is
+documented rather than solved: real entropy additionally makes nonces
+*unpredictable*, which no counter can.
 
 ## What the vault does NOT protect against
 

@@ -87,6 +87,17 @@ static void write_raw_vault(const char *path, const uint8_t *payload, size_t ple
     }
 }
 
+/* Overwrite `path` with exactly `n` raw bytes (for corrupted-header tests). */
+static void write_raw_bytes(const char *path, const uint8_t *buf, size_t n)
+{
+    FILE *f = fopen(path, "wb");
+    TEST_CHECK(f != NULL);
+    if (f) {
+        fwrite(buf, 1, n, f);
+        fclose(f);
+    }
+}
+
 void run_vault_tests(void)
 {
     const char *path = tmp_path();
@@ -217,6 +228,108 @@ void run_vault_tests(void)
             0x01, 'x'
         };
         write_raw_vault(path, payload, sizeof(payload));
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+    }
+
+    /* --- header-level rejection paths ---
+     * Structural checks that run before the MAC is even computed, so a
+     * deliberately-wrong MAC never masks the result. Base image: a valid
+     * empty always-unlocked vault (44 header + 20 MAC + 2 payload = 66 B). */
+    {
+        static const uint8_t empty_payload[2] = { 0x00, 0x00 };   /* count=0 */
+        uint8_t buf[80];
+        FILE *f;
+        size_t n;
+
+        write_raw_vault(path, empty_payload, sizeof empty_payload);
+        f = fopen(path, "rb");
+        TEST_CHECK(f != NULL);
+        n = f ? fread(buf, 1, sizeof buf, f) : 0;
+        if (f) fclose(f);
+        TEST_CHECK(n == 66);
+
+        /* file shorter than the fixed header+MAC region */
+        write_raw_bytes(path, buf, 30);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+
+        /* bad magic */
+        buf[0] ^= 0xff;
+        write_raw_bytes(path, buf, n);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+        buf[0] ^= 0xff;
+
+        /* unknown format version */
+        buf[4] = 2;
+        write_raw_bytes(path, buf, n);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+        buf[4] = 1;
+
+        /* cipher present without kdf (stripped-encryption downgrade shape) */
+        buf[5] = 1;                                    /* cipher = chacha20 */
+        write_raw_bytes(path, buf, n);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+
+        /* encrypted header advertising iterations = 0: rejected before any
+         * key derivation (a huge count is the same code path - the point is
+         * the bound runs pre-PBKDF2, so a tampered count can't DoS unlock) */
+        buf[6] = 1;                                    /* kdf = pbkdf2, iters
+                                                          bytes 8-11 are 0 */
+        write_raw_bytes(path, buf, n);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+
+        /* ...and iterations above KDF_MAX_ITERATIONS */
+        buf[8] = buf[9] = buf[10] = buf[11] = 0xff;
+        write_raw_bytes(path, buf, n);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+        buf[5] = buf[6] = 0; buf[8] = buf[9] = buf[10] = buf[11] = 0;
+
+        /* payload_len disagreeing with the actual file size */
+        buf[43] = 3;
+        write_raw_bytes(path, buf, n);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+        buf[43] = 2;
+    }
+
+    /* --- payload-level rejection paths (valid MAC, malformed contents) --- */
+    {
+        /* count exceeding VAULT_MAX_ACCOUNTS */
+        static const uint8_t too_many[] = { 0x00, 0x41 };          /* 65 */
+        /* secret_len above OTP_MAX_SECRET (rejected on the length byte) */
+        static const uint8_t big_secret[] = {
+            0x00, 0x01,
+            0x00, 0x00, 0x06,
+            0x00, 0x00, 0x00, 0x1e,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x41                                                   /* 65 */
+        };
+        /* trailing garbage after the last record */
+        static const uint8_t trailing[] = { 0x00, 0x00, 0xaa };
+        /* TOTP digits outside 6-8 */
+        static const uint8_t digits5[] = {
+            0x00, 0x01,
+            0x00, 0x00, 0x05,
+            0x00, 0x00, 0x00, 0x1e,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x01, 'K', 0x00, 0x01, 'x'
+        };
+        /* Steam record whose digits isn't STEAM_CODE_DIGITS */
+        static const uint8_t steam6[] = {
+            0x00, 0x01,
+            0x02, 0x00, 0x06,
+            0x00, 0x00, 0x00, 0x1e,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x01, 'K', 0x00, 0x01, 'x'
+        };
+
+        write_raw_vault(path, too_many, sizeof too_many);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+        write_raw_vault(path, big_secret, sizeof big_secret);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+        write_raw_vault(path, trailing, sizeof trailing);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+        write_raw_vault(path, digits5, sizeof digits5);
+        TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
+        write_raw_vault(path, steam6, sizeof steam6);
         TEST_CHECK(vault_load(&w, path, NULL) == VAULT_ERR_FORMAT);
     }
 

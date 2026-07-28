@@ -223,6 +223,8 @@ vault_result vault_create(vault *v, const char *passphrase,
         v->cipher     = VAULT_CIPHER_CHACHA20;
         v->kdf        = VAULT_KDF_PBKDF2_HMAC_SHA1;
         v->iterations = iterations ? iterations : VAULT_DEFAULT_ITERATIONS;
+        if (v->iterations > KDF_MAX_ITERATIONS)   /* keep within what */
+            v->iterations = KDF_MAX_ITERATIONS;   /* vault_load accepts */
         memcpy(v->salt, salt, VAULT_SALT_SIZE);
         derive_keys(v, passphrase);
     } else {
@@ -248,6 +250,8 @@ vault_result vault_set_passphrase(vault *v, const char *passphrase,
         v->cipher     = VAULT_CIPHER_CHACHA20;
         v->kdf        = VAULT_KDF_PBKDF2_HMAC_SHA1;
         v->iterations = iterations ? iterations : VAULT_DEFAULT_ITERATIONS;
+        if (v->iterations > KDF_MAX_ITERATIONS)   /* keep within what */
+            v->iterations = KDF_MAX_ITERATIONS;   /* vault_load accepts */
         memcpy(v->salt, salt, VAULT_SALT_SIZE);
         derive_keys(v, passphrase);
     } else {
@@ -416,6 +420,14 @@ vault_result vault_load(vault *v, const char *path, const char *passphrase)
     memcpy(v->salt, g_file + OFF_SALT, VAULT_SALT_SIZE);
 
     if (v->kdf == VAULT_KDF_PBKDF2_HMAC_SHA1) {
+        /* The iteration count can't be authenticated until the MAC check,
+         * which itself needs the derived key - so bound it BEFORE deriving,
+         * or a tampered header advertising a ~4-billion count runs PBKDF2
+         * for years on a 68000 (~14 iters/s). Reader-side policy only; the
+         * frozen on-disk format is untouched (vault_create/set_passphrase
+         * never emit a count outside these bounds). */
+        if (v->iterations == 0 || v->iterations > KDF_MAX_ITERATIONS)
+            return VAULT_ERR_FORMAT;
         if (!passphrase) return VAULT_ERR_LOCKED;   /* header known, still locked */
         derive_keys(v, passphrase);
     }

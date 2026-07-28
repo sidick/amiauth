@@ -52,12 +52,14 @@ void run_clock_tests(void)
     /* --- NTP request build --- */
     {
         uint8_t pkt[NTP_PACKET_SIZE];
-        clock_ntp_build_request(pkt, 1000000000ULL);
+        clock_ntp_build_request(pkt, 1000000000ULL, 0xdeadbeefUL);
         TEST_CHECK(pkt[0] == 0x1B);                     /* LI0 VN3 client */
         /* transmit timestamp seconds == unix + delta */
         TEST_CHECK(get_be32(pkt + 40) == (uint32_t)(1000000000ULL + NTP_UNIX_DELTA));
+        /* the anti-spoofing nonce lands in the tx fraction field */
+        TEST_CHECK(get_be32(pkt + 44) == 0xdeadbeefUL);
         /* unix epoch maps to the canonical 0x83AA7E80 */
-        clock_ntp_build_request(pkt, 0);
+        clock_ntp_build_request(pkt, 0, 0);
         TEST_CHECK(get_be32(pkt + 40) == 0x83AA7E80UL);
     }
 
@@ -65,33 +67,38 @@ void run_clock_tests(void)
     {
         uint8_t pkt[NTP_PACKET_SIZE];
         uint64_t o = 0, r = 0, t = 0;
+        uint32_t of = 0;
         memset(pkt, 0, sizeof(pkt));
         pkt[0] = 0x24;                                  /* LI0 VN4 Mode4 (server) */
         pkt[1] = 2;                                     /* stratum */
         put_ntp(pkt + 24, 1700000000ULL);              /* originate (T1) */
+        pkt[28] = 0xca; pkt[29] = 0xfe; pkt[30] = 0xf0; pkt[31] = 0x0d;
         put_ntp(pkt + 32, 1700000005ULL);              /* receive   (T2) */
         put_ntp(pkt + 40, 1700000006ULL);              /* transmit  (T3) */
-        TEST_CHECK(clock_ntp_parse_response(pkt, &o, &r, &t) == 0);
+        TEST_CHECK(clock_ntp_parse_response(pkt, &o, &of, &r, &t) == 0);
         TEST_CHECK(o == 1700000000ULL && r == 1700000005ULL && t == 1700000006ULL);
+        TEST_CHECK(of == 0xcafef00dUL);                /* echoed nonce field */
 
         /* rejects a non-server mode */
         pkt[0] = 0x1B;                                  /* client mode */
-        TEST_CHECK(clock_ntp_parse_response(pkt, &o, &r, &t) == -1);
+        TEST_CHECK(clock_ntp_parse_response(pkt, &o, &of, &r, &t) == -1);
         /* rejects stratum 0 (kiss o' death) */
         pkt[0] = 0x24; pkt[1] = 0;
-        TEST_CHECK(clock_ntp_parse_response(pkt, &o, &r, &t) == -1);
+        TEST_CHECK(clock_ntp_parse_response(pkt, &o, &of, &r, &t) == -1);
     }
 
     /* --- request/echo round trip: server echoes our tx into originate --- */
     {
         uint8_t req[NTP_PACKET_SIZE], resp[NTP_PACKET_SIZE];
         uint64_t o = 0;
-        clock_ntp_build_request(req, 1700000123ULL);
+        uint32_t of = 0;
+        clock_ntp_build_request(req, 1700000123ULL, 0x5eed1e55UL);
         memset(resp, 0, sizeof(resp));
         resp[0] = 0x24; resp[1] = 3;
         memcpy(resp + 24, req + 40, 8);                 /* echo tx -> originate */
-        TEST_CHECK(clock_ntp_parse_response(resp, &o, NULL, NULL) == 0);
+        TEST_CHECK(clock_ntp_parse_response(resp, &o, &of, NULL, NULL) == 0);
         TEST_CHECK(o == 1700000123ULL);
+        TEST_CHECK(of == 0x5eed1e55UL);                /* nonce survives the echo */
     }
 
     /* --- offset computation --- */

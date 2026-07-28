@@ -46,6 +46,18 @@ CORE_SRCS  := $(wildcard src/core/*.c)
 TEST_SRCS  := $(wildcard tests/*.c)
 CLI_SRCS   := src/cli/main.c
 
+# Header dependencies for the whole-program link rules below. These compile
+# all sources in one compiler invocation (no per-object .d files to -include),
+# so without listing headers as prerequisites, editing vault.h or the
+# generated catalog_strings.h rebuilt nothing and `make test` could pass
+# against a stale binary. A wildcard over every project header is coarse but
+# correct - a header touch rebuilds in seconds here.
+CORE_HDRS  := $(wildcard src/core/*.h src/*.h)
+AMIGA_HDRS := $(wildcard src/amiga/*.h)
+QR_HDRS    := $(wildcard src/qr/*.h)
+TEST_HDRS  := $(wildcard tests/*.h)
+ALL_HDRS   := $(CORE_HDRS) $(AMIGA_HDRS) $(QR_HDRS) $(TEST_HDRS)
+
 # Hand-written m68k asm for the crypto hot loops (#47) - m68k builds only,
 # never the host (CORE_SRCS' *.c wildcard doesn't pick these up, so nothing
 # extra is needed to keep them out of `make test`/`make cli`).
@@ -101,13 +113,13 @@ test: $(BUILD)/run-tests
 	VAULT_TEST_FILE=$(BUILD)/amiauth-test.vault \
 		AMIAUTH_PREFS_DIR=$(BUILD)/prefs-test $(BUILD)/run-tests
 
-$(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) | $(BUILD)
+$(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) $(CORE_HDRS) $(QR_HDRS) $(TEST_HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CObjINC) $(QR_CPPFLAGS) -Itests \
 		$(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) \
 		$(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) -o $@
 
 # Vendored quirc objects — host toolchain, warnings suppressed (third-party).
-$(BUILD)/qr-host/%.o: src/qr/%.c | $(BUILD)
+$(BUILD)/qr-host/%.o: src/qr/%.c $(QR_HDRS) | $(BUILD)
 	@mkdir -p $(BUILD)/qr-host
 	$(CC) -std=c99 -O2 -w $(QR_CPPFLAGS) -c $< -o $@
 
@@ -117,7 +129,7 @@ $(BUILD)/qr-host/%.o: src/qr/%.c | $(BUILD)
 # command): our qrencode.c wrapper + the vendored qrcodegen object.
 cli: $(BUILD)/amiauth-host
 
-$(BUILD)/amiauth-host: $(CORE_SRCS) $(CLI_SRCS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) | $(BUILD)
+$(BUILD)/amiauth-host: $(CORE_SRCS) $(CLI_SRCS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) $(CORE_HDRS) $(AMIGA_HDRS) $(QR_HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CObjINC) -Isrc/qr $(CORE_SRCS) $(CLI_SRCS) \
 		$(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) -o $@
 
@@ -129,7 +141,7 @@ smoke: $(BUILD)/amiauth-host
 diff: $(BUILD)/run-diff
 	$(BUILD)/run-diff $(DIFF_ITERS)
 
-$(BUILD)/run-diff: $(CORE_SRCS) $(DIFF_SRCS) | $(BUILD)
+$(BUILD)/run-diff: $(CORE_SRCS) $(DIFF_SRCS) $(CORE_HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CObjINC) $(OPENSSL_CFLAGS) $(CORE_SRCS) $(DIFF_SRCS) \
 		$(OPENSSL_LIBS) -o $@
 
@@ -162,7 +174,7 @@ catalog-nolib-onhw-docker:
 GUI_SRCS := src/gui/main.c src/amiga/qrimage.c src/amiga/arexx.c
 
 # Vendored quirc objects — m68k toolchain, warnings suppressed (third-party).
-$(BUILD)/qr-m68k/%.o: src/qr/%.c | $(BUILD)
+$(BUILD)/qr-m68k/%.o: src/qr/%.c $(QR_HDRS) | $(BUILD)
 	@mkdir -p $(BUILD)/qr-m68k
 	$(M68K_CC) -std=c99 -O2 -m68000 -noixemul -w $(QR_CPPFLAGS) -c $< -o $@
 
@@ -252,7 +264,7 @@ m68k-docker:
 # any other target here).
 asm-tests: $(BUILD)/asm-test-sha1
 
-$(BUILD)/asm-test-sha1: | $(BUILD)
+$(BUILD)/asm-test-sha1: tests/asm/test_sha1_asm.c $(CORE_SRCS) $(ASM_SRCS) $(CORE_HDRS) $(TEST_HDRS) | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) -Itests tests/asm/test_sha1_asm.c \
 		tests/test_sha1.c tests/test_hmac.c tests/test_pbkdf2.c tests/test_kdf.c \
 		$(CORE_SRCS) $(ASM_SRCS) src/amiga/prefs.c -lamiga -o $@

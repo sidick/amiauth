@@ -8,6 +8,7 @@
 #ifdef __amigaos__
 
 #include <exec/types.h>
+#include <dos/dos.h>            /* SIGBREAKF_CTRL_C */
 #include <proto/exec.h>
 #include <proto/socket.h>
 
@@ -19,6 +20,7 @@
 #include <time.h>
 
 #include "clock.h"
+#include "entropy.h"            /* amiga_random: the anti-spoofing nonce */
 
 #define NTP_PORT          123
 #define SNTP_TIMEOUT_SECS 5
@@ -29,8 +31,8 @@ int clock_sntp_sync(clock_ctx *c, const char *server)
 {
     uint8_t req[NTP_PACKET_SIZE], resp[NTP_PACKET_SIZE];
     struct sockaddr_in addr;
-    struct timeval tv;
     uint64_t t1, t4, orig, t2, t3;
+    uint32_t nonce, orig_frac;
     unsigned long ip;
     int sock = -1;
     long rc = -1;
@@ -58,27 +60,46 @@ int clock_sntp_sync(clock_ctx *c, const char *server)
         sock = socket(AF_INET, SOCK_DGRAM, 0);
         if (sock < 0) break;
 
-        tv.tv_sec  = SNTP_TIMEOUT_SECS;
-        tv.tv_usec = 0;
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
-
         /* Bind the datagram socket to the resolved server address/port so the
          * stack drops any reply not actually from the server we queried —
          * without this, recvfrom() would accept a UDP packet from anyone. */
         if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
             break;
 
+        /* 32 random bits in the transmit-timestamp fraction: a source address
+         * is spoofable and the send second guessable, so the echo check below
+         * hinges on this nonce (blind forgery odds 2^-32 per attempt). */
+        if (amiga_random((uint8_t *)&nonce, sizeof nonce) != 0) break;
+
         t1 = (uint64_t)time(NULL);           /* local send time */
-        clock_ntp_build_request(req, t1);
+        clock_ntp_build_request(req, t1, nonce);
         if (send(sock, (char *)req, NTP_PACKET_SIZE, 0) != NTP_PACKET_SIZE)
             break;
+
+        /* Wait for the reply with a real timeout — SO_RCVTIMEO is silently
+         * unsupported on some AmiTCP-lineage stacks, and a bare recv() on a
+         * lost UDP packet would then block forever with no Ctrl-C escape.
+         * WaitSelect is universal bsdsocket API and takes a break mask. */
+        {
+            struct timeval tv;
+            fd_set rfds;
+            ULONG sigmask = SIGBREAKF_CTRL_C;
+            FD_ZERO(&rfds);
+            FD_SET(sock, &rfds);
+            tv.tv_sec  = SNTP_TIMEOUT_SECS;
+            tv.tv_usec = 0;
+            if (WaitSelect(sock + 1, &rfds, NULL, NULL, &tv, &sigmask) <= 0)
+                break;                       /* timeout, error, or Ctrl-C */
+        }
 
         if (recv(sock, (char *)resp, NTP_PACKET_SIZE, 0) != NTP_PACKET_SIZE)
             break;
         t4 = (uint64_t)time(NULL);           /* local receive time */
 
-        if (clock_ntp_parse_response(resp, &orig, &t2, &t3) != 0) break;
-        if (orig != t1) break;               /* must echo our request (anti-spoof) */
+        if (clock_ntp_parse_response(resp, &orig, &orig_frac, &t2, &t3) != 0)
+            break;
+        if (orig != t1 || orig_frac != nonce)
+            break;                           /* must echo our request (anti-spoof) */
 
         clock_apply_offset(c, t1, t2, t3, t4);
         rc = 0;

@@ -457,6 +457,12 @@ static vault_result save_vault(const vault *v, const char *path)
 {
     if (v->cipher == VAULT_CIPHER_CHACHA20) {
         uint8_t nonce[VAULT_NONCE_SIZE];
+#ifdef AMIAUTH_AMIGA
+        /* Chain this save's nonce to the previous one: the old file's
+         * header+MAC (first 64 bytes) includes the last nonce - see
+         * amiga_stir_file in entropy.h. */
+        amiga_stir_file(path, 64);
+#endif
         if (cli_random(nonce, sizeof(nonce)) != 0) {
             fprintf(stderr, MSG(MSG_CLI_NO_RNG_SAVE), "AmiAuth");
             return VAULT_ERR_IO;
@@ -1056,6 +1062,13 @@ int main(int argc, char **argv)
     rc = dispatch(&a);
     FreeArgs(rda);
     catalog_close();
+    amiga_entropy_cleanup();     /* Exec never reclaims the timer open (see entropy.h) */
+    /* AmigaDOS scripts stop on RC >= FAILAT (default 10); the host-style
+     * 1 (usage) / 2 (runtime error) codes are invisible to them, and vault
+     * scripting via always-unlocked vaults is a supported use-case - so any
+     * error becomes RETURN_ERROR here. ReadArgs failure above stays
+     * RETURN_FAIL (20). The host build keeps 1/2. */
+    if (rc == 1 || rc == 2) rc = RETURN_ERROR;
     return rc;
 }
 

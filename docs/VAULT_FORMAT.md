@@ -214,9 +214,11 @@ always-unlocked) is the ordered account list:
   confidentiality). AmigaOS has no strong built-in source, so the front-end
   (`src/amiga/random.c`) gathers entropy — `EClock` timing jitter, volatile
   system state, and interactive keystroke timing — and whitens it through an
-  HMAC-DRBG (`src/core/drbg.c`); each request also folds a counter/timestamp so
-  the nonce never repeats under a fixed key. The core takes salt/nonce as
-  parameters and stays deterministic. See [SECURITY.md](SECURITY.md)
+  HMAC-DRBG (`src/core/drbg.c`); each request also folds a counter/timestamp,
+  and each save folds the previous file's header+MAC (which includes the last
+  nonce), chaining successive nonces so they stay distinct even across
+  cold-boot-identical runs. The core takes salt/nonce as parameters and stays
+  deterministic. See [SECURITY.md](SECURITY.md)
   "Randomness" for the sources and honest limits.
 - **Key hygiene:** `enc_key`/`mac_key` are zeroed on lock and quit (see
   `vault_lock`). The resident-key exposure window is covered in SECURITY.md.
