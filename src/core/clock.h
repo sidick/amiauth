@@ -41,16 +41,22 @@ void clock_nudge(clock_ctx *c, long delta_seconds);
 /* --- portable SNTP helpers (host-tested) --- */
 
 /* Build a 48-byte SNTP client request. `client_tx_unix` is written into the
- * transmit timestamp so the server echoes it back as the originate timestamp. */
-void clock_ntp_build_request(uint8_t pkt[NTP_PACKET_SIZE], uint64_t client_tx_unix);
+ * transmit timestamp's seconds and `nonce_frac` into its fraction field; the
+ * server echoes both back as the originate timestamp. The fraction carries no
+ * timing meaning here - it is an anti-spoofing nonce: fill it with 32 random
+ * bits and accept only a reply that echoes them, so a blind (off-path)
+ * attacker who can guess the send second still can't forge a reply. */
+void clock_ntp_build_request(uint8_t pkt[NTP_PACKET_SIZE], uint64_t client_tx_unix,
+                             uint32_t nonce_frac);
 
 /* Parse a 48-byte SNTP server response. Fills the originate (T1, echoed),
- * receive (T2) and transmit (T3) timestamps as Unix seconds (NULL to skip).
+ * receive (T2) and transmit (T3) timestamps as Unix seconds, and the echoed
+ * originate fraction field (the request's nonce) - NULL to skip any.
  * Returns 0 on success, -1 if it is not a valid server response (wrong mode,
  * or a stratum-0 "kiss o' death" / out-of-range stratum). */
 int clock_ntp_parse_response(const uint8_t pkt[NTP_PACKET_SIZE],
-                             uint64_t *originate, uint64_t *receive,
-                             uint64_t *transmit);
+                             uint64_t *originate, uint32_t *originate_frac,
+                             uint64_t *receive, uint64_t *transmit);
 
 /* Compute and apply the clock offset from the four SNTP timestamps
  * (offset = ((T2-T1) + (T3-T4)) / 2), moving to CLOCK_SYNCED. T1 is the client

@@ -15,9 +15,13 @@ void clock_init(clock_ctx *c)
 
 uint64_t clock_now_utc(const clock_ctx *c)
 {
-    time_t now = time(NULL);
-    long off = c ? c->offset_seconds : 0;
-    return (uint64_t)((long)now + off);
+    /* 64-bit arithmetic: time_t and long are 32-bit on the Amiga build, so
+     * a plain (long)now + off overflows (UB) at 2038, and an unset RTC plus
+     * a negative offset would sign-extend into a huge counter. A negative
+     * corrected time clamps to 0 (epoch) instead. */
+    int64_t now = (int64_t)time(NULL);
+    if (c) now += (int64_t)c->offset_seconds;
+    return now < 0 ? 0 : (uint64_t)now;
 }
 
 void clock_set_offset(clock_ctx *c, long seconds)
@@ -59,17 +63,20 @@ static uint64_t ntp_ts_to_unix(const uint8_t *p)
     return (uint64_t)(sec - NTP_UNIX_DELTA);
 }
 
-void clock_ntp_build_request(uint8_t pkt[NTP_PACKET_SIZE], uint64_t client_tx_unix)
+void clock_ntp_build_request(uint8_t pkt[NTP_PACKET_SIZE], uint64_t client_tx_unix,
+                             uint32_t nonce_frac)
 {
     memset(pkt, 0, NTP_PACKET_SIZE);
     pkt[0] = 0x1B;   /* LI = 0, VN = 3, Mode = 3 (client) */
-    /* transmit timestamp (bytes [40,48)): seconds only, fraction left zero */
+    /* transmit timestamp (bytes [40,48)): seconds + the anti-spoofing nonce
+     * in the fraction field (see clock.h) */
     wr_be32(pkt + 40, (uint32_t)(client_tx_unix + NTP_UNIX_DELTA));
+    wr_be32(pkt + 44, nonce_frac);
 }
 
 int clock_ntp_parse_response(const uint8_t pkt[NTP_PACKET_SIZE],
-                             uint64_t *originate, uint64_t *receive,
-                             uint64_t *transmit)
+                             uint64_t *originate, uint32_t *originate_frac,
+                             uint64_t *receive, uint64_t *transmit)
 {
     uint8_t mode    = pkt[0] & 0x07;
     uint8_t stratum = pkt[1];
@@ -77,9 +84,10 @@ int clock_ntp_parse_response(const uint8_t pkt[NTP_PACKET_SIZE],
     if (mode != 4) return -1;                 /* must be a server response */
     if (stratum == 0 || stratum > 15) return -1;  /* kiss-o'-death / invalid */
 
-    if (originate) *originate = ntp_ts_to_unix(pkt + 24);
-    if (receive)   *receive   = ntp_ts_to_unix(pkt + 32);
-    if (transmit)  *transmit  = ntp_ts_to_unix(pkt + 40);
+    if (originate)      *originate      = ntp_ts_to_unix(pkt + 24);
+    if (originate_frac) *originate_frac = rd_be32(pkt + 28);
+    if (receive)        *receive        = ntp_ts_to_unix(pkt + 32);
+    if (transmit)       *transmit       = ntp_ts_to_unix(pkt + 40);
     return 0;
 }
 

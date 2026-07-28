@@ -159,4 +159,5 @@ void sha512(const void *data, size_t len, uint8_t out[SHA512_DIGEST_SIZE])
     sha512_init(&ctx);
     sha512_update(&ctx, data, len);
     sha512_final(&ctx, out);
+    memset(&ctx, 0, sizeof(ctx));   /* ctx.block may hold key material */
 }

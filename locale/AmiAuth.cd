@@ -570,3 +570,10 @@ save failed; your accounts survive in the vault's .tmp file - rename it back
 ;
 MSG_GUI_SAVE_FAILED_TMPKEPT (147//)
 Could not replace the vault file. Your accounts survive in the vault's .tmp file - rename it back over the vault.
+;
+; --- CLI: forwarded request still waiting on the resident GUI (Ctrl-C) ----
+; (Aborting would let the GUI write into a dead stack frame, so the CLI
+; keeps waiting and says why - see src/amiga/guiport.c.)
+;
+MSG_CLI_GUI_WAIT (148//)
+AmiAuth: waiting for the resident GUI to reply (cannot abort safely; if the GUI has crashed, this will wait forever)\n

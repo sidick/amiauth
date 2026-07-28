@@ -130,7 +130,9 @@ static void u64_to_str(uint64_t v, char *buf)
     buf[j] = '\0';
 }
 
-int otpauth_parse(const char *uri, otp_account *out)
+/* Worker for otpauth_parse: on failure `out` may hold a partially-decoded
+ * secret - the public wrapper below scrubs it. */
+static int otpauth_parse_fields(const char *uri, otp_account *out)
 {
     const char *p, *slash, *label_start, *label_end, *query;
     size_t typelen;
@@ -192,6 +194,7 @@ int otpauth_parse(const char *uri, otp_account *out)
 
                 if (key_is(q, klen, "secret")) {
                     int n = base32_decode(dec, out->secret, OTP_MAX_SECRET);
+                    memset(dec, 0, sizeof(dec));   /* held the Base32 secret */
                     if (n <= 0) return -1;
                     out->secret_len = (size_t)n;
                     have_secret = 1;
@@ -231,6 +234,14 @@ int otpauth_parse(const char *uri, otp_account *out)
     return 0;
 }
 
+int otpauth_parse(const char *uri, otp_account *out)
+{
+    int rc = otpauth_parse_fields(uri, out);
+    if (rc != 0 && out)
+        memset(out, 0, sizeof(*out));   /* may hold a partly-parsed secret */
+    return rc;
+}
+
 int otpauth_is_uri(const char *s)
 {
     return s != NULL && ci_startswith(s, "otpauth://");
@@ -263,44 +274,50 @@ int otpauth_build(const otp_account *a, char *out, size_t outcap)
     is_steam = strcmp(a->type, "steam") == 0;
     is_hotp  = strcmp(a->type, "hotp")  == 0;
 
-    if (str_append(&cur, &remain, "otpauth://") != 0) return -1;
+    if (str_append(&cur, &remain, "otpauth://") != 0) goto fail;
     if (str_append(&cur, &remain, is_steam ? "steam" : is_hotp ? "hotp" : "totp") != 0)
-        return -1;
-    if (str_append(&cur, &remain, "/") != 0) return -1;
+        goto fail;
+    if (str_append(&cur, &remain, "/") != 0) goto fail;
     if (a->issuer[0]) {
-        if (url_encode_append(&cur, &remain, a->issuer) != 0) return -1;
-        if (str_append(&cur, &remain, ":") != 0) return -1;
+        if (url_encode_append(&cur, &remain, a->issuer) != 0) goto fail;
+        if (str_append(&cur, &remain, ":") != 0) goto fail;
     }
-    if (url_encode_append(&cur, &remain, a->label) != 0) return -1;
+    if (url_encode_append(&cur, &remain, a->label) != 0) goto fail;
 
-    if (str_append(&cur, &remain, "?secret=") != 0) return -1;
-    if (str_append(&cur, &remain, secretb32) != 0) return -1;
+    if (str_append(&cur, &remain, "?secret=") != 0) goto fail;
+    if (str_append(&cur, &remain, secretb32) != 0) goto fail;
     if (a->issuer[0]) {
-        if (str_append(&cur, &remain, "&issuer=") != 0) return -1;
-        if (url_encode_append(&cur, &remain, a->issuer) != 0) return -1;
+        if (str_append(&cur, &remain, "&issuer=") != 0) goto fail;
+        if (url_encode_append(&cur, &remain, a->issuer) != 0) goto fail;
     }
 
     if (!is_steam) {
-        if (str_append(&cur, &remain, "&algorithm=") != 0) return -1;
-        if (str_append(&cur, &remain, a->algorithm) != 0) return -1;
+        if (str_append(&cur, &remain, "&algorithm=") != 0) goto fail;
+        if (str_append(&cur, &remain, a->algorithm) != 0) goto fail;
 
         sprintf(numbuf, "%lu", (unsigned long)a->digits);   /* small value: safe */
-        if (str_append(&cur, &remain, "&digits=") != 0) return -1;
-        if (str_append(&cur, &remain, numbuf) != 0) return -1;
+        if (str_append(&cur, &remain, "&digits=") != 0) goto fail;
+        if (str_append(&cur, &remain, numbuf) != 0) goto fail;
 
         if (is_hotp) {
             u64_to_str(a->counter, numbuf);
-            if (str_append(&cur, &remain, "&counter=") != 0) return -1;
-            if (str_append(&cur, &remain, numbuf) != 0) return -1;
+            if (str_append(&cur, &remain, "&counter=") != 0) goto fail;
+            if (str_append(&cur, &remain, numbuf) != 0) goto fail;
         } else {
             sprintf(numbuf, "%lu", (unsigned long)a->period);
-            if (str_append(&cur, &remain, "&period=") != 0) return -1;
-            if (str_append(&cur, &remain, numbuf) != 0) return -1;
+            if (str_append(&cur, &remain, "&period=") != 0) goto fail;
+            if (str_append(&cur, &remain, numbuf) != 0) goto fail;
         }
     }
 
     *cur = '\0';
+    memset(secretb32, 0, sizeof(secretb32));
     return 0;
+
+fail:
+    memset(secretb32, 0, sizeof(secretb32));   /* held the Base32 secret */
+    out[0] = '\0';                             /* and out may hold part of it */
+    return -1;
 }
 
 static int account_from_secret(const char *issuer, const char *label,

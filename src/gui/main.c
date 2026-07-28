@@ -178,6 +178,12 @@ enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_ADD_QR, CMD_EDIT, CMD_COPY, CMD_SHOW_
 static char g_code[VAULT_MAX_ACCOUNTS][12];
 static char g_left[VAULT_MAX_ACCOUNTS][8];
 
+/* Selected account row. File-scope (not a main() local) because win_show
+ * rebuilds the listbrowser on every Show and must seed LISTBROWSER_Selected
+ * from it - a hardcoded 0 there let the visible highlight and the row that
+ * Copy/Edit/Remove actually act on drift apart across hide/show. */
+static ULONG sel;
+
 /* ARexx LIST reply scratch (#46): sized for the worst case, every account's
  * "issuer:label\n" line at once; off the stack like everything else here. */
 static char g_rexx_listbuf[VAULT_MAX_ACCOUNTS * (OTP_MAX_ISSUER + OTP_MAX_LABEL + 3)];
@@ -530,6 +536,10 @@ static vault_result gui_save(const vault *v, const char *path)
 {
     if (v->cipher == VAULT_CIPHER_CHACHA20) {
         uint8_t nonce[VAULT_NONCE_SIZE];
+        /* Chain this save's nonce to the previous one: the old file's
+         * header+MAC (first 64 bytes) includes the last nonce - see
+         * amiga_stir_file in entropy.h. */
+        amiga_stir_file(path, 64);
         if (amiga_random(nonce, sizeof nonce) != 0) return VAULT_ERR_IO;
         return vault_save(v, path, nonce);
     }
@@ -1631,6 +1641,7 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
     struct Window *w;
     Object *layoutobj, *btnrow, *statrow;
 
+    if (sel >= v->count) sel = 0;      /* account list may have shrunk */
     gw->listobj = NewObject(LISTBROWSER_GetClass(), NULL,
         GA_ID,                    GID_LIST,
         GA_RelVerify,             TRUE,
@@ -1638,7 +1649,7 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
         LISTBROWSER_ColumnTitles, TRUE,
         LISTBROWSER_Labels,       (ULONG)lblist,
         LISTBROWSER_ShowSelected, TRUE,
-        LISTBROWSER_Selected,     0,
+        LISTBROWSER_Selected,     sel,  /* keep highlight = acted-on row */
         TAG_END);
     gw->codeobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ID,       GID_CODE,
@@ -1745,6 +1756,11 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
         WINDOW_Layout,   (ULONG)layoutobj,
         TAG_END);
     if (!gw->winobj) {
+        /* Unlike the failure path below, the gadget tree exists but has no
+         * window object to own it - dispose it (cascades to every child)
+         * instead of leaking it, and leave gw clean for the next attempt. */
+        if (layoutobj) DisposeObject(layoutobj);
+        memset(gw, 0, sizeof *gw);
         Printf((CONST_STRPTR)MSG(MSG_GUI_WINDOW_CREATE_FAILED), (ULONG)"AmiAuth");
         return NULL;
     }
@@ -1768,6 +1784,11 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
         led_draw(w, gw->statobj, ledstate);
         if (g_appport)
             g_appwin = AddAppWindowA(0, 0, w, g_appport, NULL);
+    } else {
+        /* A later Show rebuilds everything into gw - dispose this tree now
+         * or the retry silently overwrites (leaks) it. */
+        DisposeObject(gw->winobj);
+        memset(gw, 0, sizeof *gw);
     }
     return w;
 }
@@ -1861,7 +1882,7 @@ int main(int argc, char **argv)
     struct Window *win = NULL;
     clock_ctx clk;
     const char *err, *path;
-    ULONG winsig = 0, appsig = 0, timersig, cxsig = 0, sel = 0, lastsec = 0, lastmic = 0, our_clipid = 0, idle_secs = 0;
+    ULONG winsig = 0, appsig = 0, timersig, cxsig = 0, lastsec = 0, lastmic = 0, our_clipid = 0, idle_secs = 0;
     int have_timer = 0, have_clip = 0, running = 1, copied = 0, clear_secs = 0, encrypted = 0, changed = 0, popup = 1, deferred = 0;
     static char vpath[512];             /* vault path; first-run may relocate it */
     long idle_limit = 0;
@@ -2422,6 +2443,7 @@ int main(int argc, char **argv)
             int docopy = 0, doadd_clip = 0, doadd_type = 0, doadd_qr = 0, doedit = 0, doremove = 0;
             int doshow_qr = 0;
             long donudge = 0;
+            ULONG oldsel = sel;
             idle_secs = 0;                          /* any window input = activity */
             while ((result = DoMethod(gw.winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
                 switch (result & WMHI_CLASSMASK) {
@@ -2507,6 +2529,17 @@ int main(int argc, char **argv)
                         break;
                     }
                 }
+            }
+            /* Selection changed (row click / cursor key): refresh the detail
+             * code NOW rather than at the next 1 Hz tick - in that window a
+             * Copy (including the double-click one just latched above) would
+             * otherwise paste the previously selected account's code, which
+             * looks valid and verifies against the wrong service. */
+            if (sel != oldsel && v.count > 0 && v.unlocked) {
+                if (sel >= v.count) sel = 0;
+                strcpy(curcode, g_code[sel]);
+                SetGadgetAttrs((struct Gadget *)gw.codeobj, win, NULL,
+                               GA_Text, (ULONG)curcode, TAG_END);
             }
             if (docopy && have_clip && curcode[0]) {
                 our_clipid = clip_write_text(curcode);
@@ -2717,9 +2750,15 @@ cleanup:
         struct Node *n;
         while ((n = RemHead(&lblist)) != NULL) FreeListBrowserNode(n);
     }
+    /* A copied OTP inside its 30 s auto-clear window must not outlive us on
+     * the clipboard - same clear-if-still-ours check as the timer tick, so a
+     * clip the user has since overwritten is left alone. */
+    if (have_clip && clear_secs > 0 && clip_write_id() == our_clipid)
+        clip_clear();
     if (have_clip) clip_close();
     if (have_timer) timer_close();
     vault_lock(&v);
+    amiga_entropy_cleanup();     /* Exec never reclaims the timer open (see entropy.h) */
     close_libs();
     return retcode;
 }

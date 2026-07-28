@@ -6,9 +6,10 @@
  * SHA-1 pool, and whiten/expand through an HMAC-DRBG (src/core/drbg.c). The
  * honest limits (a quiescent 68000 yields little timing entropy; a deterministic
  * emulator yields even less) are documented in docs/SECURITY.md — which is why
- * the interactive keystroke timing during passphrase entry matters, and why each
- * request also folds DateStamp + a monotonic counter so the per-save nonce
- * stream never repeats under a fixed key.
+ * the interactive keystroke timing during passphrase entry matters, why each
+ * request folds DateStamp + a per-process counter (distinct nonces within a
+ * run), and why each save first folds the previous vault file's header+MAC
+ * (amiga_stir_file) so the nonce chain stays distinct across runs too.
  *
  * Linked into the m68k build only. */
 #ifdef __amigaos__
@@ -22,6 +23,7 @@
 #include <proto/dos.h>
 #include <proto/timer.h>
 
+#include <stdio.h>
 #include <string.h>
 
 #include "sha1.h"
@@ -56,9 +58,28 @@ void amiga_entropy_stir(const void *p, size_t n)
     sha1_update(&g_pool, p, n);
 }
 
-/* timer.device UNIT_ECLOCK, opened once and kept for the process lifetime (the
- * OS reclaims it at exit). Shared by the entropy gatherer and amiga_millis, so
- * TimerBase stays valid throughout — hence no per-call open/close. */
+void amiga_stir_file(const char *path, size_t n)
+{
+    uint8_t buf[128];
+    FILE *f;
+    size_t got;
+
+    if (!path || n == 0) return;
+    if (n > sizeof buf) n = sizeof buf;
+    f = fopen(path, "rb");
+    if (!f) return;                     /* no file yet: nothing to fold */
+    got = fread(buf, 1, n, f);
+    fclose(f);
+    if (got) amiga_entropy_stir(buf, got);
+    memset(buf, 0, sizeof buf);
+}
+
+/* timer.device UNIT_ECLOCK, opened once and shared by the entropy gatherer
+ * and amiga_millis, so TimerBase stays valid throughout — hence no per-call
+ * open/close. Exec does NOT reclaim device opens/ports at exit; both
+ * front-ends call amiga_entropy_cleanup() on their way out, or every CLI run
+ * would leak the port + IORequest and bump timer.device's open count until
+ * reboot. */
 static struct MsgPort     *g_tport;
 static struct timerequest *g_treq;
 static int                 g_timer_tried;
@@ -83,6 +104,27 @@ static int timer_ready(void)
         }
     }
     return g_treq != NULL;
+}
+
+void amiga_entropy_cleanup(void)
+{
+    if (g_treq) {
+        CloseDevice((struct IORequest *)g_treq);
+        DeleteIORequest((struct IORequest *)g_treq);
+        g_treq = NULL;
+        TimerBase = NULL;
+    }
+    if (g_tport) {
+        DeleteMsgPort(g_tport);
+        g_tport = NULL;
+    }
+    g_timer_tried = 0;                  /* a later call may reopen */
+    /* Scrub the RNG state too: the pool has absorbed keystroke timings and
+     * the DRBG key stream generated vault nonces. */
+    memset(&g_pool, 0, sizeof g_pool);
+    memset(&g_drbg, 0, sizeof g_drbg);
+    g_pool_ready = g_drbg_ready = 0;
+    g_calls = 0;
 }
 
 /* Milliseconds from the E-clock, monotonic (wraps ~every 49 days). 0 if no

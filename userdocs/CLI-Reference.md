@@ -266,17 +266,27 @@ If the GUI's vault is currently locked (auto-lock, or not yet unlocked), the
 CLI reports: `the running GUI's vault is locked; unlock it there first`.
 The passphrase itself never crosses the port — see [Security Model](Security-Model.md).
 
+While a forwarded command waits for the GUI's answer, Ctrl-C cannot abort it
+(the GUI holds pointers into the CLI's request); pressing it prints a notice
+explaining that instead. If the GUI has genuinely crashed mid-request, the
+CLI cannot return — end its Shell window, or reboot.
+
 `CODE`, `INIT`, `CLOCK`, `SYNC` and `OFFSET` never involve the vault contents
 and always run locally.
 
 ## Exit codes
 
+On AmigaOS the CLI follows shell conventions so `FAILAT` works: any error
+stops a script at the default `FAILAT 10`.
+
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Usage error (unknown command, missing argument) |
-| 2 | Runtime error (vault I/O, wrong passphrase, account not found, sync failure…) |
-| 20 | AmigaOS: `ReadArgs` could not parse the arguments |
+| 10 | Any error (usage, vault I/O, wrong passphrase, account not found, sync failure…) |
+| 20 | `ReadArgs` could not parse the arguments |
+
+The host (development) build instead uses Unix-style codes: 0 success,
+1 usage error, 2 runtime error.
 
 Wrong passphrase and a tampered/corrupted vault file are deliberately
 indistinguishable (both report

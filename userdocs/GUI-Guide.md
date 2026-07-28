@@ -53,6 +53,8 @@ paste into a browser or terminal. The button briefly shows "Copied".
 **Auto-clear:** 30 seconds after the copy, AmiAuth clears the clipboard again —
 but only if the clipboard still holds that code; anything you copied in the
 meantime is left alone. This stops a stale 2FA code lingering in the clipboard.
+Quitting inside that 30-second window clears it on the way out too, with the
+same still-holds-that-code check.
 
 ## Adding accounts
 

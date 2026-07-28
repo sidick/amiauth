@@ -65,10 +65,16 @@ uint32_t otp_truncate(otp_alg alg, const uint8_t *key, size_t keylen,
     /* Dynamic truncation (RFC 4226 §5.3): low nibble of the last byte selects a
      * 4-byte window; mask the high bit to stay positive. */
     offset = mac[maclen - 1] & 0x0f;
-    return ((uint32_t)(mac[offset] & 0x7f) << 24)
-         | ((uint32_t)mac[offset + 1]      << 16)
-         | ((uint32_t)mac[offset + 2]      <<  8)
-         | ((uint32_t)mac[offset + 3]);
+    {
+        uint32_t bin = ((uint32_t)(mac[offset] & 0x7f) << 24)
+                     | ((uint32_t)mac[offset + 1]      << 16)
+                     | ((uint32_t)mac[offset + 2]      <<  8)
+                     | ((uint32_t)mac[offset + 3]);
+        /* The full MAC is keyed with the account secret - scrub it rather
+         * than leave 20-64 bytes of it on the stack per rendered code. */
+        memset(mac, 0, sizeof(mac));
+        return bin;
+    }
 }
 
 uint32_t hotp(otp_alg alg, const uint8_t *key, size_t keylen,

@@ -6,11 +6,14 @@
 #include <exec/types.h>
 #include <exec/nodes.h>
 #include <exec/ports.h>
+#include <dos/dos.h>            /* SIGBREAKF_CTRL_C */
 #include <proto/exec.h>
+#include <proto/dos.h>          /* PutStr (Ctrl-C notice) */
 
 #include <string.h>
 
 #include "guiport.h"
+#include "catalog.h"            /* MSG(): localizable Ctrl-C notice */
 
 int gui_forward(int cmd, const char *arg, char *buf, unsigned long buflen,
                 int *result)
@@ -45,8 +48,23 @@ int gui_forward(int cmd, const char *arg, char *buf, unsigned long buflen,
         return -1;
     }
 
-    WaitPort(reply);
-    GetMsg(reply);                        /* reclaim our own request */
+    /* Wait for the reply, but notice Ctrl-C. We must NOT abort the exchange:
+     * the GUI holds pointers into this stack frame (req/arg/buf), so leaving
+     * before the reply arrives would have it write into a dead frame. A
+     * crashed GUI still means waiting forever, but now the user is told what
+     * the CLI is stuck on instead of it being silently unkillable. */
+    {
+        ULONG portsig = 1UL << reply->mp_SigBit;
+        int warned = 0;
+        for (;;) {
+            ULONG got = Wait(portsig | SIGBREAKF_CTRL_C);
+            if (GetMsg(reply)) break;     /* reclaim our own request */
+            if ((got & SIGBREAKF_CTRL_C) && !warned) {
+                PutStr((CONST_STRPTR)MSG(MSG_CLI_GUI_WAIT));
+                warned = 1;
+            }
+        }
+    }
     if (result) *result = (int)req.aar_Result;
     DeleteMsgPort(reply);
     return 0;

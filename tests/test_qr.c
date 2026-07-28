@@ -60,6 +60,90 @@ void run_qr_tests(void)
     TEST_CHECK(strlen(uri) == 9 && strncmp(uri, QR_OTP_URI, 9) == 0);
 }
 
+static void rasterize(const uint8_t *modules, int size, int scale,
+                      unsigned char *gray, int gw);
+
+/* xorshift32: deterministic PRNG for the hostile-input sweep below - same
+ * mutations every run, so a failure is reproducible from the seed alone. */
+static uint32_t g_rng;
+static uint32_t rng_next(void)
+{
+    uint32_t x = g_rng;
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    return g_rng = x;
+}
+
+/* Hostile/malformed input never crashes or corrupts, whatever it decodes to.
+ * The vendored quirc updates (see THIRDPARTY.md) fixed out-of-bounds and
+ * signed-overflow bugs that were reachable exactly this way - via the GUI's
+ * "Add from QR image..." on an arbitrary image - and none of the well-formed
+ * fixtures above would notice a regression. Every decode here must simply
+ * return one of the defined QR_* codes and leave the output buffer a
+ * NUL-terminated string within cap. */
+void run_qr_hostile_tests(void)
+{
+    static unsigned char canvas[160 * 160];
+    static unsigned char clean[160 * 160];
+    static uint8_t modules[QR_ENC_MAX_MODULES * QR_ENC_MAX_MODULES];
+    char uri[512];
+    int size = 0, round, w, h;
+    size_t i;
+
+    /* structured degenerate images: tiny, all-black, checkerboard, noise */
+    memset(canvas, 0, sizeof canvas);
+    TEST_CHECK(qr_decode_gray(canvas, 1, 1, uri, sizeof uri) < 0);
+    TEST_CHECK(qr_decode_gray(canvas, 3, 3, uri, sizeof uri) < 0);
+    TEST_CHECK(qr_decode_gray(canvas, 160, 160, uri, sizeof uri) < 0);
+    for (i = 0; i < sizeof canvas; i++)
+        canvas[i] = (unsigned char)((((i % 160) ^ (i / 160)) & 1) ? 0 : 255);
+    TEST_CHECK(qr_decode_gray(canvas, 160, 160, uri, sizeof uri) < 0);
+    g_rng = 0x5eed;
+    for (i = 0; i < sizeof canvas; i++)
+        canvas[i] = (unsigned char)rng_next();
+    TEST_CHECK(qr_decode_gray(canvas, 160, 160, uri, sizeof uri) < 0);
+
+    /* a real QR, then 200 rounds of seeded pixel corruption: bit rot, hole
+     * punches, and stripe inversions across the finder/format regions */
+    TEST_CHECK(qr_encode_uri("otpauth://totp/F:z?secret=JBSWY3DPEHPK3PXP",
+                             modules, &size) == QRENC_OK);
+    w = h = size * 3;
+    TEST_CHECK(w <= 160);
+    rasterize(modules, size, 3, clean, w);
+
+    for (round = 0; round < 200; round++) {
+        int rc, nmut, m;
+        memcpy(canvas, clean, (size_t)(w * h));
+        nmut = 1 + (int)(rng_next() % 64);
+        for (m = 0; m < nmut; m++) {
+            uint32_t r = rng_next();
+            int x = (int)(r % (uint32_t)w), y = (int)((r >> 8) % (uint32_t)h);
+            switch (r >> 29) {
+                case 0: case 1: case 2:              /* single-pixel rot */
+                    canvas[y * w + x] = (unsigned char)(r >> 16);
+                    break;
+                case 3: case 4: {                    /* hole punch */
+                    int hx, hy, hs = 1 + (int)((r >> 16) % 8);
+                    for (hy = y; hy < h && hy < y + hs; hy++)
+                        for (hx = x; hx < w && hx < x + hs; hx++)
+                            canvas[hy * w + hx] = (unsigned char)(r >> 24);
+                    break;
+                }
+                default: {                           /* row-stripe invert */
+                    int hx;
+                    for (hx = 0; hx < w; hx++)
+                        canvas[y * w + hx] = (unsigned char)(255 - canvas[y * w + hx]);
+                    break;
+                }
+            }
+        }
+        memset(uri, 0xaa, sizeof uri);               /* poison, prove NUL-term */
+        rc = qr_decode_gray(canvas, w, h, uri, sizeof uri);
+        TEST_CHECK(rc == QR_OK || rc == QR_ERR_NOMEM ||
+                   rc == QR_ERR_NOCODE || rc == QR_ERR_NOTOTP);
+        TEST_CHECK(memchr(uri, '\0', sizeof uri) != NULL);
+    }
+}
+
 /* Rasterize a qr_encode_uri() module grid to 8-bit greyscale (module=black,
  * background=white), `scale` pixels per module, no extra margin -- qr.c's own
  * decode_with_quiet_zone() fallback pads it, so this doesn't need to. */

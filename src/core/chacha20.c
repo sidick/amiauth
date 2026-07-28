@@ -1,5 +1,7 @@
 /* chacha20.c — ChaCha20 stream cipher (RFC 8439).
  * Validated against RFC 8439 §2.4.2 in tests/test_chacha20.c. */
+#include <string.h>
+
 #include "chacha20.h"
 #include "crypto_dispatch.h"
 
@@ -84,4 +86,9 @@ void chacha20_xor(const uint8_t key[CHACHA20_KEY_SIZE],
         state[12]++;                     /* next block counter */
         off += n;
     }
+
+    /* state holds the raw key words and block the keystream - scrub both
+     * (no memory protection on the target). */
+    memset(state, 0, sizeof(state));
+    memset(block, 0, sizeof(block));
 }

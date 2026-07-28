@@ -53,6 +53,13 @@ void hmac_sha1_final(hmac_sha1_ctx *ctx, uint8_t out[SHA1_DIGEST_SIZE])
     sha1_update(&outer, ctx->opad, SHA1_BLOCK_SIZE);
     sha1_update(&outer, inner, SHA1_DIGEST_SIZE);
     sha1_final(&outer, out);                 /* SHA1((K'^opad) || inner) */
+
+    /* opad is K'^0x5c - trivially invertible to the key - and this runs on
+     * machines with no memory protection: scrub everything. A finalised ctx
+     * is dead; every caller re-inits before reuse. */
+    memset(inner, 0, sizeof(inner));
+    memset(&outer, 0, sizeof(outer));
+    memset(ctx, 0, sizeof(*ctx));
 }
 
 void hmac_sha1(const uint8_t *key, size_t keylen,
@@ -112,6 +119,13 @@ void hmac_sha256_final(hmac_sha256_ctx *ctx, uint8_t out[SHA256_DIGEST_SIZE])
     sha256_update(&outer, ctx->opad, SHA256_BLOCK_SIZE);
     sha256_update(&outer, inner, SHA256_DIGEST_SIZE);
     sha256_final(&outer, out);
+
+    /* opad is K'^0x5c - trivially invertible to the key - and this runs on
+     * machines with no memory protection: scrub everything. A finalised ctx
+     * is dead; every caller re-inits before reuse. */
+    memset(inner, 0, sizeof(inner));
+    memset(&outer, 0, sizeof(outer));
+    memset(ctx, 0, sizeof(*ctx));
 }
 
 void hmac_sha256(const uint8_t *key, size_t keylen,
@@ -171,6 +185,13 @@ void hmac_sha512_final(hmac_sha512_ctx *ctx, uint8_t out[SHA512_DIGEST_SIZE])
     sha512_update(&outer, ctx->opad, SHA512_BLOCK_SIZE);
     sha512_update(&outer, inner, SHA512_DIGEST_SIZE);
     sha512_final(&outer, out);
+
+    /* opad is K'^0x5c - trivially invertible to the key - and this runs on
+     * machines with no memory protection: scrub everything. A finalised ctx
+     * is dead; every caller re-inits before reuse. */
+    memset(inner, 0, sizeof(inner));
+    memset(&outer, 0, sizeof(outer));
+    memset(ctx, 0, sizeof(*ctx));
 }
 
 void hmac_sha512(const uint8_t *key, size_t keylen,
