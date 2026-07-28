@@ -97,6 +97,27 @@ static void perspective_setup(quirc_float_t *c,
 		hden;
 }
 
+/* Round to nearest and convert to int, defending against the degenerate
+ * perspective transforms possible on malformed input: a zero denominator
+ * yields an infinite or NaN coordinate, and converting a non-finite or
+ * out-of-range floating point value directly to int is undefined
+ * behavior. Callers treat out-of-image coordinates as misses, so
+ * saturating to the int range is safe.
+ */
+static int saturate_to_int(quirc_float_t v)
+{
+	v = rint(v);
+
+	if (v >= (quirc_float_t)2147483648.0)		/* > INT_MAX */
+		return INT_MAX;
+	if (v < (quirc_float_t)-2147483648.0)		/* < INT_MIN */
+		return INT_MIN;
+	if (v != v)					/* NaN */
+		return 0;
+
+	return (int)v;
+}
+
 static void perspective_map(const quirc_float_t *c,
 			    quirc_float_t u, quirc_float_t v, struct quirc_point *ret)
 {
@@ -104,8 +125,8 @@ static void perspective_map(const quirc_float_t *c,
 	quirc_float_t x = (c[0]*u + c[1]*v + c[2]) * den;
 	quirc_float_t y = (c[3]*u + c[4]*v + c[5]) * den;
 
-	ret->x = (int) rint(x);
-	ret->y = (int) rint(y);
+	ret->x = saturate_to_int(x);
+	ret->y = saturate_to_int(y);
 }
 
 static void perspective_unmap(const quirc_float_t *c,
@@ -290,13 +311,13 @@ static void flood_fill_seed(struct quirc *q,
 
 static uint8_t otsu(const struct quirc *q)
 {
-	unsigned int numPixels = q->w * q->h;
+	size_t numPixels = (size_t)q->w * (size_t)q->h;
 
 	// Calculate histogram
 	unsigned int histogram[UINT8_MAX + 1];
 	(void)memset(histogram, 0, sizeof(histogram));
 	uint8_t* ptr = q->image;
-	unsigned int length = numPixels;
+	size_t length = numPixels;
 	while (length--) {
 		uint8_t value = *ptr++;
 		histogram[value]++;
@@ -321,7 +342,7 @@ static uint8_t otsu(const struct quirc *q)
 			continue;
 
 		// Weighted foreground
-		const unsigned int q2 = numPixels - q1;
+		const size_t q2 = numPixels - q1;
 		if (q2 == 0)
 			break;
 
@@ -341,6 +362,8 @@ static uint8_t otsu(const struct quirc *q)
 
 static void area_count(void *user_data, int y, int left, int right)
 {
+	(void)y;
+
 	((struct quirc_region *)user_data)->count += right - left + 1;
 }
 
@@ -541,7 +564,7 @@ static void finder_scan(struct quirc *q, unsigned int y)
 	unsigned int pb[5];
 
 	memset(pb, 0, sizeof(pb));
-	for (x = 0; x < q->w; x++) {
+	for (x = 0; x < (unsigned int)q->w; x++) {
 		int color = row[x] ? 1 : 0;
 
 		if (x && color != last_color) {
@@ -599,8 +622,31 @@ static void find_alignment_pattern(struct quirc *q, int index)
 	perspective_unmap(c2->c, &b, &u, &v);
 	perspective_map(c2->c, u + (quirc_float_t)1.0, v, &c);
 
-	size_estimate = abs((a.x - b.x) * -(c.y - b.y) +
-			    (a.y - b.y) * (c.x - b.x));
+	/* a, b and c come from perspective_map, which saturates to the int
+	 * range on degenerate transforms. Compute the area estimate in 64
+	 * bits and bail out if the corner deltas are implausibly large (no
+	 * real alignment pattern is that far from the estimate); this keeps
+	 * the products well-defined and the spiral search below bounded.
+	 */
+	{
+		long long dx1 = (long long)a.x - b.x;
+		long long dy1 = (long long)a.y - b.y;
+		long long dx2 = (long long)c.x - b.x;
+		long long dy2 = (long long)c.y - b.y;
+		long long est;
+
+		if (llabs(dx1) > INT16_MAX || llabs(dy1) > INT16_MAX ||
+		    llabs(dx2) > INT16_MAX || llabs(dy2) > INT16_MAX)
+			return;
+
+		/* Clamp so the downstream size_estimate*100 and *2 stay
+		 * within int.
+		 */
+		est = llabs(dx1 * -dy2 + dy1 * dx2);
+		if (est > INT_MAX / 100)
+			est = INT_MAX / 100;
+		size_estimate = (int)est;
+	}
 
 	/* Spiral outwards from the estimate point until we find something
 	 * roughly the right size. Don't look too far from the estimate
@@ -678,7 +724,19 @@ static void measure_grid_size(struct quirc *q, int index)
 
 	quirc_float_t grid_size_estimate = (ver_grid + hor_grid) * (quirc_float_t)(0.5);
 
-	int ver = (int)((grid_size_estimate - (quirc_float_t)(17.0 - 2.0)) * (quirc_float_t)(1./4));
+	quirc_float_t ver_est = (grid_size_estimate - (quirc_float_t)(17.0 - 2.0)) * (quirc_float_t)(1./4);
+
+	/* Clamp to the valid version range while still in floating point:
+	 * degenerate capstone geometry can produce wild estimates, and an
+	 * out-of-range float-to-int conversion is undefined behavior.
+	 */
+	int ver;
+	if (!(ver_est >= 1))
+		ver = 1;
+	else if (ver_est > QUIRC_MAX_VERSION)
+		ver = QUIRC_MAX_VERSION;
+	else
+		ver = (int)ver_est;
 
 	qr->grid_size =  4*ver + 17;
 }
@@ -1043,7 +1101,7 @@ static void test_grouping(struct quirc *q, unsigned int i)
 		struct quirc_capstone *c2 = &q->capstones[j];
 		quirc_float_t u, v;
 
-		if (i == j)
+		if ((int)i == j)
 			continue;
 
 		perspective_unmap(c1->c, &c2->center, &u, &v);
@@ -1080,7 +1138,7 @@ static void pixels_setup(struct quirc *q, uint8_t threshold)
 
 	uint8_t* source = q->image;
 	quirc_pixel_t* dest = q->pixels;
-	int length = q->w * q->h;
+	size_t length = (size_t)q->w * (size_t)q->h;
 	while (length--) {
 		uint8_t value = *source++;
 		*dest++ = (value < threshold) ? QUIRC_PIXEL_BLACK : QUIRC_PIXEL_WHITE;
@@ -1118,14 +1176,16 @@ void quirc_end(struct quirc *q)
 void quirc_extract(const struct quirc *q, int index,
 		   struct quirc_code *code)
 {
-	const struct quirc_grid *qr = &q->grids[index];
+	const struct quirc_grid *qr;
 	int y;
 	int i = 0;
 
 	memset(code, 0, sizeof(*code));
 
-	if (index < 0 || index > q->num_grids)
+	if (index < 0 || index >= q->num_grids)
 		return;
+
+	qr = &q->grids[index];
 
 	perspective_map(qr->c, 0.0, 0.0, &code->corners[0]);
 	perspective_map(qr->c, qr->grid_size, 0.0, &code->corners[1]);

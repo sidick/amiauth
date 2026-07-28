@@ -22,7 +22,13 @@
 
 #include "quirc.h"
 
+/* Internal invariant checks. Compiled out when NDEBUG is defined (the
+ * default release CFLAGS define it); may be overridden at build time,
+ * e.g. -DQUIRC_ASSERT\(a\)= to disable unconditionally.
+ */
+#ifndef QUIRC_ASSERT
 #define QUIRC_ASSERT(a)	assert(a)
+#endif
 
 #define QUIRC_PIXEL_WHITE	0
 #define QUIRC_PIXEL_BLACK	1

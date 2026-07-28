@@ -12,7 +12,12 @@ source in this repository. The vendored third-party source is:
 - **Fork tracked for this project:** https://github.com/sidick/quirc — the
   original isn't actively maintained, so any future fixes needed inside
   quirc itself (as opposed to AmiAuth's own wrapper code) land here rather
-  than waiting on upstream.
+  than waiting on upstream. Pinned to commit
+  `198897c987f8b1ff055ef65a6bb0ad55f1dbb216` (2026-07-28) — memory-safety
+  and undefined-behaviour fixes in `quirc_extract`/`quirc_flip`/
+  `quirc_resize` and the `identify.c` geometry code, all reachable from a
+  malformed QR image (see #109); before that, an untracked, unpinned manual
+  snapshot.
 - **Author:** Daniel Beer `<dlbeer@gmail.com>`
 - **License:** ISC (permissive; compatible with AmiAuth's BSD 2-Clause)
 

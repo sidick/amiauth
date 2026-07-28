@@ -14,13 +14,14 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include "quirc_internal.h"
 
 const char *quirc_version(void)
 {
-	return "1.0";
+	return "1.2";
 }
 
 struct quirc *quirc_new(void)
@@ -63,6 +64,13 @@ int quirc_resize(struct quirc *q, int w, int h)
 		goto fail;
 
 	/*
+	 * The total pixel count must fit in the int arithmetic used for
+	 * indexing throughout the library (e.g. y * w + x).
+	 */
+	if (h > 0 && (size_t)w > (size_t)INT_MAX / (size_t)h)
+		goto fail;
+
+	/*
 	 * alloc a new buffer for q->image. We avoid realloc(3) because we want
 	 * on failure to be leave `q` in a consistant, unmodified state.
 	 */
@@ -72,8 +80,8 @@ int quirc_resize(struct quirc *q, int w, int h)
 
 	/* compute the "old" (i.e. currently allocated) and the "new"
 	   (i.e. requested) image dimensions */
-	size_t olddim = q->w * q->h;
-	size_t newdim = w * h;
+	size_t olddim = (size_t)q->w * (size_t)q->h;
+	size_t newdim = (size_t)w * (size_t)h;
 	size_t min = (olddim < newdim ? olddim : newdim);
 
 	/*
@@ -81,7 +89,8 @@ int quirc_resize(struct quirc *q, int w, int h)
 	 * old buffer when the new size is greater and (b) to write beyond the
 	 * new buffer when the new size is smaller, hence the min computation.
 	 */
-	(void)memcpy(image, q->image, min);
+	if (min > 0)
+		(void)memcpy(image, q->image, min);
 
 	/* alloc a new buffer for q->pixels if needed */
 	if (!QUIRC_PIXEL_ALIAS_IMAGE) {
@@ -101,7 +110,7 @@ int quirc_resize(struct quirc *q, int w, int h)
 	 * - the maximum height of rings would be about 1/3 of the image height.
 	 */
 
-	if ((size_t)h * 2 / 2 != h) {
+	if ((size_t)h * 2 / 2 != (size_t)h) {
 		goto fail; /* size_t overflow */
 	}
 	num_vars = (size_t)h * 2 / 3;
