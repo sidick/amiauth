@@ -1,0 +1,522 @@
+; italiano.ct - DRAFT Italian translation of locale/AmiAuth.cd.
+;
+; MACHINE-GENERATED FIRST PASS, NOT REVIEWED BY A NATIVE SPEAKER.
+; See locale/drafts/README.md before using or building this file - it is
+; not wired into any build target and must not be installed as-is.
+;
+; Terminology used throughout, for reviewer consistency:
+;   vault      -> cassaforte     passphrase -> passphrase (kept, common IT usage)
+;   account    -> account (kept, common IT tech usage) / conto avoided (bank sense)
+;   issuer     -> emittente      label      -> etichetta
+;   re-key     -> ricifrare / ricifratura
+;   always-unlocked -> sempre sbloccato
+;
+##version $VER: AmiAuth.catalog 1.0 (28.07.2026)
+##language italiano
+##codeset 0
+;
+; --- CLI (src/cli/main.c) ---------------------------------------------
+;
+MSG_CLI_ALREADY_EXISTS
+%s: %s esiste già\n
+;
+MSG_CLI_ADDED
+%s:%s aggiunto\n
+;
+MSG_CLI_REMOVED
+'%s' rimosso\n
+;
+MSG_CLI_USAGE_RUNAS
+Esegui come '%s <COMMAND> ...'  ('%s ?' mostra il modello degli argomenti):\n
+;
+; --- GUI (src/gui/main.c): account list column headers -----------------
+;
+MSG_GUI_COL_ACCOUNT
+Account
+;
+MSG_GUI_COL_CODE
+Codice
+;
+MSG_GUI_COL_LEFT
+Rimasto
+;
+; --- GUI: requester text -------------------------------------------------
+;
+MSG_GUI_CANNOT_OPEN_VAULT
+Impossibile aprire la cassaforte:\n%s
+;
+MSG_GUI_BAD_URI
+Non è un URI otpauth:// valido.
+;
+MSG_GUI_BAD_SECRET
+Non è né un URI otpauth:// né un secret Base32.
+;
+MSG_GUI_NO_QR
+Nessun codice QR otpauth trovato in questa immagine.
+;
+MSG_GUI_SAVE_FAILED
+Impossibile salvare la cassaforte.
+;
+MSG_GUI_REKEY_DONE
+Cassaforte ricifrata per questo computer.
+;
+MSG_GUI_REKEY_FAILED
+Ricifratura non riuscita; la cassaforte resta invariata.
+;
+; --- GUI: common requester button labels ----------------------------------
+;
+MSG_GUI_OK
+OK
+;
+MSG_GUI_CANCEL
+Annulla
+;
+; --- CLI: vault_err()'s own strings, wrapped by MSG_CLI_ERR below ---------
+;
+MSG_ERR_IO
+impossibile leggere/scrivere il file della cassaforte
+;
+MSG_ERR_FORMAT
+file di cassaforte non valido
+;
+MSG_ERR_AUTH
+passphrase errata o file manomesso
+;
+MSG_ERR_LOCKED
+la cassaforte è bloccata
+;
+MSG_ERR_FULL
+la cassaforte è piena
+;
+MSG_ERR_RANGE
+account non trovato
+;
+MSG_ERR_UNKNOWN
+errore
+;
+; --- CLI: generic error wrapper ("AmiAuth" + vault_err()/other message) --
+;
+MSG_CLI_ERR
+%s: %s\n
+;
+MSG_CLI_WARN_HOTP_PERSIST
+%s: attenzione: impossibile salvare il contatore HOTP (%s)\n
+;
+; --- CLI: passphrase prompts ----------------------------------------------
+;
+MSG_CLI_PROMPT_PASSPHRASE
+Passphrase:
+;
+MSG_CLI_NO_TTY
+%s: questa cassaforte è cifrata; eseguire da un terminale interattivo, oppure usare una cassaforte sempre sbloccata per gli script\n
+;
+MSG_CLI_NO_RNG_SAVE
+%s: nessuna fonte casuale sicura per salvare una cassaforte cifrata (Fase 4)\n
+;
+; --- CLI: adaptive re-key (maybe_rekey) -----------------------------------
+;
+; REVIEWER: the letter(s) in "(x)" and the word in '...' below are read back
+; out of this translated string at runtime (locale/AmiAuth.cd's header has
+; the full convention) - s/n/m and 'si' are just this draft's choice, freely
+; change them, just keep exactly one "(x)" per choice in the same
+; left-to-right order, with the accept and never-ask letters distinct.
+MSG_CLI_REKEY_STRENGTHEN_PROMPT
+Questo computer è molto più veloce di quello che ha protetto questa cassaforte.\nRafforzarla ora? [(s)ì/(n)o/(m)ai chiedere qui]
+;
+MSG_CLI_REKEY_SLOW_NOTICE
+%s: sblocco durato ~%lus; questa cassaforte è stata calibrata per hardware più veloce.\n
+;
+MSG_CLI_REKEY_LOWER_PROMPT
+Indebolire qui per sblocchi più rapidi? Questo RIDUCE la sicurezza. [(s)ì/(n)o]
+;
+MSG_CLI_CONFIRM_YES_PROMPT
+Digita 'si' per confermare:
+;
+MSG_CLI_REKEYED
+%s: ricifrata con %lu iterazioni\n
+;
+MSG_CLI_REKEY_FAILED
+%s: ricifratura non riuscita; cassaforte invariata\n
+;
+; --- CLI: CODE ---------------------------------------------------------
+;
+MSG_CLI_BAD_SECRET
+%s: secret Base32 non valido o vuoto\n
+;
+MSG_CLI_SECONDS_REMAINING
+(%u secondi rimanenti)\n
+;
+; --- CLI: CLOCK/SYNC/OFFSET/NUDGE ---------------------------------------
+;
+MSG_CLI_CLOCK_SYNCED
+sincronizzato (verde)
+;
+MSG_CLI_CLOCK_MANUAL
+scarto applicato (ambra)
+;
+MSG_CLI_CLOCK_UNVERIFIED
+non verificato (rosso)
+;
+MSG_CLI_CLOCK_OFFSET_LINE
+scarto UTC : %+ld secondi (%+ld min)\n
+;
+MSG_CLI_CLOCK_STATUS_LINE
+stato       : %s\n
+;
+MSG_CLI_CLOCK_CORRECTED_LINE
+corretto    : %04d-%02d-%02d %02d:%02d:%02d UTC\n
+;
+MSG_CLI_QUERYING
+Interrogazione di %s ...\n
+;
+MSG_CLI_SYNC_FAILED
+%s: sincronizzazione SNTP non riuscita (nessuno stack TCP/IP, o nessuna risposta da %s)\n
+;
+MSG_CLI_OFFSET_SAVE_FAILED
+%s: impossibile salvare lo scarto\n
+;
+; --- CLI: INIT -----------------------------------------------------------
+;
+MSG_CLI_INIT_PASS_PROMPT
+Nuova passphrase (vuota per una cassaforte sempre sbloccata):
+;
+MSG_CLI_INIT_NO_TTY
+%s: INIT richiede un terminale interattivo (usare 'INIT --open' per una cassaforte sempre sbloccata non interattiva)\n
+;
+MSG_CONFIRM_PASSPHRASE
+Conferma la passphrase:
+;
+MSG_CLI_PASS_MISMATCH
+%s: le passphrase non corrispondono\n
+;
+MSG_CLI_INIT_NO_RNG
+%s: nessuna fonte casuale sicura per una cassaforte cifrata (Fase 4); creare una cassaforte sempre sbloccata con 'INIT --open'\n
+;
+MSG_CLI_KDF_ITERATIONS
+%s: iterazioni KDF = %lu\n
+;
+MSG_CLI_CREATED
+Cassaforte (%s) creata in %s\n
+;
+MSG_CLI_ALWAYS_UNLOCKED
+sempre sbloccata
+;
+MSG_CLI_ENCRYPTED
+cifrata
+;
+; --- CLI: GUI forwarding (try_forward) ------------------------------------
+;
+MSG_CLI_GUI_LOCKED
+%s: la cassaforte dell'interfaccia grafica in esecuzione è bloccata; sbloccarla prima lì\n
+;
+MSG_CLI_NO_ACCOUNT
+%s: nessun account corrispondente a '%s'\n
+;
+MSG_CLI_VAULT_FULL
+%s: la cassaforte è piena (max 64 account)\n
+;
+MSG_CLI_BAD_OTPURI
+%s: non è un URI otpauth:// valido\n
+;
+MSG_CLI_GUI_SAVEFAIL
+%s: applicato nell'interfaccia grafica ma il nuovo salvataggio non è riuscito\n
+;
+MSG_CLI_URI_TOO_LONG
+%s: l'URI di questo account è troppo lungo per essere codificato come codice QR\n
+;
+MSG_CLI_GUI_UNKNOWN
+%s: l'interfaccia grafica in esecuzione non ha potuto gestirlo\n
+;
+; --- CLI: ADD --------------------------------------------------------------
+;
+MSG_CLI_PARSE_FAILED
+%s: impossibile analizzare l'URI otpauth://\n
+;
+MSG_CLI_ADDED_NOISSUER
+%s aggiunto\n
+;
+MSG_CLI_BAD_BASE32
+%s: non sembra un secret Base32\n
+;
+; --- CLI: SHOW / usage -----------------------------------------------------
+;
+MSG_CLI_NO_GUI
+%s: nessuna interfaccia grafica in esecuzione da mostrare\n
+;
+MSG_CLI_TAGLINE
+%s - autenticatore TOTP/HOTP per AmigaOS\n\n
+;
+MSG_CLI_ENCRYPTED_NOTE
+Le casseforti cifrate richiedono la passphrase nel terminale.\n
+;
+; --- GUI: main menu (g_menu[]) ---------------------------------------------
+;
+MSG_GUI_MENU_PROJECT
+Progetto
+;
+MSG_GUI_QUIT
+Esci
+;
+MSG_GUI_MENU_ACCOUNT
+Account
+;
+MSG_GUI_MENU_ADD_CLIP
+Aggiungi dagli appunti
+;
+MSG_GUI_MENU_ADD_TYPE
+Aggiungi (digita URI/secret)...
+;
+MSG_GUI_MENU_ADD_QR
+Aggiungi da immagine QR...
+;
+MSG_GUI_MENU_EDIT
+Modifica selezionato...
+;
+MSG_GUI_MENU_COPY
+Copia codice
+;
+MSG_GUI_MENU_SHOW_QR
+Mostra codice QR...
+;
+MSG_GUI_MENU_REMOVE
+Rimuovi selezionato...
+;
+; --- GUI: toolbar button mnemonics (LBL_*, see the underscore note above) -
+; REVIEWER: the '_' MUST stay the very first character of each string (the
+; code reads a fixed index, not "wherever the underscore is") - so the
+; mnemonic is always the first letter of whichever word you choose. The six
+; letters below (A/M/R/C/D/P) are distinct from each other.
+;
+MSG_GUI_BTN_ADD
+_Aggiungi
+;
+MSG_GUI_BTN_EDIT
+_Modifica
+;
+MSG_GUI_BTN_REMOVE
+_Rimuovi
+;
+MSG_GUI_BTN_COPY
+_Copia
+;
+MSG_GUI_BTN_NUDGE_DOWN
+_D -10s
+;
+MSG_GUI_BTN_NUDGE_UP
+_P +10s
+;
+; --- GUI: copy-code button's transient states (no mnemonic) ---------------
+;
+MSG_GUI_COPY_PLAIN
+Copia
+;
+MSG_GUI_COPIED
+Copiato
+;
+; --- GUI: clock-status line --------------------------------------------
+;
+MSG_GUI_CLOCK_SYNCED
+sincronizzato
+;
+MSG_GUI_CLOCK_MANUAL
+manuale
+;
+MSG_GUI_CLOCK_UNVERIFIED
+non verificato
+;
+MSG_GUI_CLOCK_LINE_SHORT
+Orologio: %s
+;
+MSG_GUI_CLOCK_LINE_FULL
+Orologio: %s %s%lu:%02lu
+;
+; --- GUI: adaptive re-key (gui_maybe_rekey) -------------------------------
+;
+MSG_GUI_REKEY_STRENGTHEN_BODY
+Questo computer è molto più veloce di quello che ha protetto questa cassaforte.\nRafforzarla ora (ricifrare con più iterazioni PBKDF2)?
+;
+MSG_GUI_REKEY_STRENGTHEN_BTNS
+Rafforza|Non ora|Mai qui
+;
+MSG_GUI_REKEY_SLOW_BODY
+Lo sblocco è durato circa %lu secondi; questa cassaforte è stata calibrata per hardware più veloce.\nIndebolire qui per sblocchi più rapidi? Questo RIDUCE la sicurezza.
+;
+MSG_GUI_REKEY_LOWER_BTNS
+Indebolisci|Annulla
+;
+MSG_GUI_REKEY_CONFIRM_BODY
+Ridurre davvero la sicurezza di questa cassaforte?
+;
+MSG_GUI_REKEY_REDUCE_BTNS
+Riduci|Annulla
+;
+; --- GUI: add account (uri/secret, shared gui_add_uri/gui_add_secret) ----
+;
+MSG_GUI_VAULT_FULL
+La cassaforte è piena (max 64 account).
+;
+; --- GUI: QR import (do_add_qr_impl) --------------------------------------
+;
+MSG_GUI_IMG_TOOBIG
+Questa immagine è troppo grande per essere decodificata.
+;
+MSG_GUI_QR_UNAVAIL
+L'importazione QR richiede datatypes.library.
+;
+MSG_GUI_IMG_NOMEM
+Memoria insufficiente per caricare questa immagine.
+;
+MSG_GUI_IMG_READ_FAILED
+Impossibile leggere questa immagine (richiede picture.datatype).
+;
+MSG_GUI_TITLE_DECODING
+%s - Decodifica immagine QR...
+;
+MSG_GUI_QR_FILE_TITLE
+Seleziona un'immagine QR
+;
+; --- GUI: unlock prompt (passphrase_request title) ------------------------
+;
+MSG_GUI_TITLE_UNLOCK
+%s - Sblocca
+;
+; --- GUI: first-run vault creation -----------------------------------------
+;
+MSG_GUI_CHOOSE_LOCATION
+Scegli dove conservare la cassaforte
+;
+MSG_GUI_WELCOME
+Benvenuto in %s!\n\nNon esiste ancora una cassaforte - verrà creata in\n%s
+;
+MSG_GUI_CREATE_VAULT_BTNS_DEFER
+Crea una cassaforte...|Non ora
+;
+MSG_GUI_CREATE_VAULT_BTNS_QUIT
+Crea una cassaforte...|Esci
+;
+MSG_GUI_NEW_PASS_PROMPT
+Nuova passphrase (vuota = sempre sbloccata):
+;
+MSG_GUI_STORE_UNENCRYPTED_BODY
+Salvare la cassaforte NON CIFRATA?\n\nSenza passphrase non c'è protezione a riposo:\nchiunque abbia accesso al file può leggere i tuoi secret.\n(Potrai aggiungere una passphrase più tardi.)
+;
+MSG_GUI_STORE_UNENCRYPTED_BTNS
+Salva senza cifrare|Indietro
+;
+MSG_GUI_PASS_MISMATCH
+Le passphrase non corrispondono.
+;
+MSG_GUI_TRY_AGAIN
+Riprova
+;
+MSG_GUI_NO_RNG_BODY
+Nessuna fonte casuale sicura è disponibile, quindi una\ncassaforte cifrata non può essere creata in modo sicuro.
+;
+MSG_GUI_CANNOT_WRITE_BODY
+Impossibile scrivere la cassaforte in\n%s\n\nScegliere un'altra posizione?
+;
+MSG_GUI_CHOOSE_LOCATION_BTNS
+Scegli posizione...|Esci
+;
+MSG_GUI_CREATE_FAILED
+Creazione della cassaforte non riuscita.
+;
+; --- GUI: unlock loop (gui_open_vault) --------------------------------
+;
+MSG_GUI_ENTER_PASS
+Inserisci la passphrase:
+;
+MSG_GUI_WRONG_PASS
+Passphrase errata - riprova:
+;
+MSG_GUI_CANNOT_OPEN_PRINTF
+%s: impossibile aprire la cassaforte (%ld)\n
+;
+; --- GUI: add account form (uri_request) ------------------------------
+;
+MSG_GUI_URI_PASTE_LABEL
+Incolla o digita un URI otpauth:// o un secret Base32:
+;
+MSG_GUI_TITLE_ADD_ACCOUNT
+%s - Aggiungi account
+;
+; --- GUI: edit account form (edit_request) ------------------------------
+;
+MSG_GUI_LABEL_ISSUER
+Emittente:
+;
+MSG_GUI_LABEL_LABEL
+Etichetta:
+;
+MSG_GUI_LABEL_DIGITS
+Cifre:
+;
+MSG_GUI_LABEL_PERIOD
+Intervallo:
+;
+MSG_GUI_TITLE_EDIT_ACCOUNT
+%s - Modifica account
+;
+MSG_GUI_LABEL_REQUIRED_STEAM
+L'etichetta è obbligatoria.
+;
+MSG_GUI_LABEL_REQUIRED_FULL
+L'etichetta è obbligatoria; le cifre devono essere 6-8, l'intervallo 1-86400.
+;
+; --- GUI: QR export display (qr_display) --------------------------------
+;
+MSG_GUI_QR_BUILD_FAILED
+Impossibile creare un codice QR per questo account.
+;
+MSG_GUI_QR_TOO_LONG
+L'URI di questo account è troppo lungo per essere codificato come codice QR.
+;
+MSG_GUI_QR_DISPLAY_FAILED
+Impossibile creare la visualizzazione QR.
+;
+MSG_GUI_QR_WINDOW_FAILED
+Impossibile aprire la finestra QR.
+;
+MSG_GUI_TITLE_QR_ISSUER
+%s - QR: %s:%s
+;
+MSG_GUI_TITLE_QR_NOISSUER
+%s - QR: %s
+;
+; --- GUI: bare-secret add form (secret_meta_request) ----------------------
+;
+MSG_GUI_SECRET_META_HINT
+Un secret puro non porta alcun nome - per chi è questo account?
+;
+MSG_GUI_ADD_BTN
+Aggiungi
+;
+MSG_GUI_ISSUER_LABEL_REQUIRED
+Emittente ed etichetta sono entrambi obbligatori.
+;
+; --- GUI: commodity broker (Exchange) -------------------------------------
+;
+MSG_GUI_CX_DESCR
+Autenticatore TOTP/HOTP
+;
+; --- GUI: remove confirmation ---------------------------------------------
+;
+MSG_GUI_REMOVE_CONFIRM
+Rimuovere %s?
+;
+MSG_GUI_REMOVE_BTNS
+Rimuovi|Annulla
+;
+; --- GUI: startup failures (open_libs/main) -------------------------------
+;
+MSG_GUI_NEEDS_INTUITION
+richiede intuition.library / utility.library v37+ (OS 2.04)
+;
+MSG_GUI_NEEDS_REACTION
+richiede le classi ReAction/ClassAct (window/layout/listbrowser/fuelgauge/button)
+;
+MSG_GUI_WINDOW_CREATE_FAILED
+%s: impossibile creare la finestra\n
+;
+MSG_GUI_WINDOW_OPEN_FAILED
+%s: impossibile aprire la finestra\n

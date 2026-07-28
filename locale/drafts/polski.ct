@@ -1,0 +1,539 @@
+; polski.ct - DRAFT Polish translation of locale/AmiAuth.cd.
+;
+; MACHINE-GENERATED FIRST PASS, NOT REVIEWED BY A NATIVE SPEAKER.
+; See locale/drafts/README.md before using or building this file - it is
+; not wired into any build target and must not be installed as-is.
+;
+; REVIEWER, IMPORTANT: this draft deliberately writes Polish WITHOUT
+; diacritics (a/c/e/l/n/o/s/z instead of the nine accented Polish letters) -
+; "polski bez ogonkow", the traditional fallback on platforms whose charset
+; can't represent them. This isn't a stylistic choice: FlexCat's own docs
+; state the catalog ##codeset field "must be 0" (no Latin-2 support in this
+; classic catalog format), and Latin-1/ISO-8859-1 - what codeset 0 actually
+; is - only happens to contain one of the nine Polish diacritics (o-acute),
+; not the rest. Adding proper diacritics back in would look right in this
+; file's UTF-8 source but render as garbage (or fail to encode at all - see
+; tools/check_catalog.py's Latin-1 check) once compiled for real AmigaOS.
+; If your review confirms otherwise for a specific runtime/codeset, README.md
+; here is the place to correct this note.
+;
+; Terminology used throughout, for reviewer consistency:
+;   vault      -> sejf           passphrase -> fraza haslo
+;   account    -> konto          secret     -> secret (kept, common PL tech usage)
+;   issuer     -> wystawca       label      -> etykieta
+;   re-key     -> przeszyfrowac / przeszyfrowanie
+;   always-unlocked -> zawsze odblokowany
+;
+##version $VER: AmiAuth.catalog 1.0 (28.07.2026)
+##language polski
+##codeset 0
+;
+; --- CLI (src/cli/main.c) ---------------------------------------------
+;
+MSG_CLI_ALREADY_EXISTS
+%s: %s juz istnieje\n
+;
+MSG_CLI_ADDED
+%s:%s dodano\n
+;
+MSG_CLI_REMOVED
+usunieto '%s'\n
+;
+MSG_CLI_USAGE_RUNAS
+Uruchom jako '%s <COMMAND> ...'  ('%s ?' pokazuje szablon argumentow):\n
+;
+; --- GUI (src/gui/main.c): account list column headers -----------------
+;
+MSG_GUI_COL_ACCOUNT
+Konto
+;
+MSG_GUI_COL_CODE
+Kod
+;
+MSG_GUI_COL_LEFT
+Pozostalo
+;
+; --- GUI: requester text -------------------------------------------------
+;
+MSG_GUI_CANNOT_OPEN_VAULT
+Nie mozna otworzyc sejfu:\n%s
+;
+MSG_GUI_BAD_URI
+To nie jest poprawny URI otpauth://.
+;
+MSG_GUI_BAD_SECRET
+To nie jest ani URI otpauth://, ani secret Base32.
+;
+MSG_GUI_NO_QR
+Nie znaleziono kodu QR otpauth w tym obrazie.
+;
+MSG_GUI_SAVE_FAILED
+Nie mozna zapisac sejfu.
+;
+MSG_GUI_REKEY_DONE
+Sejf przeszyfrowano dla tego komputera.
+;
+MSG_GUI_REKEY_FAILED
+Przeszyfrowanie nie powiodlo sie; sejf pozostaje bez zmian.
+;
+; --- GUI: common requester button labels ----------------------------------
+;
+MSG_GUI_OK
+OK
+;
+MSG_GUI_CANCEL
+Anuluj
+;
+; --- CLI: vault_err()'s own strings, wrapped by MSG_CLI_ERR below ---------
+;
+MSG_ERR_IO
+nie mozna odczytac/zapisac pliku sejfu
+;
+MSG_ERR_FORMAT
+nieprawidlowy plik sejfu
+;
+MSG_ERR_AUTH
+bledna fraza haslo lub plik zostal naruszony
+;
+MSG_ERR_LOCKED
+sejf jest zablokowany
+;
+MSG_ERR_FULL
+sejf jest pelny
+;
+MSG_ERR_RANGE
+nie ma takiego konta
+;
+MSG_ERR_UNKNOWN
+blad
+;
+; --- CLI: generic error wrapper ("AmiAuth" + vault_err()/other message) --
+;
+MSG_CLI_ERR
+%s: %s\n
+;
+MSG_CLI_WARN_HOTP_PERSIST
+%s: uwaga: nie mozna zapisac licznika HOTP (%s)\n
+;
+; --- CLI: passphrase prompts ----------------------------------------------
+;
+MSG_CLI_PROMPT_PASSPHRASE
+Fraza haslo:
+;
+MSG_CLI_NO_TTY
+%s: ten sejf jest zaszyfrowany; uruchom z terminala interaktywnego, albo uzyj zawsze odblokowanego sejfu do skryptow\n
+;
+MSG_CLI_NO_RNG_SAVE
+%s: brak bezpiecznego zrodla losowosci, aby zapisac zaszyfrowany sejf (Faza 4)\n
+;
+; --- CLI: adaptive re-key (maybe_rekey) -----------------------------------
+;
+; REVIEWER: the letter(s) in "(x)" and the word in '...' below are read back
+; out of this translated string at runtime (locale/AmiAuth.cd's header has
+; the full convention) - t/n/y and 'tak' are just this draft's choice,
+; freely change them, just keep exactly one "(x)" per choice in the same
+; left-to-right order, with the accept and never-ask letters distinct. The
+; never-ask letter is marked mid-word ("nigd(y)") rather than on "nigdy"'s
+; own first letter, purely to avoid visually duplicating "(n)ie"'s marker -
+; the CLI convention (unlike the GUI's) allows marking any letter, not just
+; the first.
+MSG_CLI_REKEY_STRENGTHEN_PROMPT
+Ten komputer jest znacznie szybszy niz ten, ktory zabezpieczyl ten sejf.\nWzmocnic teraz? [(t)ak/(n)ie/nigd(y) nie pytaj tutaj]
+;
+MSG_CLI_REKEY_SLOW_NOTICE
+%s: odblokowanie trwalo ~%lus; ten sejf byl skalibrowany dla szybszego sprzetu.\n
+;
+MSG_CLI_REKEY_LOWER_PROMPT
+Oslabic tutaj dla szybszego odblokowania? To ZMNIEJSZA bezpieczenstwo. [(t)ak/(n)ie]
+;
+MSG_CLI_CONFIRM_YES_PROMPT
+Wpisz 'tak' aby potwierdzic:
+;
+MSG_CLI_REKEYED
+%s: przeszyfrowano z %lu iteracjami\n
+;
+MSG_CLI_REKEY_FAILED
+%s: przeszyfrowanie nie powiodlo sie; sejf bez zmian\n
+;
+; --- CLI: CODE ---------------------------------------------------------
+;
+MSG_CLI_BAD_SECRET
+%s: nieprawidlowy lub pusty secret Base32\n
+;
+MSG_CLI_SECONDS_REMAINING
+(pozostalo %u sekund)\n
+;
+; --- CLI: CLOCK/SYNC/OFFSET/NUDGE ---------------------------------------
+;
+MSG_CLI_CLOCK_SYNCED
+zsynchronizowany (zielony)
+;
+MSG_CLI_CLOCK_MANUAL
+przesuniecie zastosowane (bursztynowy)
+;
+MSG_CLI_CLOCK_UNVERIFIED
+niezweryfikowany (czerwony)
+;
+MSG_CLI_CLOCK_OFFSET_LINE
+przesuniecie UTC : %+ld sekund (%+ld min)\n
+;
+MSG_CLI_CLOCK_STATUS_LINE
+status            : %s\n
+;
+MSG_CLI_CLOCK_CORRECTED_LINE
+skorygowano       : %04d-%02d-%02d %02d:%02d:%02d UTC\n
+;
+MSG_CLI_QUERYING
+Odpytywanie %s ...\n
+;
+MSG_CLI_SYNC_FAILED
+%s: synchronizacja SNTP nie powiodla sie (brak stosu TCP/IP lub brak odpowiedzi od %s)\n
+;
+MSG_CLI_OFFSET_SAVE_FAILED
+%s: nie mozna zapisac przesuniecia\n
+;
+; --- CLI: INIT -----------------------------------------------------------
+;
+MSG_CLI_INIT_PASS_PROMPT
+Nowa fraza haslo (pusta dla zawsze odblokowanego sejfu):
+;
+MSG_CLI_INIT_NO_TTY
+%s: INIT wymaga terminala interaktywnego (uzyj 'INIT --open' dla nieinteraktywnego, zawsze odblokowanego sejfu)\n
+;
+MSG_CONFIRM_PASSPHRASE
+Potwierdz fraze haslo:
+;
+MSG_CLI_PASS_MISMATCH
+%s: frazy haslo nie sa zgodne\n
+;
+MSG_CLI_INIT_NO_RNG
+%s: brak bezpiecznego zrodla losowosci dla zaszyfrowanego sejfu (Faza 4); utworz zawsze odblokowany sejf poleceniem 'INIT --open'\n
+;
+MSG_CLI_KDF_ITERATIONS
+%s: iteracje KDF = %lu\n
+;
+MSG_CLI_CREATED
+Utworzono sejf (%s) w %s\n
+;
+MSG_CLI_ALWAYS_UNLOCKED
+zawsze odblokowany
+;
+MSG_CLI_ENCRYPTED
+zaszyfrowany
+;
+; --- CLI: GUI forwarding (try_forward) ------------------------------------
+;
+MSG_CLI_GUI_LOCKED
+%s: sejf dzialajacego interfejsu graficznego jest zablokowany; odblokuj go najpierw tam\n
+;
+MSG_CLI_NO_ACCOUNT
+%s: brak konta pasujacego do '%s'\n
+;
+MSG_CLI_VAULT_FULL
+%s: sejf jest pelny (maks. 64 konta)\n
+;
+MSG_CLI_BAD_OTPURI
+%s: to nie jest poprawny URI otpauth://\n
+;
+MSG_CLI_GUI_SAVEFAIL
+%s: zastosowano w interfejsie graficznym, ale ponowny zapis nie powiodl sie\n
+;
+MSG_CLI_URI_TOO_LONG
+%s: URI tego konta jest zbyt dlugi, aby zakodowac go jako kod QR\n
+;
+MSG_CLI_GUI_UNKNOWN
+%s: dzialajacy interfejs graficzny nie mogl tego obsluzyc\n
+;
+; --- CLI: ADD --------------------------------------------------------------
+;
+MSG_CLI_PARSE_FAILED
+%s: nie mozna przetworzyc URI otpauth://\n
+;
+MSG_CLI_ADDED_NOISSUER
+dodano %s\n
+;
+MSG_CLI_BAD_BASE32
+%s: to nie wyglada na secret Base32\n
+;
+; --- CLI: SHOW / usage -----------------------------------------------------
+;
+MSG_CLI_NO_GUI
+%s: brak dzialajacego interfejsu graficznego do pokazania\n
+;
+MSG_CLI_TAGLINE
+%s - uwierzytelnianie TOTP/HOTP dla AmigaOS\n\n
+;
+MSG_CLI_ENCRYPTED_NOTE
+Zaszyfrowane sejfy pytaja o fraze haslo w terminalu.\n
+;
+; --- GUI: main menu (g_menu[]) ---------------------------------------------
+;
+MSG_GUI_MENU_PROJECT
+Projekt
+;
+MSG_GUI_QUIT
+Zakoncz
+;
+MSG_GUI_MENU_ACCOUNT
+Konto
+;
+MSG_GUI_MENU_ADD_CLIP
+Dodaj ze schowka
+;
+MSG_GUI_MENU_ADD_TYPE
+Dodaj (wpisz URI/secret)...
+;
+MSG_GUI_MENU_ADD_QR
+Dodaj z obrazu QR...
+;
+MSG_GUI_MENU_EDIT
+Edytuj zaznaczone...
+;
+MSG_GUI_MENU_COPY
+Kopiuj kod
+;
+MSG_GUI_MENU_SHOW_QR
+Pokaz kod QR...
+;
+MSG_GUI_MENU_REMOVE
+Usun zaznaczone...
+;
+; --- GUI: toolbar button mnemonics (LBL_*, see the underscore note above) -
+; REVIEWER: the '_' MUST stay the very first character of each string (the
+; code reads a fixed index, not "wherever the underscore is") - so the
+; mnemonic is always the first letter of whichever word you choose. The six
+; letters below (D/E/U/K/M/P) are distinct from each other.
+;
+MSG_GUI_BTN_ADD
+_Dodaj
+;
+MSG_GUI_BTN_EDIT
+_Edytuj
+;
+MSG_GUI_BTN_REMOVE
+_Usun
+;
+MSG_GUI_BTN_COPY
+_Kopiuj
+;
+MSG_GUI_BTN_NUDGE_DOWN
+_M -10s
+;
+MSG_GUI_BTN_NUDGE_UP
+_P +10s
+;
+; --- GUI: copy-code button's transient states (no mnemonic) ---------------
+;
+MSG_GUI_COPY_PLAIN
+Kopiuj
+;
+MSG_GUI_COPIED
+Skopiowano
+;
+; --- GUI: clock-status line --------------------------------------------
+;
+MSG_GUI_CLOCK_SYNCED
+zsynchronizowany
+;
+MSG_GUI_CLOCK_MANUAL
+reczny
+;
+MSG_GUI_CLOCK_UNVERIFIED
+niezweryfikowany
+;
+MSG_GUI_CLOCK_LINE_SHORT
+Zegar: %s
+;
+MSG_GUI_CLOCK_LINE_FULL
+Zegar: %s %s%lu:%02lu
+;
+; --- GUI: adaptive re-key (gui_maybe_rekey) -------------------------------
+;
+MSG_GUI_REKEY_STRENGTHEN_BODY
+Ten komputer jest znacznie szybszy niz ten, ktory zabezpieczyl ten sejf.\nWzmocnic teraz (przeszyfrowac z wieksza liczba iteracji PBKDF2)?
+;
+MSG_GUI_REKEY_STRENGTHEN_BTNS
+Wzmocnij|Nie teraz|Nigdy tutaj
+;
+MSG_GUI_REKEY_SLOW_BODY
+Odblokowanie trwalo okolo %lu sekund; ten sejf byl skalibrowany dla szybszego sprzetu.\nOslabic tutaj dla szybszego odblokowania? To ZMNIEJSZA bezpieczenstwo.
+;
+MSG_GUI_REKEY_LOWER_BTNS
+Oslab|Anuluj
+;
+MSG_GUI_REKEY_CONFIRM_BODY
+Naprawde zmniejszyc bezpieczenstwo tego sejfu?
+;
+MSG_GUI_REKEY_REDUCE_BTNS
+Zmniejsz|Anuluj
+;
+; --- GUI: add account (uri/secret, shared gui_add_uri/gui_add_secret) ----
+;
+MSG_GUI_VAULT_FULL
+Sejf jest pelny (maks. 64 konta).
+;
+; --- GUI: QR import (do_add_qr_impl) --------------------------------------
+;
+MSG_GUI_IMG_TOOBIG
+Ten obraz jest zbyt duzy, aby go zdekodowac.
+;
+MSG_GUI_QR_UNAVAIL
+Import QR wymaga datatypes.library.
+;
+MSG_GUI_IMG_NOMEM
+Za malo pamieci, aby zaladowac ten obraz.
+;
+MSG_GUI_IMG_READ_FAILED
+Nie mozna odczytac tego obrazu (wymaga picture.datatype).
+;
+MSG_GUI_TITLE_DECODING
+%s - Dekodowanie obrazu QR...
+;
+MSG_GUI_QR_FILE_TITLE
+Wybierz obraz QR
+;
+; --- GUI: unlock prompt (passphrase_request title) ------------------------
+;
+MSG_GUI_TITLE_UNLOCK
+%s - Odblokuj
+;
+; --- GUI: first-run vault creation -----------------------------------------
+;
+MSG_GUI_CHOOSE_LOCATION
+Wybierz, gdzie przechowywac sejf
+;
+MSG_GUI_WELCOME
+Witamy w %s!\n\nNie ma jeszcze sejfu - zostanie utworzony w\n%s
+;
+MSG_GUI_CREATE_VAULT_BTNS_DEFER
+Utworz sejf...|Nie teraz
+;
+MSG_GUI_CREATE_VAULT_BTNS_QUIT
+Utworz sejf...|Zakoncz
+;
+MSG_GUI_NEW_PASS_PROMPT
+Nowa fraza haslo (pusta = zawsze odblokowany):
+;
+MSG_GUI_STORE_UNENCRYPTED_BODY
+Zapisac sejf BEZ SZYFROWANIA?\n\nBez frazy haslo nie ma ochrony danych w spoczynku:\nkazdy z dostepem do pliku moze odczytac twoje secrety.\n(Fraze haslo mozna dodac pozniej.)
+;
+MSG_GUI_STORE_UNENCRYPTED_BTNS
+Zapisz bez szyfrowania|Wroc
+;
+MSG_GUI_PASS_MISMATCH
+Frazy haslo nie sa zgodne.
+;
+MSG_GUI_TRY_AGAIN
+Sprobuj ponownie
+;
+MSG_GUI_NO_RNG_BODY
+Brak bezpiecznego zrodla losowosci, wiec\nzaszyfrowanego sejfu nie mozna bezpiecznie utworzyc.
+;
+MSG_GUI_CANNOT_WRITE_BODY
+Nie mozna zapisac sejfu do\n%s\n\nWybrac inna lokalizacje?
+;
+MSG_GUI_CHOOSE_LOCATION_BTNS
+Wybierz lokalizacje...|Zakoncz
+;
+MSG_GUI_CREATE_FAILED
+Tworzenie sejfu nie powiodlo sie.
+;
+; --- GUI: unlock loop (gui_open_vault) --------------------------------
+;
+MSG_GUI_ENTER_PASS
+Wprowadz fraze haslo:
+;
+MSG_GUI_WRONG_PASS
+Bledna fraza haslo - sprobuj ponownie:
+;
+MSG_GUI_CANNOT_OPEN_PRINTF
+%s: nie mozna otworzyc sejfu (%ld)\n
+;
+; --- GUI: add account form (uri_request) ------------------------------
+;
+MSG_GUI_URI_PASTE_LABEL
+Wklej lub wpisz URI otpauth:// albo secret Base32:
+;
+MSG_GUI_TITLE_ADD_ACCOUNT
+%s - Dodaj konto
+;
+; --- GUI: edit account form (edit_request) ------------------------------
+;
+MSG_GUI_LABEL_ISSUER
+Wystawca:
+;
+MSG_GUI_LABEL_LABEL
+Etykieta:
+;
+MSG_GUI_LABEL_DIGITS
+Cyfry:
+;
+MSG_GUI_LABEL_PERIOD
+Interwal:
+;
+MSG_GUI_TITLE_EDIT_ACCOUNT
+%s - Edytuj konto
+;
+MSG_GUI_LABEL_REQUIRED_STEAM
+Etykieta jest wymagana.
+;
+MSG_GUI_LABEL_REQUIRED_FULL
+Etykieta jest wymagana; cyfry musza byc 6-8, interwal 1-86400.
+;
+; --- GUI: QR export display (qr_display) --------------------------------
+;
+MSG_GUI_QR_BUILD_FAILED
+Nie mozna utworzyc kodu QR dla tego konta.
+;
+MSG_GUI_QR_TOO_LONG
+URI tego konta jest zbyt dlugi, aby zakodowac go jako kod QR.
+;
+MSG_GUI_QR_DISPLAY_FAILED
+Nie mozna utworzyc widoku QR.
+;
+MSG_GUI_QR_WINDOW_FAILED
+Nie mozna otworzyc okna QR.
+;
+MSG_GUI_TITLE_QR_ISSUER
+%s - QR: %s:%s
+;
+MSG_GUI_TITLE_QR_NOISSUER
+%s - QR: %s
+;
+; --- GUI: bare-secret add form (secret_meta_request) ----------------------
+;
+MSG_GUI_SECRET_META_HINT
+Sam secret nie ma nazwy - dla kogo jest to konto?
+;
+MSG_GUI_ADD_BTN
+Dodaj
+;
+MSG_GUI_ISSUER_LABEL_REQUIRED
+Wystawca i etykieta sa oba wymagane.
+;
+; --- GUI: commodity broker (Exchange) -------------------------------------
+;
+MSG_GUI_CX_DESCR
+Uwierzytelnianie TOTP/HOTP
+;
+; --- GUI: remove confirmation ---------------------------------------------
+;
+MSG_GUI_REMOVE_CONFIRM
+Usunac %s?
+;
+MSG_GUI_REMOVE_BTNS
+Usun|Anuluj
+;
+; --- GUI: startup failures (open_libs/main) -------------------------------
+;
+MSG_GUI_NEEDS_INTUITION
+wymaga intuition.library / utility.library v37+ (OS 2.04)
+;
+MSG_GUI_NEEDS_REACTION
+wymaga klas ReAction/ClassAct (window/layout/listbrowser/fuelgauge/button)
+;
+MSG_GUI_WINDOW_CREATE_FAILED
+%s: nie mozna utworzyc okna\n
+;
+MSG_GUI_WINDOW_OPEN_FAILED
+%s: nie mozna otworzyc okna\n

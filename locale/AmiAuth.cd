@@ -25,10 +25,17 @@
 ; reused by the GUI for its own "%s: %s\n" library-load failure).
 ;
 ; A leading underscore in a button label (MSG_GUI_BTN_*, e.g. "_Add") marks
-; the keyboard mnemonic letter - window.class reads it back out of the
-; string at runtime (see the LBL_* comment in src/gui/main.c), so a
-; translation MUST keep exactly one '_' immediately before an ASCII letter,
-; ideally one that doesn't collide with another button's mnemonic.
+; the keyboard mnemonic letter - the WMHI_VANILLAKEY handler reads it back
+; out of the string at runtime via a HARDCODED index (LBL_ADD[1], see
+; src/gui/main.c), not by searching for '_' wherever it happens to be. This
+; means the '_' MUST be the very FIRST character of the string (index 0),
+; immediately followed by an ASCII letter (index 1) - a translation can
+; choose whichever word it likes for the button (the mnemonic is always
+; that word's first letter, not a letter of your choosing mid-word), and
+; the six mnemonics used together in the toolbar must be pairwise distinct.
+; Get this wrong (underscore not at the very start) and the code silently
+; reads whatever character actually sits at index 1 instead - not an error,
+; just a dead or wrong shortcut. `tools/check_catalog.py` enforces this.
 ;
 ; Same idea for the CLI's three re-key confirmation prompts
 ; (MSG_CLI_REKEY_STRENGTHEN_PROMPT/MSG_CLI_REKEY_LOWER_PROMPT): the letter

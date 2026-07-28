@@ -2,7 +2,9 @@
 """check_catalog.py - structural sanity checks for locale/AmiAuth.cd and any
 .ct translation, catching the class of bug a translator can introduce without
 ever reading src/cli/main.c or src/gui/main.c: a dropped/reordered printf
-placeholder, a missing button mnemonic, or two shortcuts sharing one letter.
+placeholder, a missing/misplaced button mnemonic, two shortcuts sharing one
+letter, or a file accidentally saved as UTF-8 instead of the Latin-1 FlexCat
+and AmigaOS expect.
 
 This is NOT a translation-quality check - wording/tone/register still needs a
 human fluent in the language. It only checks structure: the same mechanical
@@ -12,12 +14,18 @@ prompt displays and what it actually accepts.
 
 Usage:
     tools/check_catalog.py locale/AmiAuth.cd [translation.ct ...]
+    tools/check_catalog.py --fix-encoding FILE [FILE ...]
 
-The first argument is always the .cd (the English source of truth, and the
-baseline every .ct is checked against); every following argument is a .ct
-translation. Exits 1 if any FAIL-level issue is found in any file; WARN-level
-issues (see MSG_GUI_BTN_*/MSG_CLI_REKEY_STRENGTHEN_PROMPT below) are printed
-but don't fail the build - the code has a documented runtime fallback for them.
+The first form's first argument is always the .cd (the English source of
+truth, and the baseline every .ct is checked against); every following
+argument is a .ct translation. Exits 1 if any FAIL-level issue is found in
+any file; WARN-level issues (see MSG_GUI_BTN_*/MSG_CLI_REKEY_STRENGTHEN_PROMPT
+below) are printed but don't fail the build - the code has a documented
+runtime fallback for them.
+
+The second form re-saves the given file(s) as Latin-1 if check_encoding()
+would flag them - use this instead of a hand-rolled one-liner (see
+fix_encoding()'s docstring for why a naive one is dangerous).
 
 Parsing note: this assumes THIS repo's own .cd/.ct convention - one line of
 body text per entry, terminated by a lone ';' line (see locale/AmiAuth.cd) -
@@ -70,6 +78,46 @@ def parse_entries(path):
     return entries
 
 
+def check_encoding(label, path, fails):
+    """FlexCat and AmigaOS expect Latin-1 (ISO-8859-1), not UTF-8 - an editor
+    that defaults to UTF-8 will happily save e.g. 'ü' as the two bytes 0xC3
+    0xBC instead of the single Latin-1 byte 0xFC, which FlexCat either
+    rejects outright (for the .cd's built-in text) or silently mis-renders
+    (for a .ct translation - AmigaOS displays each byte as its own Latin-1
+    character, turning one accented letter into two garbled ones).
+
+    Heuristic: real Latin-1 prose with high-bit bytes essentially never also
+    decodes as valid UTF-8 (an accented letter is usually followed by an
+    ordinary ASCII letter, which breaks UTF-8's continuation-byte rules) -
+    so "the raw bytes contain a high bit AND decode cleanly as UTF-8" is a
+    reliable (not mathematically airtight, but reliable in practice for
+    natural-language text) signal that the file is accidentally UTF-8."""
+    with open(path, 'rb') as f:
+        raw = f.read()
+    if not any(b >= 0x80 for b in raw):
+        return   # pure ASCII: no Latin-1-vs-UTF-8 question to ask
+    try:
+        raw.decode('utf-8')
+    except UnicodeDecodeError:
+        return   # doesn't parse as UTF-8 - consistent with real Latin-1
+    fails.append(f"{label}: file has non-ASCII bytes that also decode as "
+                 f"valid UTF-8 - it's almost certainly saved as UTF-8, not "
+                 f"the Latin-1/ISO-8859-1 FlexCat and AmigaOS expect. Fix "
+                 f"with: tools/check_catalog.py --fix-encoding {path}")
+
+
+def fix_encoding(path):
+    """Re-save `path` as Latin-1 if it's currently (accidentally) UTF-8.
+    Reads the WHOLE file into memory before opening it for writing - opening
+    the same path in 'wb' mode truncates it immediately, so a naive
+    read-and-write-in-one-expression one-liner destroys the file before the
+    read ever happens. Don't inline this as a shell one-liner; call this."""
+    with open(path, encoding='utf-8') as f:
+        text = f.read()
+    with open(path, 'wb') as f:
+        f.write(text.encode('latin-1'))
+
+
 def placeholders(text):
     return PLACEHOLDER_RE.findall(text)
 
@@ -99,6 +147,17 @@ def check_mnemonics(label, entries, fails, warns):
                          f"(need exactly 1): {text!r}")
             continue
         pos = marks[0]
+        # src/gui/main.c's WMHI_VANILLAKEY handler reads LBL_ADD[1] etc. - a
+        # HARDCODED index, not "find the underscore" - so the '_' MUST be
+        # the very first character (index 0) or the wrong letter (whatever
+        # happens to sit at index 1) gets matched instead, silently.
+        if pos != 0:
+            fails.append(f"{label}: {name}'s '_' is at position {pos}, not the "
+                         f"start of the string - the code always reads index 1 "
+                         f"as the shortcut letter regardless of where '_' "
+                         f"actually is, so this silently marks the wrong "
+                         f"letter (or none): {text!r}")
+            continue
         if pos + 1 >= len(text) or not text[pos + 1].isalpha():
             fails.append(f"{label}: {name}'s '_' isn't followed by a letter: {text!r}")
             continue
@@ -151,7 +210,16 @@ def check_placeholders(label, source, translation, fails):
 
 def main(argv):
     if len(argv) < 2:
-        sys.exit(f"usage: {argv[0]} locale/AmiAuth.cd [translation.ct ...]")
+        sys.exit(f"usage: {argv[0]} locale/AmiAuth.cd [translation.ct ...]\n"
+                 f"       {argv[0]} --fix-encoding FILE [FILE ...]")
+
+    if argv[1] == '--fix-encoding':
+        if len(argv) < 3:
+            sys.exit(f"usage: {argv[0]} --fix-encoding FILE [FILE ...]")
+        for path in argv[2:]:
+            fix_encoding(path)
+            print(f"re-saved as Latin-1: {path}")
+        return 0
 
     cd_path, ct_paths = argv[1], argv[2:]
     source = parse_entries(cd_path)
@@ -159,10 +227,12 @@ def main(argv):
         sys.exit(f"{cd_path}: parsed zero entries - check the file/parser")
 
     fails, warns = [], []
+    check_encoding(cd_path, cd_path, fails)
     check_mnemonics(cd_path, source, fails, warns)
     check_rekey_prompts(cd_path, source, fails, warns)
 
     for ct_path in ct_paths:
+        check_encoding(ct_path, ct_path, fails)
         entries = parse_entries(ct_path)
         check_mnemonics(ct_path, entries, fails, warns)
         check_rekey_prompts(ct_path, entries, fails, warns)

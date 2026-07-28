@@ -57,10 +57,16 @@ everywhere.
 **GUI button mnemonics:** the account-list toolbar's button labels (`_Add`,
 `_Edit`, `_Remove`, `_Copy`, `_D -10s`, `_U +10s`) carry a keyboard shortcut
 as a leading underscore before one letter — AmiAuth reads that letter back
-out of the string at runtime. When translating these, keep exactly one `_`
-immediately before an ASCII letter (ideally one that doesn't collide with
-another button's shortcut); dropping it, or moving it in front of a digit or
-symbol, silently breaks that button's keyboard shortcut.
+out of the string at runtime, from a **fixed position**, not by searching
+for the underscore. That means the `_` must be the very *first* character
+of the string, immediately followed by an ASCII letter — you can pick
+whichever translated word you like for the button (the shortcut is always
+that word's first letter, not a letter of your choosing further in), but
+you can't mark a letter in the middle of a word the way the CLI re-key
+prompts below let you. Getting this wrong (underscore missing, doubled, or
+not at the very start) silently breaks or mismarks that button's shortcut
+rather than erroring — `tools/check_catalog.py` (`make check-catalog`)
+checks for it.
 
 **CLI re-key prompts:** the three interactive re-key confirmations (offered
 after unlocking a vault on much faster/slower hardware than it was tuned
@@ -77,6 +83,37 @@ each other) and one `'...'`-quoted word. If the accept and never-ask letters
 do end up the same, AmiAuth degrades safely rather than misreading your
 answer: the never-ask shortcut (which writes a persisted preference) simply
 becomes unreachable, it never fires on a "yes" by mistake.
+
+## Draft translations awaiting review
+
+[`locale/drafts/`](https://github.com/sidick/amiauth/tree/main/locale/drafts)
+in the source repository holds **machine-generated first-pass translations**
+— a starting point for a fluent speaker to review and correct, not something
+to install as-is. They exist so contributing a translation can start from
+"fix this" rather than "write 145 strings from a blank file." Currently
+drafted: German
+([`deutsch.ct`](https://github.com/sidick/amiauth/blob/main/locale/drafts/deutsch.ct)),
+French
+([`francais.ct`](https://github.com/sidick/amiauth/blob/main/locale/drafts/francais.ct)),
+Italian
+([`italiano.ct`](https://github.com/sidick/amiauth/blob/main/locale/drafts/italiano.ct)),
+and Polish
+([`polski.ct`](https://github.com/sidick/amiauth/blob/main/locale/drafts/polski.ct)).
+
+None of these are wired into any build — they can't end up in a release, or
+get picked up by AmigaOS's catalog search, just by existing in the repo.
+Every draft has passed `tools/check_catalog.py`'s structural checks
+(placeholders, button mnemonics, re-key prompt markers, file encoding — see
+above), so what's left to fix is wording, tone, and register, not mechanics.
+Polish specifically drops its usual diacritics (`a`/`c`/`e`/`l`/`n`/`o`/`s`/`z`
+instead of the accented forms) — not a stylistic choice, but because the
+catalog format's `##codeset` field only supports the Latin-1 character set,
+which contains just one of the nine Polish diacritics.
+
+To help: pick a draft, read it against `locale/AmiAuth.cd` (the English
+source of truth), fix what needs fixing, build and test it locally (see
+[Contributing a translation](#contributing-a-translation) above), then open
+a pull request moving it out of `locale/drafts/`.
 
 ## Baseline
 
