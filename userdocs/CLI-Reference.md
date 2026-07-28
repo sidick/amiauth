@@ -13,6 +13,7 @@ type `AmiAuth ?` for the template, `AmiAuth HELP` for the command list.
 | [`ADD`](#add) | Import an account (`otpauth://` URI or bare secret) | Yes |
 | [`LIST`](#list) | List account names | Yes |
 | [`GET`](#get) | Print the current code for an account | Yes |
+| [`QR`](#qr) | Print an account as an ASCII-art QR code | Yes |
 | [`REMOVE`](#remove) | Delete an account | Yes |
 | [`SHOW`](#show) | Pop the running GUI's window to the front | No |
 | [`CLOCK`](#clock) | Report the UTC offset and clock trust state | No |
@@ -21,7 +22,7 @@ type `AmiAuth ?` for the template, `AmiAuth HELP` for the command list.
 | [`NUDGE`](#nudge) | Adjust the current UTC offset by a relative amount | No |
 | [`HELP`](#help) | Print the usage summary | No |
 
-When the GUI is running as a resident commodity, `ADD`, `LIST`, `GET`,
+When the GUI is running as a resident commodity, `ADD`, `LIST`, `GET`, `QR`,
 `REMOVE` and `SHOW` are **forwarded to it** automatically — see
 [Working with a running GUI](#working-with-a-running-gui) below.
 
@@ -138,6 +139,17 @@ For **HOTP** accounts, `GET` uses the stored counter, then increments it and
 saves the vault, as RFC 4226 requires — each `GET` produces the next code in
 the sequence.
 
+### QR
+
+    AmiAuth QR <account>
+
+Prints the account's `otpauth://` enrolment as an ASCII-art QR code, two
+characters per module so it reads roughly square on a typical character-cell
+console — scan it with a phone's authenticator app to add the same account
+there. Same account-name matching as `GET`. See [Managing Accounts →
+Exporting to a phone](Managing-Accounts.md#exporting-to-a-phone) for the GUI
+equivalent (*Account → Show QR code…*).
+
 ### REMOVE
 
     AmiAuth REMOVE <account>
@@ -244,8 +256,8 @@ the offer with the `NOREKEY` switch, or permanently with
 ## Working with a running GUI
 
 On AmigaOS, if `AmiAuthGUI` is resident (see [Commodity and Tooltypes](Commodity-and-Tooltypes.md)), the
-CLI does not open the vault itself: `ADD`, `LIST`, `GET`, `REMOVE` and `SHOW`
-are forwarded to the GUI over its public `AmiAuth` message port, and the GUI
+CLI does not open the vault itself: `ADD`, `LIST`, `GET`, `QR`, `REMOVE` and
+`SHOW` are forwarded to the GUI over its public `AmiAuth` message port, and the GUI
 answers from its already-unlocked vault. You get your code with **no second
 passphrase prompt**, and there is never a conflict between two processes
 writing one vault file.

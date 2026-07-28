@@ -25,8 +25,10 @@ enum {
     AAP_SHOW,       /* pop the GUI window to the front                        */
     AAP_ADD_SECRET, /* arg = "issuer\nlabel\nbase32secret" (bare-secret ADD;
                      * issuer may be empty, the other two must not be)        */
-    AAP_ADD_SECRET_STEAM  /* same arg shape; builds a Steam Guard account
+    AAP_ADD_SECRET_STEAM, /* same arg shape; builds a Steam Guard account
                            * instead of an ordinary TOTP one (#44)            */
+    AAP_QR          /* arg = account name; reply buf = ASCII-art QR of the
+                     * account's otpauth:// URI (#45)                        */
 };
 
 /* Result codes (aar_Result / *result). */
@@ -36,7 +38,8 @@ enum {
     AAR_NOTFOUND,   /* no account matched                                     */
     AAR_FULL,       /* vault is full                                          */
     AAR_BADARG,     /* e.g. not a valid otpauth:// URI                        */
-    AAR_SAVEFAIL    /* mutation applied in memory but the re-save failed      */
+    AAR_SAVEFAIL,   /* mutation applied in memory but the re-save failed      */
+    AAR_TOOLONG     /* AAP_QR: the URI doesn't fit even at the QR version cap */
 };
 
 /* Try to forward a command to a resident GUI. Returns 0 if a GUI handled it

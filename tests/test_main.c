@@ -10,16 +10,19 @@ void run_hmac_tests(void);
 void run_otp_tests(void);
 void run_steamguard_tests(void);
 void run_base32_tests(void);
+void run_base32_encode_tests(void);
 void run_chacha20_tests(void);
 void run_pbkdf2_tests(void);
 void run_drbg_tests(void);
 void run_kdf_tests(void);
 void run_uri_tests(void);
 void run_bare_secret_tests(void);
+void run_uri_build_tests(void);
 void run_vault_tests(void);
 void run_clock_tests(void);
 void run_prefs_tests(void);
 void run_qr_tests(void);
+void run_qr_encode_tests(void);
 
 int main(void)
 {
@@ -30,16 +33,19 @@ int main(void)
     run_otp_tests();
     run_steamguard_tests();
     run_base32_tests();
+    run_base32_encode_tests();
     run_chacha20_tests();
     run_pbkdf2_tests();
     run_drbg_tests();
     run_kdf_tests();
     run_uri_tests();
     run_bare_secret_tests();
+    run_uri_build_tests();
     run_vault_tests();
     run_clock_tests();
     run_prefs_tests();
     run_qr_tests();
+    run_qr_encode_tests();
 
     printf("\n%d passed, %d failed, %d pending\n",
            g_test.passed, g_test.failed, g_test.pending);

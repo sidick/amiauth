@@ -34,3 +34,39 @@ void run_base32_tests(void)
     /* Output exceeding the buffer is an error, not a truncation. */
     TEST_CHECK(base32_decode("MZXW6YTBOI======", out, 3) == -1);
 }
+
+/* base32_encode (#45, QR export): RFC 4648 vectors, uppercase, no padding. */
+void run_base32_encode_tests(void)
+{
+    char buf[64];
+
+    TEST_CHECK(base32_encode((const uint8_t *)"f", 1, buf, sizeof(buf)) == 2);
+    TEST_CHECK(strcmp(buf, "MY") == 0);
+
+    TEST_CHECK(base32_encode((const uint8_t *)"foobar", 6, buf, sizeof(buf)) == 10);
+    TEST_CHECK(strcmp(buf, "MZXW6YTBOI") == 0);
+
+    /* Zero-length input encodes to an empty string. */
+    TEST_CHECK(base32_encode((const uint8_t *)"", 0, buf, sizeof(buf)) == 0);
+    TEST_CHECK(buf[0] == '\0');
+
+    /* Round-trip through decode for every byte value 0-255, in one buffer. */
+    {
+        uint8_t raw[256];
+        uint8_t back[256];
+        char enc[512];
+        int i, n;
+        for (i = 0; i < 256; i++) raw[i] = (uint8_t)i;
+        n = base32_encode(raw, sizeof(raw), enc, sizeof(enc));
+        TEST_CHECK(n > 0);
+        TEST_CHECK(base32_decode(enc, back, sizeof(back)) == 256);
+        TEST_CHECK(memcmp(raw, back, 256) == 0);
+    }
+
+    /* Too-small buffer is an error, not a truncation. */
+    TEST_CHECK(base32_encode((const uint8_t *)"foobar", 6, buf, 4) == -1);
+
+    /* NULL arguments. */
+    TEST_CHECK(base32_encode(NULL, 1, buf, sizeof(buf)) == -1);
+    TEST_CHECK(base32_encode((const uint8_t *)"f", 1, NULL, sizeof(buf)) == -1);
+}

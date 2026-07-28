@@ -70,12 +70,17 @@ Three ways, all under the **Account** menu:
   onto the window** from Workbench. See [Managing Accounts](Managing-Accounts.md) for details and
   requirements.
 
-## Editing and removing
+## Editing, exporting and removing
 
 - **Edit selected…** opens a requester for the **issuer**, **label**,
   **digits** (6–8) and **period** (1–86400 s). The label is required. The
   secret and account type are deliberately not editable — re-add the account
   if the secret changes.
+- **Show QR code…** opens a window with the selected account's `otpauth://`
+  URI rendered as a QR code, for a phone's authenticator app to scan — the
+  export counterpart to *Add from QR image…*. Just a display: close it with
+  its close gadget or Esc. See [Managing Accounts](Managing-Accounts.md#exporting-to-a-phone)
+  for the CLI equivalent.
 - **Remove selected…** asks for confirmation, then deletes the account and
   saves the vault. There is no undo.
 
@@ -89,6 +94,7 @@ Three ways, all under the **Account** menu:
 | | Add from QR image… | I |
 | | Edit selected… | E |
 | | Copy code | C |
+| | Show QR code… | S |
 | | Remove selected… | R |
 
 (Standard Right-Amiga menu shortcuts — hold Right-Amiga and press the letter;

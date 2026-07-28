@@ -64,6 +64,23 @@ runs on-Amiga using the bundled quirc decoder — the image never leaves your
 machine. A busy pointer shows while decoding; clear, screen-sized screenshots
 decode most reliably.
 
+## Exporting to a phone
+
+To add an AmiAuth account to a phone authenticator app too (see "One secret,
+two devices" below), AmiAuth can render the enrolment as a QR code — the
+reverse of "From a QR image" above:
+
+- **GUI:** select an account, then *Account → Show QR code…* opens a window
+  with the code; scan it with the phone app's *"scan a QR code"* enrolment
+  option. Close the window (its close gadget, or Esc) when done.
+- **CLI:** `AmiAuth QR <account>` prints the same code as ASCII block art to
+  the terminal — useful over a serial console or a remote shell, wherever a
+  phone camera can see the screen but a picture file isn't handy.
+
+There's no live camera scanning the other way (a classic Amiga has no
+camera) — this is display/print only, generated on-Amiga from the account's
+stored secret. Nothing is sent over a network.
+
 ## Steam Guard
 
 Steam's own mobile authenticator is a TOTP variant: the same HMAC-SHA1/30-second
@@ -134,7 +151,10 @@ backup ([Vault and Passphrases](Vault-and-Passphrases.md)) — before removing i
 
 - **One secret, two devices:** at enrolment you can add the same secret to
   AmiAuth *and* a phone app — both generate the same codes. A good hedge while
-  you decide how much you trust a 30-year-old computer with your logins.
+  you decide how much you trust a 30-year-old computer with your logins. If
+  you only added it to AmiAuth, [Exporting to a phone](#exporting-to-a-phone)
+  above adds the phone app after the fact, from AmiAuth's own copy of the
+  secret.
 - **Keep recovery codes** offline regardless. An authenticator — any
   authenticator — can be lost.
 - **Migrating from another app:** if you can export `otpauth://` URIs (or

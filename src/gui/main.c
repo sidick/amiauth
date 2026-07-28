@@ -63,6 +63,8 @@
 #include "prefs.h"
 #include "entropy.h"                /* amiga_random (m68k build) */
 #include "qr.h"                     /* qr_decode_gray (portable QR decoder) */
+#include "qrencode.h"                /* qr_encode_uri (#45, QR export) */
+#include "uri.h"                     /* otpauth_build (#45, QR export) */
 #include "pbkdf2.h"                 /* first-run KDF calibration probe */
 #include "../version.h"
 
@@ -153,7 +155,7 @@ enum { PWID_OK = 1, PWID_CANCEL, PWID_STR };   /* modal-requester gadgets */
 enum { EDID_ISSUER = 1, EDID_LABEL, EDID_DIGITS, EDID_PERIOD, EDID_OK, EDID_CANCEL };  /* edit form */
 
 /* menu / button command ids */
-enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_ADD_QR, CMD_EDIT, CMD_COPY, CMD_REMOVE, CMD_QUIT };
+enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_ADD_QR, CMD_EDIT, CMD_COPY, CMD_SHOW_QR, CMD_REMOVE, CMD_QUIT };
 
 /* Commodity hotkey id (CxMsg id for the CX_POPKEY input event). */
 #define EVT_HOTKEY 1
@@ -213,6 +215,7 @@ static struct NewMenu g_menu[] = {
     { NM_ITEM,  (STRPTR)"Add from QR image...",(STRPTR)"I", 0, 0, (APTR)CMD_ADD_QR },
     { NM_ITEM,  (STRPTR)"Edit selected...",    (STRPTR)"E", 0, 0, (APTR)CMD_EDIT },
     { NM_ITEM,  (STRPTR)"Copy code",           (STRPTR)"C", 0, 0, (APTR)CMD_COPY },
+    { NM_ITEM,  (STRPTR)"Show QR code...",     (STRPTR)"S", 0, 0, (APTR)CMD_SHOW_QR },
     { NM_ITEM,  NM_BARLABEL,       NULL,        0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Remove selected...",  (STRPTR)"R", 0, 0, (APTR)CMD_REMOVE },
     { NM_END,   NULL, NULL, 0, 0, NULL }
@@ -1280,6 +1283,134 @@ static int edit_request(otp_account *acct)
     return done == 1 ? 1 : 0;
 }
 
+/* QR pixel scale: modules-per-pixel edge length. 4px keeps a version-15 (the
+ * encoder's cap, see qrencode.h) code at 308x308px -- comfortably scannable,
+ * reasonable on any classic screen. */
+#define QR_DISPLAY_SCALE 4
+
+/* Paint the module grid into `qrobj`'s laid-out bounds within `win`'s
+ * RastPort, same technique as led_draw(): read the gadget's LeftEdge/TopEdge/
+ * Width/Height once it's laid out, draw straight into the window (no imagery
+ * of its own). Safe to call repeatedly (e.g. on every event, to survive an
+ * expose window.class doesn't know to repaint for us). */
+static void qr_draw(struct Window *win, Object *qrobj,
+                    const uint8_t *modules, int size)
+{
+    struct Gadget *g = (struct Gadget *)qrobj;
+    struct RastPort *rp = win->RPort;
+    LONG x0, y0, mx, my;
+    if (!GfxBase || !qrobj || size <= 0) return;
+    if (g->Width < size * QR_DISPLAY_SCALE || g->Height < size * QR_DISPLAY_SCALE)
+        return;                                     /* not laid out yet */
+    x0 = g->LeftEdge;
+    y0 = g->TopEdge;
+    SetAPen(rp, (ULONG)g_shinepen);                  /* light quiet zone / background */
+    RectFill(rp, x0, y0, x0 + size * QR_DISPLAY_SCALE - 1, y0 + size * QR_DISPLAY_SCALE - 1);
+    SetAPen(rp, (ULONG)g_shadowpen);                 /* dark modules */
+    for (my = 0; my < size; my++) {
+        for (mx = 0; mx < size; mx++) {
+            if (!modules[my * size + mx]) continue;
+            RectFill(rp, x0 + mx * QR_DISPLAY_SCALE, y0 + my * QR_DISPLAY_SCALE,
+                     x0 + (mx + 1) * QR_DISPLAY_SCALE - 1, y0 + (my + 1) * QR_DISPLAY_SCALE - 1);
+        }
+    }
+}
+
+/* Show `acct`'s otpauth:// URI as an on-screen QR code for a phone to scan
+ * (#45, the export counterpart to "Add from QR image..."). Pure display: a
+ * Close gadget (top-left, standard) is the only way out, no OK/Cancel --
+ * there is nothing to confirm. Returns once the window is dismissed.
+ *
+ * The encode itself (qr_encode_uri) can take a noticeable moment on real
+ * 68k hardware - confirmed on-target via Copperline - which is exactly why
+ * qrencode.c fixes the mask instead of using qrcodegen_Mask_AUTO's 8-way
+ * search; do not reintroduce AUTO here without re-measuring on real/emulated
+ * 68k, not just the host build (host is fast enough to hide the cost). */
+static void qr_display(struct Window *parent, const otp_account *acct)
+{
+    static uint8_t modules[QR_ENC_MAX_MODULES * QR_ENC_MAX_MODULES];
+    static char uri[512];
+    static char title[OTP_MAX_ISSUER + OTP_MAX_LABEL + 32];
+    Object *win, *layoutobj, *qrobj;
+    struct Window *w;
+    ULONG sig = 0;
+    int size = 0;
+    int done = -1;
+
+    if (otpauth_build(acct, uri, sizeof(uri)) != 0) {
+        gui_requester(parent, "Could not build a QR code for this account.", "OK", NULL);
+        return;
+    }
+    if (qr_encode_uri(uri, modules, &size) != QRENC_OK) {
+        gui_requester(parent,
+            "This account's URI is too long to encode as a QR code.", "OK", NULL);
+        return;
+    }
+
+    if (acct->issuer[0]) sprintf(title, "AmiAuth - QR: %s:%s", acct->issuer, acct->label);
+    else                 sprintf(title, "AmiAuth - QR: %s", acct->label);
+
+    qrobj = NewObject(NULL, (STRPTR)"button.gadget",
+        GA_ReadOnly, TRUE, GA_Text, (ULONG)" ", TAG_END);
+    if (!qrobj) {
+        gui_requester(parent, "Could not build the QR display.", "OK", NULL);
+        return;
+    }
+    layoutobj = NewObject(LAYOUT_GetClass(), NULL,
+        LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
+        LAYOUT_SpaceOuter,  TRUE,
+        LAYOUT_AddChild, (ULONG)qrobj,
+        CHILD_MinWidth,  size * QR_DISPLAY_SCALE,
+        CHILD_MinHeight, size * QR_DISPLAY_SCALE,
+        TAG_END);
+    if (!layoutobj) {
+        DisposeObject(qrobj);
+        gui_requester(parent, "Could not build the QR display.", "OK", NULL);
+        return;
+    }
+    win = NewObject(WINDOW_GetClass(), NULL,
+        WA_Title,        (ULONG)title,
+        WA_Activate,     TRUE,
+        WA_CloseGadget,  TRUE,
+        WA_DragBar,      TRUE,
+        WA_DepthGadget,  TRUE,
+        WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_VANILLAKEY,
+        WINDOW_Position, WPOS_CENTERSCREEN,
+        WINDOW_Layout,   (ULONG)layoutobj,
+        TAG_END);
+    if (!win) {
+        DisposeObject(layoutobj);
+        gui_requester(parent, "Could not open the QR window.", "OK", NULL);
+        return;
+    }
+
+    w = (struct Window *)DoMethod(win, WM_OPEN, NULL);
+    if (!w) {
+        DisposeObject(win);
+        gui_requester(parent, "Could not open the QR window.", "OK", NULL);
+        return;
+    }
+    GetAttr(WINDOW_SigMask, win, &sig);
+
+    while (done < 0) {
+        ULONG got = Wait(sig | SIGBREAKF_CTRL_C);
+        ULONG r;
+        UWORD code;
+        if (got & SIGBREAKF_CTRL_C) { done = 0; break; }
+        while ((r = DoMethod(win, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
+            switch (r & WMHI_CLASSMASK) {
+                case WMHI_CLOSEWINDOW: done = 0; break;
+                case WMHI_VANILLAKEY:  if (code == 0x1B) done = 0; break;
+            }
+            if (done >= 0) break;
+        }
+        qr_draw(w, qrobj, modules, size);   /* survives expose; cheap to repeat */
+    }
+
+    DoMethod(win, WM_CLOSE, NULL);
+    DisposeObject(win);
+}
+
 /* Modal form asking for the Issuer/Label a bare secret doesn't carry (#83).
  * Both are required, matching the CLI's ISSUER/K LABEL/K. Returns 1 with the
  * fields filled, 0 on cancel. Needs string.gadget; returns 0 if unavailable. */
@@ -1944,6 +2075,24 @@ int main(int argc, char **argv)
                         }
                         break;
                     }
+                    case AAP_QR: {
+                        int idx;
+                        if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
+                        idx = gui_find_account(&v, arg);
+                        if (idx < 0) { req->aar_Result = AAR_NOTFOUND; break; }
+                        {
+                            static char qruri[512];
+                            static uint8_t qrmodules[QR_ENC_MAX_MODULES * QR_ENC_MAX_MODULES];
+                            int qrsize;
+                            if (otpauth_build(&v.accounts[idx], qruri, sizeof qruri) != 0 ||
+                                qr_encode_uri(qruri, qrmodules, &qrsize) != QRENC_OK) {
+                                req->aar_Result = AAR_TOOLONG;
+                                break;
+                            }
+                            if (rb) qr_render_ascii(qrmodules, qrsize, rb, rbcap);
+                        }
+                        break;
+                    }
                     case AAP_ADD: {
                         otp_account acct;
                         if (!v.unlocked)                     req->aar_Result = AAR_LOCKED;
@@ -2028,6 +2177,7 @@ int main(int argc, char **argv)
             ULONG result;
             UWORD code;
             int docopy = 0, doadd_clip = 0, doadd_type = 0, doadd_qr = 0, doedit = 0, doremove = 0;
+            int doshow_qr = 0;
             long donudge = 0;
             idle_secs = 0;                          /* any window input = activity */
             while ((result = DoMethod(gw.winobj, WM_HANDLEINPUT, (ULONG)&code)) != WMHI_LASTMSG) {
@@ -2069,6 +2219,7 @@ int main(int argc, char **argv)
                                 case CMD_ADD_QR:   doadd_qr   = 1; break;
                                 case CMD_EDIT:     doedit     = 1; break;
                                 case CMD_COPY:     docopy     = 1; break;
+                                case CMD_SHOW_QR:  doshow_qr  = 1; break;
                                 case CMD_REMOVE:   doremove   = 1; break;
                                 case CMD_QUIT:     running    = 0; break;
                             }
@@ -2152,6 +2303,13 @@ int main(int argc, char **argv)
                         gui_requester(win, "Could not save the vault.", "OK", NULL);
                 }
                 memset(&acct, 0, sizeof acct);
+            }
+
+            /* --- Show QR code (export, #45): the current account's URI as an
+             * on-screen code for a phone to scan --- */
+            if (doshow_qr && v.count > 0) {
+                if (sel >= v.count) sel = 0;
+                qr_display(win, &v.accounts[sel]);
             }
 
             /* --- Remove selected (with confirmation) --- */

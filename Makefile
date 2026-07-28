@@ -62,6 +62,12 @@ QR_WRAP         := src/qr/qr.c
 # FPU-less 68000 (quirc's identify geometry is float-heavy; the pair is what its
 # docs recommend, and avoids slow double soft-float via rintf/sqrtf/fabsf).
 QR_CPPFLAGS     := -Isrc/qr -DQUIRC_FLOAT_TYPE=float -DQUIRC_USE_TGMATH
+
+# --- Vendored QR encoder (qrcodegen, MIT) + our portable wrapper ------------
+# qrcodegen is third-party (warnings off, same reasoning as quirc above); it's
+# integer-only so no float flags are needed. Reuses the qr-host/qr-m68k object
+# pattern rules below (they match any src/qr/%.c, qrcodegen.c included).
+QRENC_WRAP      := src/qr/qrencode.c
 DIFF_SRCS  := tests/diff/diff_main.c
 # AmigaOS-only front-end glue (bsdsocket SNTP, ...); m68k build only. qrimage.c
 # is GUI-only (datatypes.library) so it's excluded here and added to GUI_SRCS.
@@ -80,6 +86,10 @@ BUILD := build
 QUIRC_HOST_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-host/%.o,$(QUIRC_SRCS))
 QUIRC_M68K_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-m68k/%.o,$(QUIRC_SRCS))
 
+# Object paths for the vendored qrcodegen encoder (same qr-host/qr-m68k rules).
+QRCODEGEN_HOST_OBJ := $(BUILD)/qr-host/qrcodegen.o
+QRCODEGEN_M68K_OBJ := $(BUILD)/qr-m68k/qrcodegen.o
+
 .PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench clean
 
 all: test cli
@@ -89,9 +99,10 @@ test: $(BUILD)/run-tests
 	VAULT_TEST_FILE=$(BUILD)/amiauth-test.vault \
 		AMIAUTH_PREFS_DIR=$(BUILD)/prefs-test $(BUILD)/run-tests
 
-$(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) | $(BUILD)
+$(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) $(CObjINC) $(QR_CPPFLAGS) -Itests \
-		$(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) -o $@
+		$(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) \
+		$(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) -o $@
 
 # Vendored quirc objects — host toolchain, warnings suppressed (third-party).
 $(BUILD)/qr-host/%.o: src/qr/%.c | $(BUILD)
@@ -100,11 +111,13 @@ $(BUILD)/qr-host/%.o: src/qr/%.c | $(BUILD)
 
 # --- Host: native CLI (for local development) ---
 # Named distinctly from the m68k 'AmiAuth' binary so the two don't collide on a
-# case-insensitive filesystem (macOS).
+# case-insensitive filesystem (macOS). Includes the QR encoder (#45's CLI QR
+# command): our qrencode.c wrapper + the vendored qrcodegen object.
 cli: $(BUILD)/amiauth-host
 
-$(BUILD)/amiauth-host: $(CORE_SRCS) $(CLI_SRCS) | $(BUILD)
-	$(CC) $(CFLAGS) $(CObjINC) $(CORE_SRCS) $(CLI_SRCS) -o $@
+$(BUILD)/amiauth-host: $(CORE_SRCS) $(CLI_SRCS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) | $(BUILD)
+	$(CC) $(CFLAGS) $(CObjINC) -Isrc/qr $(CORE_SRCS) $(CLI_SRCS) \
+		$(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) -o $@
 
 # --- Host: end-to-end CLI smoke test (always-unlocked round trip) ---
 smoke: $(BUILD)/amiauth-host
@@ -119,8 +132,11 @@ $(BUILD)/run-diff: $(CORE_SRCS) $(DIFF_SRCS) | $(BUILD)
 		$(OPENSSL_LIBS) -o $@
 
 # --- m68k: Amiga CLI binary (amiga-gcc on PATH) ---
-m68k: | $(BUILD)
-	$(M68K_CC) $(M68K_CFLAGS) $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) -o $(BUILD)/AmiAuth
+# Includes the QR encoder (#45's CLI QR command): see the qr-m68k object rule
+# below (shared with the GUI's decoder build).
+m68k: $(QRCODEGEN_M68K_OBJ) | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) -Isrc/qr $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) \
+		$(QRENC_WRAP) $(QRCODEGEN_M68K_OBJ) -o $(BUILD)/AmiAuth
 
 # --- m68k: ReAction GUI binary (Amiga only; needs intuition + ReAction classes) ---
 # Includes the QR decoder: qrimage.c (datatypes glue) + our qr.c wrapper + the
@@ -132,9 +148,9 @@ $(BUILD)/qr-m68k/%.o: src/qr/%.c | $(BUILD)
 	@mkdir -p $(BUILD)/qr-m68k
 	$(M68K_CC) -std=c99 -O2 -m68000 -noixemul -w $(QR_CPPFLAGS) -c $< -o $@
 
-gui: $(QUIRC_M68K_OBJS) | $(BUILD)
+gui: $(QUIRC_M68K_OBJS) $(QRCODEGEN_M68K_OBJ) | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(VERSION_DEFS) $(QR_CPPFLAGS) $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) \
-		$(QR_WRAP) $(QUIRC_M68K_OBJS) -lm -lamiga -o $(BUILD)/AmiAuthGUI
+		$(QR_WRAP) $(QUIRC_M68K_OBJS) $(QRENC_WRAP) $(QRCODEGEN_M68K_OBJ) -lm -lamiga -o $(BUILD)/AmiAuthGUI
 
 gui-docker:
 	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
