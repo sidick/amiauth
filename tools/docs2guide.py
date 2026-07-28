@@ -39,6 +39,7 @@ PAGES = [
     ('Security-Model', 'Security Model'),
     ('Troubleshooting-and-FAQ', 'Troubleshooting and FAQ'),
     ('Building-from-Source', 'Building from Source'),
+    ('Changelog', 'Changelog'),
 ]
 SLUGS = {slug for slug, _ in PAGES}
 

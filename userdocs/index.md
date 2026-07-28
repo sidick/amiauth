@@ -1,8 +1,8 @@
 # AmiAuth
 
-> 🎉 **AmiAuth 1.0 is released!** Grab it from
+> 🎉 **AmiAuth 1.1 is released!** Grab it from
 > [Aminet](https://aminet.net/package/util/crypt/AmiAuth) or the
-> [GitHub release](https://github.com/sidick/amiauth/releases/tag/v1.0),
+> [GitHub release](https://github.com/sidick/amiauth/releases/tag/v1.1),
 > then head to [Installation](Installation.md) to get going.
 
 **A native two-factor authentication (2FA) code generator for classic AmigaOS.**
