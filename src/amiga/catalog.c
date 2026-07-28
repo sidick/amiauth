@@ -17,7 +17,17 @@
  * default - this is documented AmigaOS behaviour, not a bug (confirmed
  * on-target: a deliberately mismatched OC_BuiltInLanguage does load the
  * catalog and GetCatalogStr() correctly returns the translated string with
- * substitution parameters intact - see tests/gui/catalog-onhw.sh). */
+ * substitution parameters intact - see tests/gui/catalog-onhw.sh).
+ *
+ * Preferred-language fallback (#67): OpenCatalog(NULL, ...) with no
+ * OC_Language tag only ever tries the default locale's single primary
+ * language (loc_LanguageName) - confirmed against the NDK's own OpenCatalog
+ * autodoc example ("assuming the default locale specifies 'deutsch' as
+ * language, OpenCatalog() tries ... Catalogs/deutsch/..."). If a user's
+ * primary language has no AmiAuth.catalog but a lower-priority preference
+ * does, that catalog is never found without walking loc_PrefLanguages[]
+ * ourselves and requesting each one explicitly via OC_Language - which is
+ * exactly what catalog_open() does below. */
 #ifdef __amigaos__
 
 #include <exec/types.h>
@@ -46,7 +56,32 @@ static struct Catalog *g_catalog = NULL;
 void catalog_open(void)
 {
     LocaleBase = (struct LocaleBase *)OpenLibrary((STRPTR)AMIAUTH_LOCALE_LIBNAME, 38);  /* OS 2.1+ */
-    if (LocaleBase)
+    if (!LocaleBase) return;
+
+    /* Try each of the user's preferred languages in order (see the comment
+     * above) - OpenLocale(NULL) is documented to always succeed, but the
+     * check costs nothing and matches this function's existing defensive
+     * style. loc_PrefLanguages[10] is the field's fixed declared size
+     * (<libraries/locale.h>), not a value that needs deriving. */
+    {
+        struct Locale *loc = OpenLocale(NULL);
+        if (loc) {
+            int i;
+            for (i = 0; i < 10 && !g_catalog; i++) {
+                STRPTR lang = loc->loc_PrefLanguages[i];
+                if (!lang || !lang[0]) break;   /* end of the list */
+                g_catalog = OpenCatalog(NULL, (STRPTR)"AmiAuth.catalog",
+                                        OC_BuiltInLanguage, (ULONG)(STRPTR)"english",
+                                        OC_Language, (ULONG)lang,
+                                        TAG_DONE);
+            }
+            CloseLocale(loc);
+        }
+    }
+
+    /* Empty/unavailable preferred-language list, or none of them had a
+     * catalog: same plain call as before, for the exact same result. */
+    if (!g_catalog)
         g_catalog = OpenCatalog(NULL, (STRPTR)"AmiAuth.catalog",
                                 OC_BuiltInLanguage, (ULONG)(STRPTR)"english",
                                 TAG_DONE);
