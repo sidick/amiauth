@@ -936,6 +936,15 @@ void quirc_flip(struct quirc_code *code)
 {
 	struct quirc_code flipped = {0};
 	unsigned int offset = 0;
+
+	/* quirc_extract can report a size beyond QUIRC_MAX_GRID_SIZE (with
+	 * an empty bitmap); transposing such a code would walk outside
+	 * cell_bitmap, so treat it as untouchable here just as
+	 * quirc_decode rejects it.
+	 */
+	if (code->size < 0 || code->size > QUIRC_MAX_GRID_SIZE)
+		return;
+
 	for (int y = 0; y < code->size; y++) {
 		for (int x = 0; x < code->size; x++) {
 			if (grid_bit(code, y, x)) {
