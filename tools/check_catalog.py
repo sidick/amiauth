@@ -50,6 +50,20 @@ REKEY_STRENGTHEN = 'MSG_CLI_REKEY_STRENGTHEN_PROMPT'   # >=3 "(x)"; 1st=yes, 3rd
 REKEY_LOWER = 'MSG_CLI_REKEY_LOWER_PROMPT'             # >=1 "(x)"; 1st=yes
 REKEY_CONFIRM = 'MSG_CLI_CONFIRM_YES_PROMPT'           # one 'word' to type back
 
+# Prompt strings src/cli/main.c's prompt_text() copies into a fixed
+# PROMPT_CAP-byte buffer (keep the two constants in sync). The code truncates
+# an overlong translation safely instead of overrunning the stack, but a
+# truncated prompt is still a broken prompt - so fail the build here, at the
+# only point a translator will see. Cap - 2 leaves room for the trailing
+# space prompt_text() re-adds (FlexCat trims it) and the NUL.
+PROMPT_CAP = 160
+PROMPT_ENTRIES = (
+    REKEY_STRENGTHEN, REKEY_LOWER, REKEY_CONFIRM,
+    'MSG_CLI_PROMPT_PASSPHRASE',
+    'MSG_CLI_INIT_PASS_PROMPT',
+    'MSG_CONFIRM_PASSPHRASE',
+)
+
 
 def parse_entries(path):
     """.cd/.ct -> {NAME: body_text}, in this repo's one-line-body convention."""
@@ -196,6 +210,15 @@ def check_rekey_prompts(label, entries, fails, warns):
                          f"word: {text!r}")
 
 
+def check_prompt_lengths(label, entries, fails):
+    for name in PROMPT_ENTRIES:
+        if name in entries and len(entries[name]) > PROMPT_CAP - 2:
+            fails.append(f"{label}: {name} is {len(entries[name])} bytes; the "
+                         f"CLI's prompt buffer holds {PROMPT_CAP - 2} (it would "
+                         f"be shown truncated) - shorten the text: "
+                         f"{entries[name]!r}")
+
+
 def check_placeholders(label, source, translation, fails):
     for name, src_text in source.items():
         if name not in translation:
@@ -230,12 +253,14 @@ def main(argv):
     check_encoding(cd_path, cd_path, fails)
     check_mnemonics(cd_path, source, fails, warns)
     check_rekey_prompts(cd_path, source, fails, warns)
+    check_prompt_lengths(cd_path, source, fails)
 
     for ct_path in ct_paths:
         check_encoding(ct_path, ct_path, fails)
         entries = parse_entries(ct_path)
         check_mnemonics(ct_path, entries, fails, warns)
         check_rekey_prompts(ct_path, entries, fails, warns)
+        check_prompt_lengths(ct_path, entries, fails)
         check_placeholders(ct_path, source, entries, fails)
 
     for w in warns:

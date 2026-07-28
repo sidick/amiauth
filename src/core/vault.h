@@ -58,6 +58,10 @@ typedef enum {
     VAULT_ERR_LOCKED  =   -4,
     VAULT_ERR_FULL    =   -5,
     VAULT_ERR_RANGE   =   -6,
+    VAULT_ERR_TMPKEPT =   -7,     /* save failed after the old vault file was
+                                     already removed; the full new image survives
+                                     in the "<path>.tmp" file, which is
+                                     deliberately NOT deleted (see vault_save) */
     VAULT_ERR_NOTIMPL = -100
 } vault_result;
 

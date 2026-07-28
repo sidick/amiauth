@@ -357,7 +357,12 @@ vault_result vault_save(const vault *v, const char *path,
 
     if (rename(tmp, path) != 0) {
         remove(path);                     /* AmigaOS Rename won't overwrite */
-        if (rename(tmp, path) != 0) { remove(tmp); free(tmp); return VAULT_ERR_IO; }
+        if (rename(tmp, path) != 0) {
+            /* The original may already be gone, so the temp file can be the
+             * only remaining copy of the vault - keep it for recovery. */
+            free(tmp);
+            return VAULT_ERR_TMPKEPT;
+        }
     }
     free(tmp);
     return VAULT_OK;

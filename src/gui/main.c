@@ -536,6 +536,15 @@ static vault_result gui_save(const vault *v, const char *path)
     return vault_save(v, path, NULL);
 }
 
+/* Requester text for a failed gui_save: the generic message, except when the
+ * atomic replace failed after the old file was removed - then the .tmp file
+ * is the only surviving copy and the user must be told to recover it. */
+static const char *gui_save_err(vault_result rc)
+{
+    return rc == VAULT_ERR_TMPKEPT ? MSG(MSG_GUI_SAVE_FAILED_TMPKEPT)
+                                   : MSG(MSG_GUI_SAVE_FAILED);
+}
+
 /* A simple info/confirm requester. `gadgets` is EasyRequest gadget text, e.g.
  * "OK" or "Remove|Cancel"; returns EasyRequest's result (1 = first/leftmost). */
 static LONG gui_requester(struct Window *win, const char *body, const char *gadgets, const char *arg)
@@ -644,7 +653,7 @@ static int gui_add_uri(struct Window *win, vault *v, const char *path, const cha
         if (rc != VAULT_OK)
             gui_requester(win, rc == VAULT_ERR_FULL
                           ? MSG(MSG_GUI_VAULT_FULL)
-                          : MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
+                          : gui_save_err(rc), MSG(MSG_GUI_OK), NULL);
     }
     memset(&acct, 0, sizeof acct);
     return changed;
@@ -1559,7 +1568,7 @@ static int gui_add_secret(struct Window *win, vault *v, const char *path, const 
         if (rc != VAULT_OK)
             gui_requester(win, rc == VAULT_ERR_FULL
                           ? MSG(MSG_GUI_VAULT_FULL)
-                          : MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
+                          : gui_save_err(rc), MSG(MSG_GUI_OK), NULL);
     }
     memset(&acct, 0, sizeof acct);
     memset(issuer, 0, sizeof issuer);
@@ -2014,8 +2023,15 @@ int main(int argc, char **argv)
      * every prompt - unlock or first-run - to the first show (#50). An
      * always-unlocked vault needs no interaction and opens right away. */
     if (broker && !popup) {
-        if (vault_load(&v, path, NULL) != VAULT_OK)
+        vault_result r = vault_load(&v, path, NULL);
+        if (r != VAULT_OK) {
             deferred = 1;                 /* resident, locked, list empty */
+            /* LOCKED means an encrypted vault; without this the ARexx port's
+             * STATUS/LOCK/UNLOCK would misreport the deferred state as
+             * always-unlocked (and UNLOCK would be a no-op). A missing vault
+             * (first run) really is neither, so anything else stays 0. */
+            encrypted = (r == VAULT_ERR_LOCKED);
+        }
     } else {
         int r = gui_open_vault(&v, vpath, sizeof vpath, &encrypted, 0);
         if (r <= 0) {
@@ -2302,7 +2318,15 @@ int main(int argc, char **argv)
                     }
                     case AREXX_CMD_TIMELEFT: {
                         int idx;
+                        char prefbuf[8];
                         if (!v.unlocked) { rrc = AREXX_RC_FAIL; break; }
+                        /* Same arexxgetcode gate as GETCODE: with the pref
+                         * off, TIMELEFT must not leak whether an account
+                         * exists (RC 10 vs a result) through a port the
+                         * user asked to restrict. */
+                        if (prefs_get("arexxgetcode", prefbuf, sizeof prefbuf) == 0 &&
+                            Stricmp((STRPTR)prefbuf, (STRPTR)"off") == 0)
+                            { rrc = AREXX_RC_FAIL; break; }
                         idx = gui_find_account(&v, rp.account);
                         if (idx < 0) { rrc = AREXX_RC_ERROR; break; }
                         sprintf(rbuf, "%ld",
@@ -2519,7 +2543,7 @@ int main(int argc, char **argv)
                     changed = 1;
                     rc = gui_save(&v, path);
                     if (rc != VAULT_OK)
-                        gui_requester(win, MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
+                        gui_requester(win, gui_save_err(rc), MSG(MSG_GUI_OK), NULL);
                 }
                 memset(&acct, 0, sizeof acct);
             }
@@ -2544,7 +2568,7 @@ int main(int argc, char **argv)
                     changed = 1;
                     if (rc == VAULT_OK) rc = gui_save(&v, path);
                     if (rc != VAULT_OK)
-                        gui_requester(win, MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
+                        gui_requester(win, gui_save_err(rc), MSG(MSG_GUI_OK), NULL);
                 }
             }
 

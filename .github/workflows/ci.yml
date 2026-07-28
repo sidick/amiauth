@@ -110,6 +110,12 @@ jobs:
       - uses: actions/checkout@v7
       - name: Cross-build CLI for 68000
         run: PATH="/opt/amiga/bin:$PATH" make m68k M68K_CC=m68k-amigaos-gcc
+      # The GUI pulls in sources the CLI build never touches (src/gui/,
+      # qrimage.c, arexx.c, the m68k quirc objects) - without this step a PR
+      # that breaks GUI compilation merges green and only fails at release
+      # tag time.
+      - name: Cross-build GUI for 68000
+        run: PATH="/opt/amiga/bin:$PATH" make gui M68K_CC=m68k-amigaos-gcc
 
   asm-crypto-tests:
     name: m68k asm crypto tests (vamos)
