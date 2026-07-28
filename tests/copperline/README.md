@@ -46,10 +46,21 @@ Kickstart).
 
 CI is currently pinned to Copperline **0.11.0** (`COPPERLINE_VERSION` in
 `ci.yml`); this project's day-to-day local/interactive Copperline use has
-since moved to **0.12.0** (Homebrew) for the features noted below. Nothing in
-*this* test needs 0.12 — worth bumping the CI pin at some point mainly to stay
-current and to pick up 0.12's faster AROS boot, not because anything here is
-broken on 0.11.
+since moved to **0.12.0/0.13.0** (Homebrew) for the features noted below.
+Nothing in *this* test needs 0.12+ — worth bumping the CI pin at some point
+mainly to stay current, not because anything here is broken on 0.11.
+
+Bumping past 0.11.0 is currently blocked by a real bug, though: any
+`[[filesys]]` host-directory mount hangs the boot forever on a 68000/68010
+guest under released 0.12.0/0.13.0 — see
+[`docs/copperline-bugreport/REPORT.md`](../../docs/copperline-bugreport/REPORT.md).
+Root-caused and fixed upstream
+([CopperlineHQ/Copperline#312](https://github.com/CopperlineHQ/Copperline/pull/312)),
+not yet in a release. `run.sh` and `bench.sh` support a `COPPERLINE=` env var
+to point at a build off that branch in the meantime — keep `[cpu] model =
+"68000"` rather than working around the bug by raising the CPU model, since
+these tests exist specifically to validate real 68000/68010 behaviour (and,
+for `bench.sh`, real 68000 KDF-throughput numbers).
 
 ## Files
 

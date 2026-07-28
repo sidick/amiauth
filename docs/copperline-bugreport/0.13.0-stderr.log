@@ -1,0 +1,19 @@
+[2026-07-25T10:30:06Z INFO  copperline::config] no ROM specified; booting bundled AROS (/opt/homebrew/share/copperline/aros/aros-amiga-m68k-rom.bin)
+[2026-07-25T10:30:06Z INFO  copperline] config: cpu=M68000 fpu=false cpu_clock=7.09MHz chip_ram=512K fast_ram=0K slow_ram=512K z3_ram=0K zorro_boards=0 chipset=Ecs (agnus=Ecs8372Rev4 denise=Ocs) video=Pal rom=/opt/homebrew/share/copperline/aros/aros-amiga-m68k-rom.bin floppy_drives=1
+[2026-07-25T10:30:06Z INFO  copperline] audio: disabled (null sink); no sound
+[2026-07-25T10:30:06Z INFO  copperline] emulation timing: deterministic core, paced=false
+[2026-07-25T10:30:06Z INFO  copperline::emulator] filesys: services board on the Zorro chain (slot 0), 1 mount(s)
+[2026-07-25T10:30:06Z INFO  copperline::emulator] extended ROM: /opt/homebrew/share/copperline/aros/aros-amiga-m68k-ext.bin at 0xE00000
+[2026-07-25T10:30:06Z INFO  copperline::emulator] input: port 1 = mouse, port 2 = joystick
+[2026-07-25T10:30:06Z INFO  copperline::emulator] machine profile: A500 (gate array None, rtc none)
+[2026-07-25T10:30:06Z INFO  copperline::emulator] real pacing budget: returned m68k cycles plus explicit chip-bus waits
+[2026-07-25T10:30:06Z INFO  copperline::zorro] zorro II board "Copperline" autoconfigured at 0x00E90000
+[2026-07-25T10:30:06Z INFO  copperline::zorro] zorro II board "Copperline services" autoconfigured at 0x00EA0000
+[2026-07-25T10:30:07Z INFO  copperline::bus::custom_regs] BPLCON3 write 0x0C00 dropped (OCS Denise); further drops not logged
+[2026-07-25T10:30:15Z INFO  copperline] benchmark: ran 40.012s emulated to 40.000s target in 8.833s wall, 1999 frames (226.3/s)
+[2026-07-25T10:30:15Z INFO  copperline] benchmark frame times: p50=3.40ms p90=4.34ms p99=4.90ms max=5.62ms
+[2026-07-25T10:30:15Z INFO  copperline] benchmark frame times: all 2437 frames within the 20ms budget
+[2026-07-25T10:30:15Z INFO  copperline::emulator] emu stats: 8.8s elapsed, 40.0s emulated (453.0%), 2437 frames (275.9/s), 6548551 slices (741367.7/s), ~0.72 MIPS
+[2026-07-25T10:30:15Z INFO  copperline::bus] video pipeline stats (emu stats): bitplane_fetch calls=69599142 slots=69599142 rows_started=434995 rows_completed=0 time=0.000ms, sprite_fetch calls=4553384 pair_slots=4553384 lines=2105 time=254.805ms
+[2026-07-25T10:30:15Z INFO  copperline::bus] video pipeline stats (emu stats): collisions calls=0 pixels=0 full_line_scans=0 control_segments=0 time=0.000ms avg=0.0ns/pixel
+[2026-07-25T10:30:15Z INFO  copperline::bus] video pipeline stats (emu stats): render frames=0 events=0 control_segments=0 playfield_pixels=0 manual_bpl_segments=0 sprite_lines=0 total=0.000ms phases(events=0.000, background=0.000, playfield=0.000, manual_bpl=0.000, sprites=0.000)
