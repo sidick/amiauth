@@ -284,13 +284,13 @@ static const char *vault_err(vault_result rc)
 {
     switch (rc) {
         case VAULT_OK:         return "ok";
-        case VAULT_ERR_IO:     return "cannot read/write the vault file";
-        case VAULT_ERR_FORMAT: return "not a valid vault file";
-        case VAULT_ERR_AUTH:   return "wrong passphrase or the file has been tampered with";
-        case VAULT_ERR_LOCKED: return "vault is locked";
-        case VAULT_ERR_FULL:   return "vault is full";
-        case VAULT_ERR_RANGE:  return "no such account";
-        default:               return "error";
+        case VAULT_ERR_IO:     return MSG(MSG_ERR_IO);
+        case VAULT_ERR_FORMAT: return MSG(MSG_ERR_FORMAT);
+        case VAULT_ERR_AUTH:   return MSG(MSG_ERR_AUTH);
+        case VAULT_ERR_LOCKED: return MSG(MSG_ERR_LOCKED);
+        case VAULT_ERR_FULL:   return MSG(MSG_ERR_FULL);
+        case VAULT_ERR_RANGE:  return MSG(MSG_ERR_RANGE);
+        default:               return MSG(MSG_ERR_UNKNOWN);
     }
 }
 
@@ -306,6 +306,7 @@ static void maybe_rekey(vault *v, const char *path, const char *pass, uint32_t u
 {
     uint32_t ideal;
     char prefbuf[8], line[16];
+    char prompt[160];   /* MSG() text + the trailing space FlexCat trims */
 
     if (v->cipher != VAULT_CIPHER_CHACHA20) return;   /* encrypted only */
     if (g_no_rekey || unlock_ms == 0) return;         /* opted out / no timer */
@@ -317,22 +318,22 @@ static void maybe_rekey(vault *v, const char *path, const char *pass, uint32_t u
     if (unlock_ms < KDF_TARGET_MS / 8 && ideal > v->iterations) {
         /* Much faster machine -> offer to strengthen (safe; one confirm). */
         int c;
-        if (cli_readline("This machine is much faster than the one that secured "
-                "this vault.\nStrengthen it now? [(y)es/(N)o/ne(v)er ask here] ",
-                line, sizeof line) != 0)
+        sprintf(prompt, "%s ", MSG(MSG_CLI_REKEY_STRENGTHEN_PROMPT));
+        if (cli_readline(prompt, line, sizeof line) != 0)
             return;
         c = line[0] | 0x20;
         if (c == 'v') { prefs_set("rekey", "off"); return; }
         if (c != 'y') return;
     } else if (unlock_ms > KDF_TARGET_MS * 8) {
         /* Much slower machine -> offer to speed up, but this weakens it: friction. */
-        fprintf(stderr, "AmiAuth: unlock took ~%lus; this vault was tuned for "
-                "faster hardware.\n", (unsigned long)((unlock_ms + 500) / 1000));
-        if (cli_readline("Re-key LOWER for quicker unlocks here? This REDUCES "
-                "security. [y/N] ", line, sizeof line) != 0
+        fprintf(stderr, MSG(MSG_CLI_REKEY_SLOW_NOTICE), "AmiAuth",
+                (unsigned long)((unlock_ms + 500) / 1000));
+        sprintf(prompt, "%s ", MSG(MSG_CLI_REKEY_LOWER_PROMPT));
+        if (cli_readline(prompt, line, sizeof line) != 0
             || (line[0] | 0x20) != 'y')
             return;
-        if (cli_readline("Type 'yes' to confirm: ", line, sizeof line) != 0
+        sprintf(prompt, "%s ", MSG(MSG_CLI_CONFIRM_YES_PROMPT));
+        if (cli_readline(prompt, line, sizeof line) != 0
             || !ci_streq(line, "yes"))
             return;
     } else {
@@ -344,9 +345,9 @@ static void maybe_rekey(vault *v, const char *path, const char *pass, uint32_t u
         if (cli_random(salt, sizeof salt) == 0
             && vault_set_passphrase(v, pass, ideal, salt) == VAULT_OK
             && save_vault(v, path) == VAULT_OK)
-            fprintf(stderr, "AmiAuth: re-keyed to %lu iterations\n", (unsigned long)ideal);
+            fprintf(stderr, MSG(MSG_CLI_REKEYED), "AmiAuth", (unsigned long)ideal);
         else
-            fprintf(stderr, "AmiAuth: re-key failed; vault left unchanged\n");
+            fprintf(stderr, MSG(MSG_CLI_REKEY_FAILED), "AmiAuth");
         memset(salt, 0, sizeof salt);
     }
 }
@@ -357,11 +358,11 @@ static vault_result open_vault(vault *v, const char *path)
     vault_result rc = vault_load(v, path, NULL);
     if (rc == VAULT_ERR_LOCKED) {
         char pass[256];
+        char prompt[64];   /* MSG() text + the trailing space FlexCat trims */
         uint32_t t0, unlock_ms;
-        if (read_passphrase("Passphrase: ", pass, sizeof(pass)) != 0) {
-            fprintf(stderr,
-                "AmiAuth: this vault is encrypted; run from an interactive "
-                "terminal, or use an always-unlocked vault for scripting\n");
+        sprintf(prompt, "%s ", MSG(MSG_CLI_PROMPT_PASSPHRASE));
+        if (read_passphrase(prompt, pass, sizeof(pass)) != 0) {
+            fprintf(stderr, MSG(MSG_CLI_NO_TTY), "AmiAuth");
             return VAULT_ERR_AUTH;
         }
         t0 = cli_millis();
@@ -380,9 +381,7 @@ static vault_result save_vault(const vault *v, const char *path)
     if (v->cipher == VAULT_CIPHER_CHACHA20) {
         uint8_t nonce[VAULT_NONCE_SIZE];
         if (cli_random(nonce, sizeof(nonce)) != 0) {
-            fprintf(stderr,
-                "AmiAuth: no secure random source to save an encrypted vault "
-                "(Phase 4)\n");
+            fprintf(stderr, MSG(MSG_CLI_NO_RNG_SAVE), "AmiAuth");
             return VAULT_ERR_IO;
         }
         return vault_save(v, path, nonce);
@@ -419,7 +418,7 @@ static int cmd_code(const char *secret_b32, const char *digits_s, const char *pe
 
     keylen = base32_decode(secret_b32, key, sizeof(key));
     if (keylen <= 0) {
-        fprintf(stderr, "AmiAuth: invalid or empty Base32 secret\n");
+        fprintf(stderr, MSG(MSG_CLI_BAD_SECRET), "AmiAuth");
         return 2;
     }
 
@@ -427,7 +426,7 @@ static int cmd_code(const char *secret_b32, const char *digits_s, const char *pe
     now = clock_now_utc(&clk);
     printf("%0*lu\n", digits,
            (unsigned long)totp_sha1(key, (size_t)keylen, now, 0, (uint32_t)period, digits));
-    fprintf(stderr, "(%u seconds remaining)\n",
+    fprintf(stderr, MSG(MSG_CLI_SECONDS_REMAINING),
             totp_seconds_remaining(now, 0, (uint32_t)period));
     memset(key, 0, sizeof(key));
     return 0;
@@ -438,15 +437,15 @@ static void print_clock(const clock_ctx *c)
     uint64_t utc = clock_now_utc(c);
     time_t t = (time_t)utc;
     struct tm *tm = gmtime(&t);
-    const char *status = c->state == CLOCK_SYNCED ? "synced (green)"
-                       : c->state == CLOCK_MANUAL ? "offset applied (amber)"
-                       :                            "unverified (red)";
+    const char *status = c->state == CLOCK_SYNCED ? MSG(MSG_CLI_CLOCK_SYNCED)
+                       : c->state == CLOCK_MANUAL ? MSG(MSG_CLI_CLOCK_MANUAL)
+                       :                            MSG(MSG_CLI_CLOCK_UNVERIFIED);
 
-    printf("UTC offset : %+ld seconds (%+ld min)\n", c->offset_seconds,
+    printf(MSG(MSG_CLI_CLOCK_OFFSET_LINE), c->offset_seconds,
            c->offset_seconds / 60);
-    printf("status     : %s\n", status);
+    printf(MSG(MSG_CLI_CLOCK_STATUS_LINE), status);
     if (tm)
-        printf("corrected  : %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+        printf(MSG(MSG_CLI_CLOCK_CORRECTED_LINE),
                tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
                tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
@@ -471,11 +470,9 @@ static int cmd_sync(const char *server)
     }
 
     cli_clock_init(&c);                 /* baseline, overridden on success */
-    printf("Querying %s ...\n", server);
+    printf(MSG(MSG_CLI_QUERYING), server);
     if (clock_sntp_sync(&c, server) != 0) {
-        fprintf(stderr,
-            "AmiAuth: SNTP sync failed (no TCP/IP stack, or no response from %s)\n",
-            server);
+        fprintf(stderr, MSG(MSG_CLI_SYNC_FAILED), "AmiAuth", server);
         return 2;
     }
     /* Persist so GET/CODE use the corrected time without a per-call sync. */
@@ -489,7 +486,7 @@ static int cmd_offset(const char *arg)
 {
     clock_ctx c;
     if (prefs_set_long("offset", atol(arg)) != 0) {
-        fprintf(stderr, "AmiAuth: could not save the offset\n");
+        fprintf(stderr, MSG(MSG_CLI_OFFSET_SAVE_FAILED), "AmiAuth");
         return 2;
     }
     cli_clock_init(&c);
@@ -506,7 +503,7 @@ static int cmd_nudge(const char *arg)
     cli_clock_init(&c);
     clock_nudge(&c, atol(arg));
     if (prefs_set_long("offset", c.offset_seconds) != 0) {
-        fprintf(stderr, "AmiAuth: could not save the offset\n");
+        fprintf(stderr, MSG(MSG_CLI_OFFSET_SAVE_FAILED), "AmiAuth");
         return 2;
     }
     print_clock(&c);
@@ -547,6 +544,7 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc;
     char pass[256];
+    char prompt[96];   /* MSG() text + the trailing space FlexCat trims */
     FILE *exists;
 
     exists = fopen(path, "rb");
@@ -560,35 +558,32 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
         rc = vault_create(&v, NULL, 0, NULL);
     } else {
         char confirm[256];
-        if (read_passphrase("New passphrase (empty for an always-unlocked vault): ",
-                             pass, sizeof(pass)) != 0) {
-            fprintf(stderr,
-                "AmiAuth: INIT needs an interactive terminal "
-                "(use 'INIT --open' for a non-interactive always-unlocked vault)\n");
+        sprintf(prompt, "%s ", MSG(MSG_CLI_INIT_PASS_PROMPT));
+        if (read_passphrase(prompt, pass, sizeof(pass)) != 0) {
+            fprintf(stderr, MSG(MSG_CLI_INIT_NO_TTY), "AmiAuth");
             return 2;
         }
         if (pass[0] == '\0') {
             rc = vault_create(&v, NULL, 0, NULL);
         } else {
             uint8_t salt[VAULT_SALT_SIZE];
-            if (read_passphrase("Confirm passphrase: ", confirm, sizeof(confirm)) != 0
+            sprintf(prompt, "%s ", MSG(MSG_CONFIRM_PASSPHRASE));
+            if (read_passphrase(prompt, confirm, sizeof(confirm)) != 0
                 || strcmp(pass, confirm) != 0) {
                 memset(pass, 0, sizeof(pass));
                 memset(confirm, 0, sizeof(confirm));
-                fprintf(stderr, "AmiAuth: passphrases did not match\n");
+                fprintf(stderr, MSG(MSG_CLI_PASS_MISMATCH), "AmiAuth");
                 return 2;
             }
             memset(confirm, 0, sizeof(confirm));
             if (cli_random(salt, sizeof(salt)) != 0) {
                 memset(pass, 0, sizeof(pass));
-                fprintf(stderr,
-                    "AmiAuth: no secure random source for an encrypted vault "
-                    "(Phase 4); create an always-unlocked vault with 'INIT --open'\n");
+                fprintf(stderr, MSG(MSG_CLI_INIT_NO_RNG), "AmiAuth");
                 return 2;
             }
             {
                 uint32_t iters = cli_calibrate(iterations);
-                fprintf(stderr, "AmiAuth: KDF iterations = %lu\n", (unsigned long)iters);
+                fprintf(stderr, MSG(MSG_CLI_KDF_ITERATIONS), "AmiAuth", (unsigned long)iters);
                 rc = vault_create(&v, pass, iters, salt);
             }
             memset(salt, 0, sizeof(salt));
@@ -599,11 +594,12 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
     if (rc == VAULT_OK) rc = save_vault(&v, path);
     if (rc != VAULT_OK) {
         vault_lock(&v);
-        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
+        fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc));
         return 2;
     }
-    printf("Created %s vault at %s\n",
-           v.cipher == VAULT_CIPHER_NONE ? "always-unlocked" : "encrypted", path);
+    printf(MSG(MSG_CLI_CREATED),
+           v.cipher == VAULT_CIPHER_NONE ? MSG(MSG_CLI_ALWAYS_UNLOCKED)
+                                          : MSG(MSG_CLI_ENCRYPTED), path);
     if (record_path) record_vault_path(path);
     vault_lock(&v);
     return 0;
@@ -628,26 +624,25 @@ static int try_forward(int cmd, const char *arg)
             if (buf[0]) fputs(buf, stdout);   /* GET code / LIST names / QR art */
             return 0;
         case AAR_LOCKED:
-            fprintf(stderr, "AmiAuth: the running GUI's vault is locked; "
-                            "unlock it there first\n");
+            fprintf(stderr, MSG(MSG_CLI_GUI_LOCKED), "AmiAuth");
             return 2;
         case AAR_NOTFOUND:
-            fprintf(stderr, "AmiAuth: no account matching '%s'\n", arg ? arg : "");
+            fprintf(stderr, MSG(MSG_CLI_NO_ACCOUNT), "AmiAuth", arg ? arg : "");
             return 2;
         case AAR_FULL:
-            fprintf(stderr, "AmiAuth: the vault is full (max 64 accounts)\n");
+            fprintf(stderr, MSG(MSG_CLI_VAULT_FULL), "AmiAuth");
             return 2;
         case AAR_BADARG:
-            fprintf(stderr, "AmiAuth: not a valid otpauth:// URI\n");
+            fprintf(stderr, MSG(MSG_CLI_BAD_OTPURI), "AmiAuth");
             return 2;
         case AAR_SAVEFAIL:
-            fprintf(stderr, "AmiAuth: applied in the GUI but the re-save failed\n");
+            fprintf(stderr, MSG(MSG_CLI_GUI_SAVEFAIL), "AmiAuth");
             return 2;
         case AAR_TOOLONG:
-            fprintf(stderr, "AmiAuth: this account's URI is too long to encode as a QR code\n");
+            fprintf(stderr, MSG(MSG_CLI_URI_TOO_LONG), "AmiAuth");
             return 2;
         default:
-            fprintf(stderr, "AmiAuth: the running GUI could not handle that\n");
+            fprintf(stderr, MSG(MSG_CLI_GUI_UNKNOWN), "AmiAuth");
             return 2;
     }
 }
@@ -661,25 +656,25 @@ static int cmd_add(const char *path, const char *uri)
     if (fc >= 0) return fc;
 
     if (otpauth_parse(uri, &acct) != 0) {
-        fprintf(stderr, "AmiAuth: could not parse otpauth:// URI\n");
+        fprintf(stderr, MSG(MSG_CLI_PARSE_FAILED), "AmiAuth");
         return 2;
     }
     rc = open_vault(&v, path);
     if (rc != VAULT_OK) {
         memset(&acct, 0, sizeof(acct));
-        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
+        fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc));
         return 2;
     }
 
     rc = vault_add(&v, &acct);
     if (rc == VAULT_OK) rc = save_vault(&v, path);
     memset(&acct, 0, sizeof(acct));
-    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc)); return 2; }
 
     {
         const otp_account *added = &v.accounts[v.count - 1];
         if (added->issuer[0]) printf(MSG(MSG_CLI_ADDED), added->issuer, added->label);
-        else                  printf("Added %s\n", added->label);
+        else                  printf(MSG(MSG_CLI_ADDED_NOISSUER), added->label);
     }
     vault_lock(&v);
     return 0;
@@ -708,7 +703,7 @@ static int cmd_add_secret(const char *path, const char *secret,
     }
     if ((steam ? otp_account_from_secret_steam : otp_account_from_secret)
             (issuer, label, secret, &acct) != 0) {
-        fprintf(stderr, "AmiAuth: that does not look like a Base32 secret\n");
+        fprintf(stderr, MSG(MSG_CLI_BAD_BASE32), "AmiAuth");
         return 2;
     }
 
@@ -723,13 +718,13 @@ static int cmd_add_secret(const char *path, const char *secret,
     rc = open_vault(&v, path);
     if (rc != VAULT_OK) {
         memset(&acct, 0, sizeof acct);
-        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
+        fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc));
         return 2;
     }
     rc = vault_add(&v, &acct);
     if (rc == VAULT_OK) rc = save_vault(&v, path);
     memset(&acct, 0, sizeof acct);
-    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc)); return 2; }
 
     printf(MSG(MSG_CLI_ADDED), issuer, label);
     vault_lock(&v);
@@ -744,7 +739,7 @@ static int cmd_list(const char *path)
     int fc = try_forward(AAP_LIST, NULL);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc)); return 2; }
 
     for (i = 0; i < v.count; i++) {
         const otp_account *a = &v.accounts[i];
@@ -767,9 +762,9 @@ static int cmd_get(const char *path, const char *account)
     clock_ctx clk;
     uint64_t now;
 
-    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc)); return 2; }
     idx = find_account(&v, account);
-    if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
+    if (idx < 0) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_NO_ACCOUNT), "AmiAuth", account); return 2; }
     a = &v.accounts[idx];
 
     {
@@ -780,14 +775,13 @@ static int cmd_get(const char *path, const char *account)
             a->counter++;                   /* HOTP is stateful: advance and persist */
             rc = save_vault(&v, path);
             if (rc != VAULT_OK)
-                fprintf(stderr, "AmiAuth: warning: could not persist HOTP counter (%s)\n",
-                        vault_err(rc));
+                fprintf(stderr, MSG(MSG_CLI_WARN_HOTP_PERSIST), "AmiAuth", vault_err(rc));
         } else {
             cli_clock_init(&clk);
             now = clock_now_utc(&clk);
             otp_render(a, now, code);
             printf("%s\n", code);
-            fprintf(stderr, "(%u seconds remaining)\n",
+            fprintf(stderr, MSG(MSG_CLI_SECONDS_REMAINING),
                     totp_seconds_remaining(now, 0, a->period));
         }
     }
@@ -808,14 +802,14 @@ static int cmd_qr(const char *path, const char *account)
     int fc = try_forward(AAP_QR, account);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc)); return 2; }
     idx = find_account(&v, account);
-    if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
+    if (idx < 0) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_NO_ACCOUNT), "AmiAuth", account); return 2; }
 
     if (otpauth_build(&v.accounts[idx], uri, sizeof uri) != 0 ||
         qr_encode_uri(uri, modules, &qsize) != QRENC_OK) {
         vault_lock(&v);
-        fprintf(stderr, "AmiAuth: this account's URI is too long to encode as a QR code\n");
+        fprintf(stderr, MSG(MSG_CLI_URI_TOO_LONG), "AmiAuth");
         return 2;
     }
     qr_render_ascii(modules, qsize, ascii, sizeof ascii);
@@ -833,13 +827,13 @@ static int cmd_remove(const char *path, const char *account)
     int fc = try_forward(AAP_REMOVE, account);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc)); return 2; }
 
     idx = find_account(&v, account);
-    if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
+    if (idx < 0) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_NO_ACCOUNT), "AmiAuth", account); return 2; }
     rc = vault_remove(&v, (size_t)idx);
     if (rc == VAULT_OK) rc = save_vault(&v, path);
-    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_ERR), "AmiAuth", vault_err(rc)); return 2; }
 
     printf(MSG(MSG_CLI_REMOVED), account);
     vault_lock(&v);
@@ -849,9 +843,7 @@ static int cmd_remove(const char *path, const char *account)
 static int usage(void)
 {
     const char *p = g_prog;
-    fprintf(stderr,
-        "AmiAuth - TOTP/HOTP authenticator for AmigaOS\n"
-        "\n");
+    fprintf(stderr, MSG(MSG_CLI_TAGLINE), "AmiAuth");
     fprintf(stderr, MSG(MSG_CLI_USAGE_RUNAS), p, p);
     fprintf(stderr,
         "  CODE   <secret> [digits] [period]  Print a code (no vault)\n"
@@ -887,7 +879,7 @@ static int usage(void)
         "Default vault: -v, else $AMIAUTH_VAULT, else the 'vault' pref, else %s\n",
         DEFAULT_VAULT);
 #endif
-    fprintf(stderr, "Encrypted vaults prompt for the passphrase on the terminal.\n");
+    fputs(MSG(MSG_CLI_ENCRYPTED_NOTE), stderr);
     return 1;
 }
 
@@ -911,7 +903,7 @@ static int cmd_show(void)
 {
     int fc = try_forward(AAP_SHOW, NULL);
     if (fc >= 0) return fc;
-    fprintf(stderr, "AmiAuth: no running GUI to show\n");
+    fprintf(stderr, MSG(MSG_CLI_NO_GUI), "AmiAuth");
     return 2;
 }
 

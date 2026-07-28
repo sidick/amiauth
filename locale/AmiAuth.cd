@@ -2,8 +2,15 @@
 ; strings). Generated header: `make catalog-strings` (locale/AmiAuth.cd via
 ; FlexCat's CatComp_h.sd template -> src/core/catalog_strings.h).
 ;
-; This is Phase 1 (#67): a representative slice, not the full string set -
-; see userdocs/Localization.md for the migration plan and translator workflow.
+; Covers every user-visible string in the CLI (src/cli/main.c) and GUI
+; (src/gui/main.c) front-ends (#67) - see userdocs/Localization.md for the
+; translator workflow. Deliberately NOT covered: CLI usage()'s command-list
+; table and Options blocks, and cmd_add_secret()'s bare-secret help text -
+; these interleave literal command/argument syntax with prose too tightly
+; to decompose safely; ASLFR_InitialFile's "AmiAuth.vault" default filename
+; (not prose); and any ARexx/CLI protocol reply word (e.g. "locked",
+; "unlocked", "always-unlocked" in ARexx STATUS/LOCK/UNLOCK replies) - those
+; are machine-readable scripting output, not user-facing text.
 ;
 ; Do NOT add: CLI subcommand keywords, ReadArgs template field names, or
 ; ARexx port command keywords - those are the scripting protocol, not
@@ -12,14 +19,16 @@
 ; Do NOT hardcode "AmiAuth" (or any other proper noun) into a translatable
 ; string - pass it as a %s argument instead (see MSG_CLI_ALREADY_EXISTS/
 ; MSG_CLI_USAGE_RUNAS below). Translators should never need to copy a
-; literal brand name verbatim into every language.
+; literal brand name verbatim into every language. The CLI and GUI are
+; separate binaries but share this one catalog - reuse an existing id
+; across front-ends where the text is genuinely identical (see MSG_CLI_ERR,
+; reused by the GUI for its own "%s: %s\n" library-load failure).
 ;
-; Do NOT add a wrapper template with no real content of its own. The plain
-; "AmiAuth: %s\n" prefix wrapping vault_err()'s own (not yet migrated -
-; Phase 2) error text has nothing left to translate once the brand name is
-; an argument rather than literal text - id 0 is deliberately left unused
-; rather than assigned to that, to leave room for it once vault_err()'s
-; strings actually get migrated.
+; A leading underscore in a button label (MSG_GUI_BTN_*, e.g. "_Add") marks
+; the keyboard mnemonic letter - window.class reads it back out of the
+; string at runtime (see the LBL_* comment in src/gui/main.c), so a
+; translation MUST keep exactly one '_' immediately before an ASCII letter,
+; ideally one that doesn't collide with another button's mnemonic.
 ;
 #language english
 #version 0
@@ -79,3 +88,447 @@ OK
 ;
 MSG_GUI_CANCEL (16//)
 Cancel
+;
+; --- CLI: vault_err()'s own strings, wrapped by MSG_CLI_ERR below ---------
+;
+MSG_ERR_IO (17//)
+cannot read/write the vault file
+;
+MSG_ERR_FORMAT (18//)
+not a valid vault file
+;
+MSG_ERR_AUTH (19//)
+wrong passphrase or the file has been tampered with
+;
+MSG_ERR_LOCKED (20//)
+vault is locked
+;
+MSG_ERR_FULL (21//)
+vault is full
+;
+MSG_ERR_RANGE (22//)
+no such account
+;
+MSG_ERR_UNKNOWN (23//)
+error
+;
+; --- CLI: generic error wrapper ("AmiAuth" + vault_err()/other message) --
+;
+MSG_CLI_ERR (24//)
+%s: %s\n
+;
+MSG_CLI_WARN_HOTP_PERSIST (25//)
+%s: warning: could not persist HOTP counter (%s)\n
+;
+; --- CLI: passphrase prompts ----------------------------------------------
+;
+MSG_CLI_PROMPT_PASSPHRASE (26//)
+Passphrase:
+;
+MSG_CLI_NO_TTY (27//)
+%s: this vault is encrypted; run from an interactive terminal, or use an always-unlocked vault for scripting\n
+;
+MSG_CLI_NO_RNG_SAVE (28//)
+%s: no secure random source to save an encrypted vault (Phase 4)\n
+;
+; --- CLI: adaptive re-key (maybe_rekey) -----------------------------------
+;
+MSG_CLI_REKEY_STRENGTHEN_PROMPT (29//)
+This machine is much faster than the one that secured this vault.\nStrengthen it now? [(y)es/(N)o/ne(v)er ask here]
+;
+MSG_CLI_REKEY_SLOW_NOTICE (30//)
+%s: unlock took ~%lus; this vault was tuned for faster hardware.\n
+;
+MSG_CLI_REKEY_LOWER_PROMPT (31//)
+Re-key LOWER for quicker unlocks here? This REDUCES security. [y/N]
+;
+MSG_CLI_CONFIRM_YES_PROMPT (32//)
+Type 'yes' to confirm:
+;
+MSG_CLI_REKEYED (33//)
+%s: re-keyed to %lu iterations\n
+;
+MSG_CLI_REKEY_FAILED (34//)
+%s: re-key failed; vault left unchanged\n
+;
+; --- CLI: CODE ---------------------------------------------------------
+;
+MSG_CLI_BAD_SECRET (35//)
+%s: invalid or empty Base32 secret\n
+;
+MSG_CLI_SECONDS_REMAINING (36//)
+(%u seconds remaining)\n
+;
+; --- CLI: CLOCK/SYNC/OFFSET/NUDGE ---------------------------------------
+;
+MSG_CLI_CLOCK_SYNCED (37//)
+synced (green)
+;
+MSG_CLI_CLOCK_MANUAL (38//)
+offset applied (amber)
+;
+MSG_CLI_CLOCK_UNVERIFIED (39//)
+unverified (red)
+;
+MSG_CLI_CLOCK_OFFSET_LINE (40//)
+UTC offset : %+ld seconds (%+ld min)\n
+;
+MSG_CLI_CLOCK_STATUS_LINE (41//)
+status     : %s\n
+;
+MSG_CLI_CLOCK_CORRECTED_LINE (42//)
+corrected  : %04d-%02d-%02d %02d:%02d:%02d UTC\n
+;
+MSG_CLI_QUERYING (43//)
+Querying %s ...\n
+;
+MSG_CLI_SYNC_FAILED (44//)
+%s: SNTP sync failed (no TCP/IP stack, or no response from %s)\n
+;
+MSG_CLI_OFFSET_SAVE_FAILED (45//)
+%s: could not save the offset\n
+;
+; --- CLI: INIT -----------------------------------------------------------
+;
+MSG_CLI_INIT_PASS_PROMPT (46//)
+New passphrase (empty for an always-unlocked vault):
+;
+MSG_CLI_INIT_NO_TTY (47//)
+%s: INIT needs an interactive terminal (use 'INIT --open' for a non-interactive always-unlocked vault)\n
+;
+; Shared with the GUI's edit_request()/gui_first_run() "Confirm passphrase"
+; label - identical text, just the CLI keeps its trailing space (prompt
+; shares a line with the typed input) where the GUI's is a standalone label.
+MSG_CONFIRM_PASSPHRASE (48//)
+Confirm passphrase:
+;
+MSG_CLI_PASS_MISMATCH (49//)
+%s: passphrases did not match\n
+;
+MSG_CLI_INIT_NO_RNG (50//)
+%s: no secure random source for an encrypted vault (Phase 4); create an always-unlocked vault with 'INIT --open'\n
+;
+MSG_CLI_KDF_ITERATIONS (51//)
+%s: KDF iterations = %lu\n
+;
+MSG_CLI_CREATED (52//)
+Created %s vault at %s\n
+;
+MSG_CLI_ALWAYS_UNLOCKED (53//)
+always-unlocked
+;
+MSG_CLI_ENCRYPTED (54//)
+encrypted
+;
+; --- CLI: GUI forwarding (try_forward) ------------------------------------
+;
+MSG_CLI_GUI_LOCKED (55//)
+%s: the running GUI's vault is locked; unlock it there first\n
+;
+MSG_CLI_NO_ACCOUNT (56//)
+%s: no account matching '%s'\n
+;
+MSG_CLI_VAULT_FULL (57//)
+%s: the vault is full (max 64 accounts)\n
+;
+MSG_CLI_BAD_OTPURI (58//)
+%s: not a valid otpauth:// URI\n
+;
+MSG_CLI_GUI_SAVEFAIL (59//)
+%s: applied in the GUI but the re-save failed\n
+;
+MSG_CLI_URI_TOO_LONG (60//)
+%s: this account's URI is too long to encode as a QR code\n
+;
+MSG_CLI_GUI_UNKNOWN (61//)
+%s: the running GUI could not handle that\n
+;
+; --- CLI: ADD --------------------------------------------------------------
+;
+MSG_CLI_PARSE_FAILED (62//)
+%s: could not parse otpauth:// URI\n
+;
+MSG_CLI_ADDED_NOISSUER (63//)
+Added %s\n
+;
+MSG_CLI_BAD_BASE32 (64//)
+%s: that does not look like a Base32 secret\n
+;
+; --- CLI: SHOW / usage -----------------------------------------------------
+;
+MSG_CLI_NO_GUI (65//)
+%s: no running GUI to show\n
+;
+MSG_CLI_TAGLINE (66//)
+%s - TOTP/HOTP authenticator for AmigaOS\n\n
+;
+MSG_CLI_ENCRYPTED_NOTE (67//)
+Encrypted vaults prompt for the passphrase on the terminal.\n
+;
+; --- GUI: main menu (g_menu[]) ---------------------------------------------
+;
+MSG_GUI_MENU_PROJECT (68//)
+Project
+;
+MSG_GUI_QUIT (69//)
+Quit
+;
+MSG_GUI_MENU_ACCOUNT (70//)
+Account
+;
+MSG_GUI_MENU_ADD_CLIP (71//)
+Add from clipboard
+;
+MSG_GUI_MENU_ADD_TYPE (72//)
+Add (type URI/secret)...
+;
+MSG_GUI_MENU_ADD_QR (73//)
+Add from QR image...
+;
+MSG_GUI_MENU_EDIT (74//)
+Edit selected...
+;
+MSG_GUI_MENU_COPY (75//)
+Copy code
+;
+MSG_GUI_MENU_SHOW_QR (76//)
+Show QR code...
+;
+MSG_GUI_MENU_REMOVE (77//)
+Remove selected...
+;
+; --- GUI: toolbar button mnemonics (LBL_*, see the underscore note above) -
+;
+MSG_GUI_BTN_ADD (78//)
+_Add
+;
+MSG_GUI_BTN_EDIT (79//)
+_Edit
+;
+MSG_GUI_BTN_REMOVE (80//)
+_Remove
+;
+MSG_GUI_BTN_COPY (81//)
+_Copy
+;
+MSG_GUI_BTN_NUDGE_DOWN (82//)
+_D -10s
+;
+MSG_GUI_BTN_NUDGE_UP (83//)
+_U +10s
+;
+; --- GUI: copy-code button's transient states (no mnemonic) ---------------
+;
+MSG_GUI_COPY_PLAIN (84//)
+Copy
+;
+MSG_GUI_COPIED (85//)
+Copied
+;
+; --- GUI: clock-status line --------------------------------------------
+;
+MSG_GUI_CLOCK_SYNCED (86//)
+synced
+;
+MSG_GUI_CLOCK_MANUAL (87//)
+manual
+;
+MSG_GUI_CLOCK_UNVERIFIED (88//)
+unverified
+;
+MSG_GUI_CLOCK_LINE_SHORT (89//)
+Clock: %s
+;
+MSG_GUI_CLOCK_LINE_FULL (90//)
+Clock: %s %s%lu:%02lu
+;
+; --- GUI: adaptive re-key (gui_maybe_rekey) -------------------------------
+;
+MSG_GUI_REKEY_STRENGTHEN_BODY (91//)
+This machine is much faster than the one that secured this vault.\nStrengthen it now (re-key to more PBKDF2 iterations)?
+;
+MSG_GUI_REKEY_STRENGTHEN_BTNS (92//)
+Strengthen|Not now|Never here
+;
+MSG_GUI_REKEY_SLOW_BODY (93//)
+Unlock took about %lu seconds; this vault was tuned for faster hardware.\nRe-key LOWER for quicker unlocks here? This REDUCES security.
+;
+MSG_GUI_REKEY_LOWER_BTNS (94//)
+Re-key lower|Cancel
+;
+MSG_GUI_REKEY_CONFIRM_BODY (95//)
+Really reduce this vault's security?
+;
+MSG_GUI_REKEY_REDUCE_BTNS (96//)
+Reduce|Cancel
+;
+; --- GUI: add account (uri/secret, shared gui_add_uri/gui_add_secret) ----
+;
+MSG_GUI_VAULT_FULL (97//)
+The vault is full (max 64 accounts).
+;
+; --- GUI: QR import (do_add_qr_impl) --------------------------------------
+;
+MSG_GUI_IMG_TOOBIG (98//)
+That image is too large to decode.
+;
+MSG_GUI_QR_UNAVAIL (99//)
+QR import needs datatypes.library.
+;
+MSG_GUI_IMG_NOMEM (100//)
+Not enough memory to load that image.
+;
+MSG_GUI_IMG_READ_FAILED (101//)
+Could not read that image (needs picture.datatype).
+;
+MSG_GUI_TITLE_DECODING (102//)
+%s - Decoding QR image...
+;
+MSG_GUI_QR_FILE_TITLE (103//)
+Select a QR image
+;
+; --- GUI: unlock prompt (passphrase_request title) ------------------------
+;
+MSG_GUI_TITLE_UNLOCK (104//)
+%s - Unlock
+;
+; --- GUI: first-run vault creation -----------------------------------------
+;
+MSG_GUI_CHOOSE_LOCATION (105//)
+Choose where to keep the vault
+;
+MSG_GUI_WELCOME (106//)
+Welcome to %s!\n\nThere is no vault yet - it will be created at\n%s
+;
+MSG_GUI_CREATE_VAULT_BTNS_DEFER (107//)
+Create a vault...|Not now
+;
+MSG_GUI_CREATE_VAULT_BTNS_QUIT (108//)
+Create a vault...|Quit
+;
+MSG_GUI_NEW_PASS_PROMPT (109//)
+New passphrase (empty = always-unlocked):
+;
+MSG_GUI_STORE_UNENCRYPTED_BODY (110//)
+Store the vault UNENCRYPTED?\n\nWith no passphrase there is no at-rest protection:\nanyone with access to the file can read your secrets.\n(You can add a passphrase later.)
+;
+MSG_GUI_STORE_UNENCRYPTED_BTNS (111//)
+Store unencrypted|Go back
+;
+MSG_GUI_PASS_MISMATCH (112//)
+The passphrases did not match.
+;
+MSG_GUI_TRY_AGAIN (113//)
+Try again
+;
+MSG_GUI_NO_RNG_BODY (114//)
+No secure random source is available, so an\nencrypted vault cannot be created safely.
+;
+MSG_GUI_CANNOT_WRITE_BODY (115//)
+Cannot write the vault to\n%s\n\nChoose another location?
+;
+MSG_GUI_CHOOSE_LOCATION_BTNS (116//)
+Choose location...|Quit
+;
+MSG_GUI_CREATE_FAILED (117//)
+Creating the vault failed.
+;
+; --- GUI: unlock loop (gui_open_vault) --------------------------------
+;
+MSG_GUI_ENTER_PASS (118//)
+Enter passphrase:
+;
+MSG_GUI_WRONG_PASS (119//)
+Wrong passphrase - try again:
+;
+MSG_GUI_CANNOT_OPEN_PRINTF (120//)
+%s: cannot open the vault (%ld)\n
+;
+; --- GUI: add account form (uri_request) ------------------------------
+;
+MSG_GUI_URI_PASTE_LABEL (121//)
+Paste or type an otpauth:// URI or Base32 secret:
+;
+MSG_GUI_TITLE_ADD_ACCOUNT (122//)
+%s - Add account
+;
+; --- GUI: edit account form (edit_request) ------------------------------
+;
+MSG_GUI_LABEL_ISSUER (123//)
+Issuer:
+;
+MSG_GUI_LABEL_LABEL (124//)
+Label:
+;
+MSG_GUI_LABEL_DIGITS (125//)
+Digits:
+;
+MSG_GUI_LABEL_PERIOD (126//)
+Period:
+;
+MSG_GUI_TITLE_EDIT_ACCOUNT (127//)
+%s - Edit account
+;
+MSG_GUI_LABEL_REQUIRED_STEAM (128//)
+Label is required.
+;
+MSG_GUI_LABEL_REQUIRED_FULL (129//)
+Label is required; digits must be 6-8, period 1-86400.
+;
+; --- GUI: QR export display (qr_display) --------------------------------
+;
+MSG_GUI_QR_BUILD_FAILED (130//)
+Could not build a QR code for this account.
+;
+MSG_GUI_QR_TOO_LONG (131//)
+This account's URI is too long to encode as a QR code.
+;
+MSG_GUI_QR_DISPLAY_FAILED (132//)
+Could not build the QR display.
+;
+MSG_GUI_QR_WINDOW_FAILED (133//)
+Could not open the QR window.
+;
+MSG_GUI_TITLE_QR_ISSUER (134//)
+%s - QR: %s:%s
+;
+MSG_GUI_TITLE_QR_NOISSUER (135//)
+%s - QR: %s
+;
+; --- GUI: bare-secret add form (secret_meta_request) ----------------------
+;
+MSG_GUI_SECRET_META_HINT (136//)
+A bare secret carries no name - who is this account for?
+;
+MSG_GUI_ADD_BTN (137//)
+Add
+;
+MSG_GUI_ISSUER_LABEL_REQUIRED (138//)
+Issuer and Label are both required.
+;
+; --- GUI: commodity broker (Exchange) -------------------------------------
+;
+MSG_GUI_CX_DESCR (139//)
+TOTP/HOTP authenticator
+;
+; --- GUI: remove confirmation ---------------------------------------------
+;
+MSG_GUI_REMOVE_CONFIRM (140//)
+Remove %s?
+;
+MSG_GUI_REMOVE_BTNS (141//)
+Remove|Cancel
+;
+; --- GUI: startup failures (open_libs/main) -------------------------------
+;
+MSG_GUI_NEEDS_INTUITION (142//)
+needs intuition.library / utility.library v37+ (OS 2.04)
+;
+MSG_GUI_NEEDS_REACTION (143//)
+needs ReAction/ClassAct classes (window/layout/listbrowser/fuelgauge/button)
+;
+MSG_GUI_WINDOW_CREATE_FAILED (144//)
+%s: could not create the window\n
+;
+MSG_GUI_WINDOW_OPEN_FAILED (145//)
+%s: could not open the window\n
