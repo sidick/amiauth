@@ -23,6 +23,7 @@ void run_clock_tests(void);
 void run_prefs_tests(void);
 void run_qr_tests(void);
 void run_qr_encode_tests(void);
+void run_arexx_cmd_tests(void);
 
 int main(void)
 {
@@ -46,6 +47,7 @@ int main(void)
     run_prefs_tests();
     run_qr_tests();
     run_qr_encode_tests();
+    run_arexx_cmd_tests();
 
     printf("\n%d passed, %d failed, %d pending\n",
            g_test.passed, g_test.failed, g_test.pending);

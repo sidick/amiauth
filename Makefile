@@ -70,8 +70,10 @@ QR_CPPFLAGS     := -Isrc/qr -DQUIRC_FLOAT_TYPE=float -DQUIRC_USE_TGMATH
 QRENC_WRAP      := src/qr/qrencode.c
 DIFF_SRCS  := tests/diff/diff_main.c
 # AmigaOS-only front-end glue (bsdsocket SNTP, ...); m68k build only. qrimage.c
-# is GUI-only (datatypes.library) so it's excluded here and added to GUI_SRCS.
-AMIGA_SRCS := $(filter-out src/amiga/qrimage.c,$(wildcard src/amiga/*.c))
+# and arexx.c are GUI-only (datatypes.library / the resident ARexx port -
+# the CLI is a one-shot process, nothing to serve) so both are excluded here
+# and added to GUI_SRCS instead.
+AMIGA_SRCS := $(filter-out src/amiga/qrimage.c src/amiga/arexx.c,$(wildcard src/amiga/*.c))
 
 # OpenSSL flags for the differential harness (pkg-config, with a plain fallback).
 OPENSSL_CFLAGS ?= $(shell pkg-config --cflags libcrypto 2>/dev/null)
@@ -90,7 +92,7 @@ QUIRC_M68K_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-m68k/%.o,$(QUIRC_SRCS))
 QRCODEGEN_HOST_OBJ := $(BUILD)/qr-host/qrcodegen.o
 QRCODEGEN_M68K_OBJ := $(BUILD)/qr-m68k/qrcodegen.o
 
-.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench clean
+.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke arexx-onhw arexx-onhw-docker arexx-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench clean
 
 all: test cli
 
@@ -141,7 +143,8 @@ m68k: $(QRCODEGEN_M68K_OBJ) | $(BUILD)
 # --- m68k: ReAction GUI binary (Amiga only; needs intuition + ReAction classes) ---
 # Includes the QR decoder: qrimage.c (datatypes glue) + our qr.c wrapper + the
 # vendored quirc objects (built -w for m68k). QUIRC_FLOAT_TYPE=float: no FPU.
-GUI_SRCS := src/gui/main.c src/amiga/qrimage.c
+# arexx.c (#46) is the ARexx port's RexxMsg glue - GUI-only, see AMIGA_SRCS.
+GUI_SRCS := src/gui/main.c src/amiga/qrimage.c src/amiga/arexx.c
 
 # Vendored quirc objects — m68k toolchain, warnings suppressed (third-party).
 $(BUILD)/qr-m68k/%.o: src/qr/%.c | $(BUILD)
@@ -221,6 +224,21 @@ serialtest-m68k-docker:
 
 copperline-smoke: serialtest-m68k-docker
 	sh tests/copperline/run.sh
+
+# --- Headless on-target ARexx port test: boot WB 3.2, launch AmiAuthGUI
+# resident, run a real ARexx script (tests/copperline/arexx-probe.rexx) via
+# the WB image's resident RexxMast (`rx`) against AMIAUTH.1, then relay its
+# redirected output back over serial with this small m68k program (arexxtest).
+# See tests/gui/arexx-onhw.sh.
+arexx-onhw: | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) tests/copperline/arexxtest.c -o $(BUILD)/arexxtest
+
+arexx-onhw-docker:
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make arexx-onhw'
+
+arexx-onhw-smoke:
+	sh tests/gui/arexx-onhw.sh
 
 # Measure PBKDF2 throughput on a stock 68000 (informs the KDF policy). Dev-only:
 # needs a Kickstart ROM (timer.device EClock isn't available under AROS).

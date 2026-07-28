@@ -25,6 +25,7 @@ RAM-backed and would be lost on reboot.
 | `AmiAuth/rekey` | `off` | you, or "Never here"/`ne(v)er` in the re-key prompt | When set to `off`, suppresses the adaptive re-key offers on this machine entirely. Delete the variable to get them back. |
 | `AmiAuth/idlelock` | seconds | you | GUI idle auto-lock timeout for encrypted vaults. Default when unset: **120**. `0` disables auto-lock. Only an *open* window ticks the idle timer. |
 | `AmiAuth/cryptoasm` | `off` | you | AmiAuth uses hand-written 68000 assembly for its SHA-1 inner loop by default (safe on every supported CPU, including a plain 68000 — it's not an 020+ fast path). Set to `off` to force the portable C implementation instead, e.g. if you suspect the assembly on your particular setup. Delete the variable to get the assembly back. |
+| `AmiAuth/arexxgetcode` | `off` | you | Restricts the [ARexx port](ARexx-Port.md) to control commands (`STATUS`/`LOCK`/`UNLOCK`/`SHOW`/`HIDE`/`QUIT`), refusing `GETCODE`/`TIMELEFT`, when set to `off`. Delete the variable to allow them again (the default). |
 
 Additionally the **`AMIAUTH_VAULT`** environment variable (a conventional
 variable read via `getenv`, so `ENV:AMIAUTH_VAULT` on AmigaOS) overrides the

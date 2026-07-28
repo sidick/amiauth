@@ -102,7 +102,7 @@ would be dishonest. Specifically:
 
 The passphrase is optional at vault creation. Without one, the vault is stored
 **unencrypted** (same file format, cipher marked `none`) and every entry point —
-GUI, hotkey popup, CLI, and (v2) ARexx — works with zero prompts.
+GUI, hotkey popup, CLI, and ARexx — works with zero prompts.
 
 This is the right trade for a single-user machine at home, a dedicated emulator
 instance, or scripted/headless use where the CLI must run non-interactively.
@@ -112,18 +112,29 @@ plaintext exports anyway.
 State it plainly: **in this mode there is no at-rest protection — anyone with the
 file has the secrets.** It is a deliberate opt-out, never the default. It is
 convertible in both directions from settings (add/change/remove passphrase,
-re-encrypting or decrypting the vault on disk). Auto-lock and (v2) ARexx
-`LOCK`/`UNLOCK` become no-ops; `STATUS` reports the mode explicitly.
+re-encrypting or decrypting the vault on disk). Auto-lock and ARexx
+`LOCK`/`UNLOCK` are no-ops (RC 0, `RESULT "always-unlocked"`) for it;
+`STATUS` reports the mode explicitly.
 
-## ARexx port (v2)
+## ARexx port
 
-If/when an ARexx port ships, one hard rule governs it: **the port never carries
-the passphrase.** Unlocking is exclusively interactive (GUI requester); scripts
-operate against a vault the user has already unlocked. A per-vault "allow ARexx
-`GETCODE`" setting (default on) lets cautious users restrict the port to control
-commands only. The security note will state plainly that any running program can
-drive the port while unlocked — not materially worse than the no-memory-protection
-baseline, but worth saying.
+AmiAuth exposes a public `AMIAUTH.<n>` ARexx port (GUI only; see
+[ARexx Port](../userdocs/ARexx-Port.md) for the full command reference). One
+hard rule governs it: **the port never carries the passphrase.** `UNLOCK` is
+exclusively interactive — it reuses the same GUI passphrase requester as the
+window/hotkey/commodity paths, never accepting one over the port. Scripts
+otherwise operate against a vault the user has already unlocked.
+
+The `ENVARC:AmiAuth/arexxgetcode` setting (default on; `off` disables) lets
+cautious users restrict the port to control commands (`STATUS`, `LOCK`,
+`UNLOCK`, `SHOW`, `HIDE`, `QUIT`) and deny `GETCODE`/`TIMELEFT`. `GETCODE`
+returns the same RC (20, failure) whether the vault is locked or the pref is
+off — deliberately indistinguishable, so a script can't use the RC alone to
+probe *why* it was refused.
+
+Any running program on the system can drive the port while the vault is
+unlocked — not materially worse than the no-memory-protection baseline
+above, but worth saying plainly.
 
 ## Scope discipline
 

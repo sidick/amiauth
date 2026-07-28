@@ -50,6 +50,7 @@ nav:
       - CLI Reference: CLI-Reference.md
       - GUI Guide: GUI-Guide.md
       - Commodity and Tooltypes: Commodity-and-Tooltypes.md
+      - ARexx Port: ARexx-Port.md
       - Time and Clock Sync: Time-and-Clock-Sync.md
   - Under the hood:
       - Vault and Passphrases: Vault-and-Passphrases.md

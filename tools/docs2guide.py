@@ -31,6 +31,7 @@ PAGES = [
     ('CLI-Reference', 'CLI Reference'),
     ('GUI-Guide', 'GUI Guide'),
     ('Commodity-and-Tooltypes', 'Commodity and Tooltypes'),
+    ('ARexx-Port', 'ARexx Port'),
     ('Time-and-Clock-Sync', 'Time and Clock Sync'),
     ('Vault-and-Passphrases', 'Vault and Passphrases'),
     ('Settings-Reference', 'Settings Reference'),

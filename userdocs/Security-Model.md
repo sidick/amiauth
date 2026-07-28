@@ -94,9 +94,12 @@ is re-encrypted or decrypted on disk).
 The vault passphrase is only ever entered **interactively** — at a Shell prompt
 (RAW mode, no echo) or in a GUI requester. There is deliberately no way to
 supply it on the command line, in an environment variable, in a script, or over
-the commodity's message port. Scripted/headless use is served by always-unlocked
-vaults instead. When the CLI forwards commands to a resident GUI, the GUI is
-the one that holds the unlocked vault — the passphrase never crosses the port.
+the commodity's message port or the [ARexx port](ARexx-Port.md). Scripted/headless
+use is served by always-unlocked vaults instead. When the CLI forwards commands
+to a resident GUI, the GUI is the one that holds the unlocked vault — the
+passphrase never crosses the port. The ARexx `UNLOCK` command is likewise
+always interactive: it opens the same GUI requester, never accepting a
+passphrase as an argument.
 
 ## Randomness
 

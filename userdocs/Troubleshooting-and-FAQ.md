@@ -146,10 +146,11 @@ The data is unrecoverable — that is the point of the encryption. Re-enrol each
 account using the services' recovery codes or a second enrolled device.
 
 **Exporting QR codes?**
-On the v2 candidate list, along with an ARexx port and translations. See the
-[v2 milestone](https://github.com/sidick/amiauth/milestone/2). (SHA-256/512
-TOTP and Steam Guard are already supported — see
-[Managing Accounts](Managing-Accounts.md).)
+Supported — *Account → Show QR code…* in the GUI, or `AmiAuth QR <account>`
+from the CLI. See [Managing Accounts](Managing-Accounts.md). (SHA-256/512
+TOTP and Steam Guard are supported too, and there's an [ARexx port](ARexx-Port.md)
+for scripting.) Translations remain on the
+[v1.1 milestone](https://github.com/sidick/amiauth/milestone/2).
 
 **Why SHA-1? Isn't that broken?**
 SHA-1's collision attacks do not affect HMAC-SHA1 as used by TOTP/HOTP (it

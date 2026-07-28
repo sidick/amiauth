@@ -46,10 +46,11 @@ set.
 | `TIMESERVER` | *(saved `server` pref, else `pool.ntp.org`)* | SNTP server for the automatic time sync the GUI performs at startup. On success the measured offset (and this server) are saved; offline the sync fails quietly. See [Time and Clock Sync](Time-and-Clock-Sync.md). |
 | `PUBSCREEN` | *(the default public screen)* | Open on the named public screen instead — e.g. a custom screen another program opened. Falls back to the default public screen automatically if the named one isn't open when AmiAuth starts. |
 | `VAULT` | *(see [Vault and Passphrases](Vault-and-Passphrases.md))* | Use this vault file for this launch, e.g. `VAULT=Work:Secrets/Test.vault`. Same precedence as the CLI's `VAULT` keyword: it beats `AMIAUTH_VAULT` and the saved path, and — like those overrides — is never recorded as the sticky vault location. |
+| `PORTNAME` | *(the lowest free `AMIAUTH.<n>` slot)* | Override the [ARexx port](ARexx-Port.md)'s name, e.g. `PORTNAME=MYAUTH.1`. |
 | `DONOTWAIT` | — | Not read by AmiAuth itself: tells **Workbench** not to wait for the program to exit. Set it on any WBStartup icon. |
 
-The `CX_*` names, and `TIMESERVER`/`PUBSCREEN`/`VAULT`, also work as Shell
-arguments when starting the GUI from a script
+The `CX_*` names, and `TIMESERVER`/`PUBSCREEN`/`VAULT`/`PORTNAME`, also work
+as Shell arguments when starting the GUI from a script
 (`Run >NIL: AmiAuthGUI CX_POPUP=no`).
 
 ## A WBStartup icon that works

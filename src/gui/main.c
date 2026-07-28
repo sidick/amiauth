@@ -51,6 +51,8 @@
 #include <proto/wb.h>           /* AddAppWindowA/RemoveAppWindow (QR drag-and-drop);
                                   * note: workbench.library's proto header is
                                   * "wb.h", not "workbench.h" */
+#include <proto/rexxsyslib.h>   /* RexxSysBase (#46, ARexx port) */
+#include <rexx/rxslib.h>        /* struct RxsLib (RexxSysBase's real type) */
 
 #include <string.h>
 #include <stdio.h>
@@ -72,6 +74,7 @@ AMIAUTH_VERSTAG("AmiAuthGUI")
 #include "qrimage.h"                /* qrimage_load_gray (datatypes glue) */
 #include "guiport.h"                /* CLI->GUI IPC (Stage 3b public port) */
 #include "crypto_select.h"          /* select crypto hot-loop impl, #47 */
+#include "arexx.h"                  /* ARexx automation port, #46 */
 
 /* Request a larger stack (libnix): the QR decoder still needs more than the
  * few KB a shell hands a Run/WBench program. qr_decode_gray keeps its big
@@ -126,6 +129,10 @@ static char g_pubscreen[MAXPUBSCREENNAME + 1] = "";
  * startup; same precedence and session-only scope as the CLI's VAULT/K. */
 static char g_vault_arg[256] = "";
 
+/* ARexx port name override (PORTNAME tooltype/arg, #46); empty = the default
+ * slot-numbered "AMIAUTH.<n>" derived by arexx_open(). */
+static char g_portname_arg[32] = "";
+
 /* clock-status LED: red/amber/green pens indexed by clock_state (-1 = none),
  * drawn in a recessed bevel (shadow/shine pens from the screen's DrawInfo). */
 static LONG g_ledpen[3] = { -1, -1, -1 };
@@ -170,16 +177,24 @@ enum { CMD_ADD_CLIP = 1, CMD_ADD_TYPE, CMD_ADD_QR, CMD_EDIT, CMD_COPY, CMD_SHOW_
 static char g_code[VAULT_MAX_ACCOUNTS][12];
 static char g_left[VAULT_MAX_ACCOUNTS][8];
 
+/* ARexx LIST reply scratch (#46): sized for the worst case, every account's
+ * "issuer:label\n" line at once; off the stack like everything else here. */
+static char g_rexx_listbuf[VAULT_MAX_ACCOUNTS * (OTP_MAX_ISSUER + OTP_MAX_LABEL + 3)];
+
 /* The main window's title, including the version/build hash (set at window
  * creation, win_show below). Single source of truth so the QR-decode busy
  * title (do_add_qr, "AmiAuth - Decoding QR image...") restores the real
  * title afterward instead of a separate hardcoded "AmiAuth" that drops the
- * version/hash. */
+ * version/hash. Mutable (not const): main() appends " [AMIAUTH.<n>]" once
+ * the ARexx port opens (#46), so the port name is discoverable without a
+ * separate About window. */
 #ifdef AMIAUTH_BUILD_HASH
-static const char g_main_title[] = "AmiAuth " AMIAUTH_VERSION " (" AMIAUTH_BUILD_HASH ")";
+#define AMIAUTH_TITLE_BASE "AmiAuth " AMIAUTH_VERSION " (" AMIAUTH_BUILD_HASH ")"
 #else
-static const char g_main_title[] = "AmiAuth " AMIAUTH_VERSION;
+#define AMIAUTH_TITLE_BASE "AmiAuth " AMIAUTH_VERSION
 #endif
+static char g_main_title[sizeof(AMIAUTH_TITLE_BASE) + 40 /* " [" + rexxportname(31) + "]" */]
+    = AMIAUTH_TITLE_BASE;
 static struct ColumnInfo g_columns[] = {
     { 50, (STRPTR)"Account", CIF_WEIGHTED },
     { 34, (STRPTR)"Code",    CIF_WEIGHTED },
@@ -225,6 +240,7 @@ static struct NewMenu g_menu[] = {
 
 static void close_libs(void)
 {
+    if (RexxSysBase)     CloseLibrary((struct Library *)RexxSysBase);
     if (CxBase)          CloseLibrary(CxBase);
     if (WorkbenchBase)   CloseLibrary(WorkbenchBase);
     if (AslBase)         CloseLibrary(AslBase);
@@ -262,6 +278,7 @@ static const char *open_libs(void)
     AslBase         = OpenLibrary((STRPTR)"asl.library", 37);
     WorkbenchBase   = OpenLibrary((STRPTR)"workbench.library", 37);
     CxBase          = OpenLibrary((STRPTR)"commodities.library", 37);  /* optional: commodity */
+    RexxSysBase     = (struct RxsLib *)OpenLibrary((STRPTR)"rexxsyslib.library", 0);  /* optional: ARexx port, #46 */
     if (!IntuitionBase || !UtilityBase)
         return "needs intuition.library / utility.library v37+ (OS 2.04)";
     if (!WindowBase || !LayoutBase || !ListBrowserBase || !FuelGaugeBase || !ButtonBase)
@@ -1746,6 +1763,73 @@ static void win_hide(struct gui_widgets *gw, struct Window *w)
     memset(gw, 0, sizeof *gw);
 }
 
+/* --- shared command bodies (#46): both the guiport (CLI-forward) switch and
+ * the ARexx command switch dispatch into these, rather than each having
+ * their own copy of the same vault/window logic. --- */
+
+/* Show the window, unlocking on demand if this is a deferred (hidden) start
+ * - same behaviour as the hotkey/AppMenu "appear" path. Returns 1 on
+ * success (win, deferred and winsig outputs updated), 0 if declined (still
+ * locked; nothing changed). */
+static int gui_do_show(struct gui_widgets *gw, struct List *lblist, vault *v,
+                       int have_clip, const clock_ctx *clk, char *statbuf,
+                       char *vpath, size_t vpath_cap, int *encrypted,
+                       size_t *naccounts, struct Window **win, int *deferred,
+                       ULONG *winsig)
+{
+    if (*win) { WindowToFront(*win); ActivateWindow(*win); return 1; }
+    if (!*deferred || deferred_open(v, vpath, vpath_cap, encrypted, lblist,
+                                    gw->listobj, naccounts)) {
+        *deferred = 0;
+        *win = win_show(gw, lblist, v, have_clip, clk, statbuf, winsig, clk->state);
+        return 1;
+    }
+    return 0;
+}
+
+/* "issuer:label\n" per account into rb (bounded by rbcap). Caller checks
+ * v->unlocked first - both callers do, with their own not-unlocked result. */
+static void gui_do_list(const vault *v, char *rb, size_t rbcap)
+{
+    size_t k;
+    if (!rb || !rbcap) return;
+    rb[0] = '\0';
+    for (k = 0; k < v->count; k++) {
+        const otp_account *a = &v->accounts[k];
+        char line[OTP_MAX_ISSUER + OTP_MAX_LABEL + 3];
+        if (a->issuer[0]) { strcpy(line, a->issuer); strcat(line, ":"); strcat(line, a->label); }
+        else              strcpy(line, a->label);
+        strcat(line, "\n");
+        if (strlen(rb) + strlen(line) < rbcap) strcat(rb, line);
+    }
+}
+
+/* Render `arg`'s current code into rb (bounded by rbcap, "\n"-terminated).
+ * HOTP advances + persists the counter, same as always. Returns 0 on
+ * success, -1 if no account matches. *save_failed (if non-NULL) is set on a
+ * HOTP persist failure - callers decide what that means for their own
+ * result code. Caller checks v->unlocked (and any ARexx-specific gating)
+ * first. */
+static int gui_do_get(vault *v, const char *path, const clock_ctx *clk,
+                      const char *arg, char *rb, size_t rbcap, int *save_failed)
+{
+    int idx = gui_find_account(v, arg);
+    otp_account *a;
+    char code[OTP_CODE_BUF];
+    if (idx < 0) return -1;
+    a = &v->accounts[idx];
+    if (save_failed) *save_failed = 0;
+    if (strcmp(a->type, "hotp") == 0) {
+        otp_render(a, 0, code);
+        a->counter++;                   /* stateful: persist */
+        if (gui_save(v, path) != VAULT_OK && save_failed) *save_failed = 1;
+    } else {
+        otp_render(a, clock_now_utc(clk), code);
+    }
+    if (rb && rbcap > strlen(code) + 1) { strcpy(rb, code); strcat(rb, "\n"); }
+    return 0;
+}
+
 /* ------------------------------------------------------------------ */
 
 int main(int argc, char **argv)
@@ -1775,6 +1859,12 @@ int main(int argc, char **argv)
      * open the vault a second time. Created once we hold the (unlocked) vault. */
     struct MsgPort *pubport = NULL;
     ULONG pubsig = 0;
+    /* ARexx automation port (#46): a genuine public RexxMsg port, separate
+     * from pubport above (that's the private CLI-forwarding protocol). See
+     * arexx.h for why the two don't share one port. */
+    struct MsgPort *rexxport = NULL;
+    ULONG rexxsig = 0;
+    static char rexxportname[32];
 
     curcode[0] = '\0';
     crypto_select_init();
@@ -1810,6 +1900,16 @@ int main(int argc, char **argv)
         if (va && va[0]) {
             strncpy(g_vault_arg, (const char *)va, sizeof g_vault_arg - 1);
             g_vault_arg[sizeof g_vault_arg - 1] = '\0';
+        }
+    }
+
+    /* PORTNAME=<name>: override the default "AMIAUTH.<n>" ARexx port name
+     * (#46), same tooltype/arg convention as VAULT/PUBSCREEN above. */
+    {
+        STRPTR pn = ArgString((CONST_STRPTR *)tt, (CONST_STRPTR)"PORTNAME", NULL);
+        if (pn && pn[0]) {
+            strncpy(g_portname_arg, (const char *)pn, sizeof g_portname_arg - 1);
+            g_portname_arg[sizeof g_portname_arg - 1] = '\0';
         }
     }
 
@@ -1917,6 +2017,18 @@ int main(int argc, char **argv)
     appsig   = g_appport ? (1UL << g_appport->mp_SigBit) : 0;
     if (have_timer) timer_arm(1);
 
+    /* ARexx automation port (#46): open before the window so its name (if
+     * any) is already in g_main_title at window-creation time. Absence
+     * (no rexxsyslib.library, or all AMIAUTH.1..99 slots taken) just means
+     * no ARexx port - not fatal, same as the other optional libraries. */
+    rexxport = arexx_open(g_portname_arg, rexxportname, sizeof rexxportname);
+    if (rexxport) {
+        rexxsig = 1UL << rexxport->mp_SigBit;
+        strcat(g_main_title, " [");
+        strcat(g_main_title, rexxportname);
+        strcat(g_main_title, "]");
+    }
+
     /* Open the window now, unless started as a hidden commodity (CX_POPUP=no):
      * then it stays dormant until the hotkey / Exchange "Show". win_show sets
      * winsig; it stays 0 while hidden so the event loop drops it from the mask. */
@@ -1977,7 +2089,7 @@ int main(int argc, char **argv)
 
     while (running) {
         ULONG sigs = Wait((win ? winsig : 0) | timersig | (win ? appsig : 0) |
-                          cxsig | pubsig | SIGBREAKF_CTRL_C);
+                          cxsig | pubsig | rexxsig | SIGBREAKF_CTRL_C);
         changed = 0;                            /* set by any add/remove/edit this pass */
 
         if (sigs & SIGBREAKF_CTRL_C) running = 0;
@@ -2032,47 +2144,22 @@ int main(int argc, char **argv)
                 req->aar_Result = AAR_OK;
                 switch (req->aar_Cmd) {
                     case AAP_SHOW:
-                        if (win) { WindowToFront(win); ActivateWindow(win); }
-                        else if (!deferred ||
-                                 deferred_open(&v, vpath, sizeof vpath, &encrypted,
-                                               &lblist, gw.listobj, &naccounts)) {
-                            deferred = 0;
-                            win = win_show(&gw, &lblist, &v, have_clip, &clk, statbuf, &winsig, clk.state);
-                        } else {
+                        if (!gui_do_show(&gw, &lblist, &v, have_clip, &clk, statbuf,
+                                        vpath, sizeof vpath, &encrypted, &naccounts,
+                                        &win, &deferred, &winsig))
                             req->aar_Result = AAR_LOCKED;   /* declined: still locked */
-                        }
                         break;
                     case AAP_LIST:
                         if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
-                        if (rb && rbcap) {
-                            size_t k; rb[0] = '\0';
-                            for (k = 0; k < v.count; k++) {
-                                const otp_account *a = &v.accounts[k];
-                                char line[OTP_MAX_ISSUER + OTP_MAX_LABEL + 3];
-                                if (a->issuer[0]) { strcpy(line, a->issuer); strcat(line, ":"); strcat(line, a->label); }
-                                else              strcpy(line, a->label);
-                                strcat(line, "\n");
-                                if (strlen(rb) + strlen(line) < rbcap) strcat(rb, line);
-                            }
-                        }
+                        gui_do_list(&v, rb, rbcap);
                         break;
                     case AAP_GET: {
-                        int idx;
+                        int save_failed = 0;
                         if (!v.unlocked) { req->aar_Result = AAR_LOCKED; break; }
-                        idx = gui_find_account(&v, arg);
-                        if (idx < 0) { req->aar_Result = AAR_NOTFOUND; break; }
-                        {
-                            otp_account *a = &v.accounts[idx];
-                            char code[OTP_CODE_BUF];
-                            if (strcmp(a->type, "hotp") == 0) {
-                                otp_render(a, 0, code);
-                                a->counter++;                     /* stateful: persist */
-                                if (gui_save(&v, path) != VAULT_OK) req->aar_Result = AAR_SAVEFAIL;
-                            } else {
-                                otp_render(a, clock_now_utc(&clk), code);
-                            }
-                            if (rb && rbcap > strlen(code) + 1) { strcpy(rb, code); strcat(rb, "\n"); }
-                        }
+                        if (gui_do_get(&v, path, &clk, arg, rb, rbcap, &save_failed) < 0)
+                            req->aar_Result = AAR_NOTFOUND;
+                        else if (save_failed)
+                            req->aar_Result = AAR_SAVEFAIL;
                         break;
                     }
                     case AAP_QR: {
@@ -2145,6 +2232,102 @@ int main(int argc, char **argv)
                     default: req->aar_Result = AAR_BADARG; break;
                 }
                 ReplyMsg((struct Message *)req);
+            }
+        }
+
+        /* --- ARexx automation (#46): a genuine public RexxMsg port, separate
+         * from pubport above. See arexx.h for the two-port rationale, and
+         * docs/SECURITY.md for the RC scheme - the passphrase never crosses
+         * this port; UNLOCK reuses the same interactive prompt as the GUI. */
+        if (rexxsig && (sigs & rexxsig)) {
+            void *rmsg;
+            arexx_parsed rp;
+            while ((rmsg = arexx_receive(rexxport, &rp)) != NULL) {
+                int rrc = AREXX_RC_OK;
+                char rbuf[64];
+                const char *result = rbuf;
+                rbuf[0] = '\0';
+                switch (rp.type) {
+                    case AREXX_CMD_GETCODE: {
+                        int idx, save_failed = 0;
+                        char prefbuf[8];
+                        /* Locked and "gated off" share one RC on purpose: a
+                         * script must not be able to probe *why* GETCODE
+                         * failed, only that it did. */
+                        if (!v.unlocked) { rrc = AREXX_RC_FAIL; break; }
+                        if (prefs_get("arexxgetcode", prefbuf, sizeof prefbuf) == 0 &&
+                            Stricmp((STRPTR)prefbuf, (STRPTR)"off") == 0)
+                            { rrc = AREXX_RC_FAIL; break; }
+                        idx = gui_find_account(&v, rp.account);
+                        if (idx < 0) { rrc = AREXX_RC_ERROR; break; }
+                        gui_do_get(&v, path, &clk, rp.account, rbuf, sizeof rbuf, &save_failed);
+                        if (save_failed) rrc = AREXX_RC_FAIL;
+                        break;
+                    }
+                    case AREXX_CMD_TIMELEFT: {
+                        int idx;
+                        if (!v.unlocked) { rrc = AREXX_RC_FAIL; break; }
+                        idx = gui_find_account(&v, rp.account);
+                        if (idx < 0) { rrc = AREXX_RC_ERROR; break; }
+                        sprintf(rbuf, "%ld",
+                               arexx_timeleft(strcmp(v.accounts[idx].type, "hotp") == 0,
+                                              clock_now_utc(&clk), 0, v.accounts[idx].period));
+                        break;
+                    }
+                    case AREXX_CMD_LIST:
+                        if (!v.unlocked) { rrc = AREXX_RC_FAIL; break; }
+                        gui_do_list(&v, g_rexx_listbuf, sizeof g_rexx_listbuf);
+                        result = g_rexx_listbuf;
+                        break;
+                    case AREXX_CMD_STATUS:
+                        sprintf(rbuf, "%s %lu",
+                               !encrypted ? "always-unlocked" : v.unlocked ? "unlocked" : "locked",
+                               (unsigned long)v.count);
+                        break;
+                    case AREXX_CMD_LOCK:
+                        if (!encrypted) { strcpy(rbuf, "always-unlocked"); break; }
+                        vault_lock(&v);
+                        if (win) { win_hide(&gw, win); win = NULL; }
+                        deferred = 1;
+                        strcpy(rbuf, "locked");
+                        break;
+                    case AREXX_CMD_UNLOCK:
+                        if (!encrypted)        strcpy(rbuf, "always-unlocked");
+                        else if (v.unlocked)   strcpy(rbuf, "already-unlocked");
+                        else if (deferred_open(&v, vpath, sizeof vpath, &encrypted,
+                                               &lblist, gw.listobj, &naccounts)) {
+                            deferred = 0;
+                            strcpy(rbuf, "unlocked");
+                        } else {
+                            rrc = AREXX_RC_WARN;
+                            strcpy(rbuf, "cancelled");
+                        }
+                        break;
+                    case AREXX_CMD_SHOW:
+                        /* Only meaningful as a registered commodity - mirrors the
+                         * close-gadget's own broker check (#46 plan feedback). */
+                        if (!broker) { rrc = AREXX_RC_FAIL; break; }
+                        if (!gui_do_show(&gw, &lblist, &v, have_clip, &clk, statbuf,
+                                        vpath, sizeof vpath, &encrypted, &naccounts,
+                                        &win, &deferred, &winsig))
+                            rrc = AREXX_RC_WARN;   /* user cancelled the unlock prompt */
+                        break;
+                    case AREXX_CMD_HIDE:
+                        if (!broker) { rrc = AREXX_RC_FAIL; break; }
+                        if (win) { win_hide(&gw, win); win = NULL; }
+                        break;
+                    case AREXX_CMD_QUIT:
+                        /* rp.force (FORCE/S) is accepted but a documented no-op:
+                         * every vault mutation already saves immediately, so
+                         * there's no unsaved-changes confirm to suppress. */
+                        running = 0;
+                        break;
+                    case AREXX_CMD_UNKNOWN:
+                    default:
+                        rrc = AREXX_RC_ERROR;
+                        break;
+                }
+                arexx_reply(rmsg, rrc, result);
             }
         }
 
@@ -2443,6 +2626,7 @@ int main(int argc, char **argv)
     }
 
 cleanup:
+    arexx_close(rexxport);                    /* drains + replies AREXX_RC_FAIL, RemPort, Delete */
     if (pubport) {                            /* stop new forwards, drain pending */
         struct AmiAuthReq *req;
         RemPort(pubport);
