@@ -92,7 +92,7 @@ QUIRC_M68K_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-m68k/%.o,$(QUIRC_SRCS))
 QRCODEGEN_HOST_OBJ := $(BUILD)/qr-host/qrcodegen.o
 QRCODEGEN_M68K_OBJ := $(BUILD)/qr-m68k/qrcodegen.o
 
-.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke arexx-onhw arexx-onhw-docker arexx-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench clean
+.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke arexx-onhw arexx-onhw-docker arexx-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench flexcat flexcat-docker catalog-strings catalog-strings-docker catalog-onhw-smoke catalog-nolib-onhw catalog-nolib-onhw-docker clean
 
 all: test cli
 
@@ -140,6 +140,21 @@ m68k: $(QRCODEGEN_M68K_OBJ) | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) -Isrc/qr $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) \
 		$(QRENC_WRAP) $(QRCODEGEN_M68K_OBJ) -o $(BUILD)/AmiAuth
 
+# Test-only CLI variant (#67): built with a bogus locale.library name, so
+# catalog_open()'s OpenLibrary() genuinely fails and the on-target catalog
+# test can exercise the LocaleBase==NULL fallback path without deleting the
+# real locale.library from a WB clone (which breaks unrelated boot
+# components - see tests/gui/catalog-onhw.sh). Never shipped.
+CATALOG_NOLIB_DEFS := -DAMIAUTH_LOCALE_LIBNAME='"locale.library.nonexistent"'
+
+catalog-nolib-onhw: $(QRCODEGEN_M68K_OBJ) | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) $(CATALOG_NOLIB_DEFS) -Isrc/qr $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) \
+		$(QRENC_WRAP) $(QRCODEGEN_M68K_OBJ) -o $(BUILD)/AmiAuth-nolib
+
+catalog-nolib-onhw-docker:
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make catalog-nolib-onhw'
+
 # --- m68k: ReAction GUI binary (Amiga only; needs intuition + ReAction classes) ---
 # Includes the QR decoder: qrimage.c (datatypes glue) + our qr.c wrapper + the
 # vendored quirc objects (built -w for m68k). QUIRC_FLOAT_TYPE=float: no FPU.
@@ -158,6 +173,36 @@ gui: $(QUIRC_M68K_OBJS) $(QRCODEGEN_M68K_OBJ) | $(BUILD)
 gui-docker:
 	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make gui GIT_HASH=$(GIT_HASH) GIT_ON_TAG=$(GIT_ON_TAG)'
+
+# --- Localization (#67): FlexCat (github.com/adtools/flexcat) generates
+# src/core/catalog_strings.h from locale/AmiAuth.cd. FlexCat itself is a
+# host-only build tool (never ships, never touches the m68k cross-compiler -
+# see tools/fetch-flexcat.sh) and the generated header is checked into git
+# like any other source file, so ordinary `make test`/`cli`/`m68k`/`gui`
+# builds need neither FlexCat nor network access. Only re-run `make
+# catalog-strings` (regenerating + committing the header) after editing
+# locale/AmiAuth.cd. Needs a native (non-cross) C compiler on PATH - macOS's
+# clang chokes on FlexCat's own build flags, so use `flexcat-docker` there.
+flexcat: $(BUILD)/flexcat
+
+$(BUILD)/flexcat: | $(BUILD)
+	src=$$(bash tools/fetch-flexcat.sh) && \
+	cp "$$src" $(BUILD)/flexcat && chmod +x $(BUILD)/flexcat && \
+	cp "$$(dirname $$src)/../sd/CatComp_h.sd" $(BUILD)/CatComp_h.sd
+
+flexcat-docker:
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'make flexcat'
+
+catalog-strings: $(BUILD)/flexcat
+	$(BUILD)/flexcat locale/AmiAuth.cd src/core/catalog_strings.h=$(BUILD)/CatComp_h.sd
+
+# $(BUILD)/flexcat is a Linux ELF binary (built inside the container) - won't
+# run directly on a macOS host, so regenerating the header locally on macOS
+# needs the whole step done inside the container, not just the build half.
+catalog-strings-docker:
+	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
+		$(AMIGA_GCC_IMAGE) sh -lc 'make catalog-strings'
 
 # --- Headless GUI smoke test: boot WB 3.2 under Copperline, render AmiAuthGUI --
 # Boots an A1200/OS 3.2 under native Copperline, auto-launches AmiAuthGUI, and
@@ -239,6 +284,14 @@ arexx-onhw-docker:
 
 arexx-onhw-smoke:
 	sh tests/gui/arexx-onhw.sh
+
+# --- Headless on-target catalog test (#67): boot WB 3.2, run AmiAuth CLI
+# commands whose output is routed through MSG()/catalog_get(), with
+# locale.library both present (no matching catalog - the common case) and
+# entirely absent, asserting the correct English default either way. See
+# tests/gui/catalog-onhw.sh for what this does/doesn't cover.
+catalog-onhw-smoke:
+	sh tests/gui/catalog-onhw.sh
 
 # Measure PBKDF2 throughput on a stock 68000 (informs the KDF policy). Dev-only:
 # needs a Kickstart ROM (timer.device EClock isn't available under AROS).

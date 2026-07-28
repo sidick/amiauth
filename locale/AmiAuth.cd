@@ -1,0 +1,72 @@
+; AmiAuth.cd - catalog description (source of truth for all user-visible
+; strings). Generated header: `make catalog-strings` (locale/AmiAuth.cd via
+; FlexCat's CatComp_h.sd template -> src/core/catalog_strings.h).
+;
+; This is Phase 1 (#67): a representative slice, not the full string set -
+; see docs/LOCALIZATION.md for the migration plan and translator workflow.
+;
+; Do NOT add: CLI subcommand keywords, ReadArgs template field names, or
+; ARexx port command keywords - those are the scripting protocol, not
+; user-facing prose, and must stay identical across every locale.
+;
+#language english
+#version 0
+;
+; --- CLI (src/cli/main.c) ---------------------------------------------
+;
+MSG_CLI_ERR (0//)
+AmiAuth: %s\n
+;
+MSG_CLI_ALREADY_EXISTS (1//)
+AmiAuth: %s already exists\n
+;
+MSG_CLI_ADDED (2//)
+Added %s:%s\n
+;
+MSG_CLI_REMOVED (3//)
+Removed '%s'\n
+;
+MSG_CLI_USAGE_RUNAS (4//)
+Run as '%s <COMMAND> ...'  ('%s ?' shows the arg template):\n
+;
+; --- GUI (src/gui/main.c): account list column headers -----------------
+;
+MSG_GUI_COL_ACCOUNT (5//)
+Account
+;
+MSG_GUI_COL_CODE (6//)
+Code
+;
+MSG_GUI_COL_LEFT (7//)
+Left
+;
+; --- GUI: requester text -------------------------------------------------
+;
+MSG_GUI_CANNOT_OPEN_VAULT (8//)
+Cannot open the vault at\n%s
+;
+MSG_GUI_BAD_URI (9//)
+That is not a valid otpauth:// URI.
+;
+MSG_GUI_BAD_SECRET (10//)
+That is not an otpauth:// URI or a Base32 secret.
+;
+MSG_GUI_NO_QR (11//)
+No otpauth QR code was found in that image.
+;
+MSG_GUI_SAVE_FAILED (12//)
+Could not save the vault.
+;
+MSG_GUI_REKEY_DONE (13//)
+Vault re-keyed for this machine.
+;
+MSG_GUI_REKEY_FAILED (14//)
+Re-key failed; the vault is unchanged.
+;
+; --- GUI: common requester button labels ----------------------------------
+;
+MSG_GUI_OK (15//)
+OK
+;
+MSG_GUI_CANCEL (16//)
+Cancel

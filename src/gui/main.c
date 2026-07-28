@@ -75,6 +75,7 @@ AMIAUTH_VERSTAG("AmiAuthGUI")
 #include "guiport.h"                /* CLI->GUI IPC (Stage 3b public port) */
 #include "crypto_select.h"          /* select crypto hot-loop impl, #47 */
 #include "arexx.h"                  /* ARexx automation port, #46 */
+#include "catalog.h"                /* locale.library message catalogs (#67) */
 
 /* Request a larger stack (libnix): the QR decoder still needs more than the
  * few KB a shell hands a Run/WBench program. qr_decode_gray keeps its big
@@ -195,6 +196,10 @@ static char g_rexx_listbuf[VAULT_MAX_ACCOUNTS * (OTP_MAX_ISSUER + OTP_MAX_LABEL 
 #endif
 static char g_main_title[sizeof(AMIAUTH_TITLE_BASE) + 40 /* " [" + rexxportname(31) + "]" */]
     = AMIAUTH_TITLE_BASE;
+/* ci_Title defaults are English; catalog_open() has not run yet at static-
+ * init time (a static initializer can't call MSG(), a function), so main()
+ * overwrites all three with the translated (or same, if no catalog) string
+ * once it has. */
 static struct ColumnInfo g_columns[] = {
     { 50, (STRPTR)"Account", CIF_WEIGHTED },
     { 34, (STRPTR)"Code",    CIF_WEIGHTED },
@@ -240,6 +245,7 @@ static struct NewMenu g_menu[] = {
 
 static void close_libs(void)
 {
+    catalog_close();
     if (RexxSysBase)     CloseLibrary((struct Library *)RexxSysBase);
     if (CxBase)          CloseLibrary(CxBase);
     if (WorkbenchBase)   CloseLibrary(WorkbenchBase);
@@ -279,6 +285,7 @@ static const char *open_libs(void)
     WorkbenchBase   = OpenLibrary((STRPTR)"workbench.library", 37);
     CxBase          = OpenLibrary((STRPTR)"commodities.library", 37);  /* optional: commodity */
     RexxSysBase     = (struct RxsLib *)OpenLibrary((STRPTR)"rexxsyslib.library", 0);  /* optional: ARexx port, #46 */
+    catalog_open();   /* optional: message catalog, #67 */
     if (!IntuitionBase || !UtilityBase)
         return "needs intuition.library / utility.library v37+ (OS 2.04)";
     if (!WindowBase || !LayoutBase || !ListBrowserBase || !FuelGaugeBase || !ButtonBase)
@@ -612,9 +619,9 @@ static void gui_maybe_rekey(struct Window *win, vault *v, const char *path,
         if (amiga_random(salt, sizeof salt) == 0 &&
             vault_set_passphrase(v, pass, ideal, salt) == VAULT_OK &&
             gui_save(v, path) == VAULT_OK)
-            gui_requester(win, "Vault re-keyed for this machine.", "OK", NULL);
+            gui_requester(win, MSG(MSG_GUI_REKEY_DONE), MSG(MSG_GUI_OK), NULL);
         else
-            gui_requester(win, "Re-key failed; the vault is unchanged.", "OK", NULL);
+            gui_requester(win, MSG(MSG_GUI_REKEY_FAILED), MSG(MSG_GUI_OK), NULL);
         memset(salt, 0, sizeof salt);
     }
 }
@@ -628,14 +635,14 @@ static int gui_add_uri(struct Window *win, vault *v, const char *path, const cha
     int changed = 0;
     vault_result rc;
     if (otpauth_parse(uri, &acct) != 0) {
-        gui_requester(win, "That is not a valid otpauth:// URI.", "OK", NULL);
+        gui_requester(win, MSG(MSG_GUI_BAD_URI), MSG(MSG_GUI_OK), NULL);
     } else {
         rc = vault_add(v, &acct);
         if (rc == VAULT_OK) { changed = 1; rc = gui_save(v, path); }
         if (rc != VAULT_OK)
             gui_requester(win, rc == VAULT_ERR_FULL
                           ? "The vault is full (max 64 accounts)."
-                          : "Could not save the vault.", "OK", NULL);
+                          : MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
     }
     memset(&acct, 0, sizeof acct);
     return changed;
@@ -676,7 +683,7 @@ static int do_add_qr_impl(struct Window *win, vault *v, const char *vpath, const
     if (dr == QR_OK)
         changed = gui_add_uri(win, v, vpath, uri);
     else
-        gui_requester(win, "No otpauth QR code was found in that image.", "OK", NULL);
+        gui_requester(win, MSG(MSG_GUI_NO_QR), MSG(MSG_GUI_OK), NULL);
     qrimage_free(gray);
     memset(uri, 0, sizeof uri);
     return changed;
@@ -1053,7 +1060,7 @@ static int gui_open_vault(vault *v, char *path, size_t cap, int *encrypted,
     if (rc != VAULT_OK) {
         /* a WB-launched process has no console, so a requester must carry
          * the error; keep the Printf for Shell launches */
-        gui_requester(NULL, "Cannot open the vault at\n%s", "Quit", path);
+        gui_requester(NULL, MSG(MSG_GUI_CANNOT_OPEN_VAULT), "Quit", path);
         Printf((CONST_STRPTR)"AmiAuth: cannot open the vault (%ld)\n", (LONG)rc);
         return -1;
     }
@@ -1533,21 +1540,21 @@ static int gui_add_secret(struct Window *win, vault *v, const char *path, const 
     /* Cheap validation first, so a typo doesn't cost filling in the form. */
     if (base32_decode(secret, probe, sizeof probe) <= 0) {
         memset(probe, 0, sizeof probe);
-        gui_requester(win, "That is not an otpauth:// URI or a Base32 secret.", "OK", NULL);
+        gui_requester(win, MSG(MSG_GUI_BAD_SECRET), MSG(MSG_GUI_OK), NULL);
         return 0;
     }
     memset(probe, 0, sizeof probe);
 
     if (!secret_meta_request(issuer, label)) return 0;
     if (otp_account_from_secret(issuer, label, secret, &acct) != 0) {
-        gui_requester(win, "That is not an otpauth:// URI or a Base32 secret.", "OK", NULL);
+        gui_requester(win, MSG(MSG_GUI_BAD_SECRET), MSG(MSG_GUI_OK), NULL);
     } else {
         rc = vault_add(v, &acct);
         if (rc == VAULT_OK) { changed = 1; rc = gui_save(v, path); }
         if (rc != VAULT_OK)
             gui_requester(win, rc == VAULT_ERR_FULL
                           ? "The vault is full (max 64 accounts)."
-                          : "Could not save the vault.", "OK", NULL);
+                          : MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
     }
     memset(&acct, 0, sizeof acct);
     memset(issuer, 0, sizeof issuer);
@@ -1876,6 +1883,13 @@ int main(int argc, char **argv)
         close_libs();
         return 20;
     }
+
+    /* g_columns is a static initializer (English only - MSG() is a function
+     * call, illegal there); fill in the real (translated, or same if no
+     * catalog) titles now that catalog_open() has run. */
+    g_columns[0].ci_Title = (STRPTR)MSG(MSG_GUI_COL_ACCOUNT);
+    g_columns[1].ci_Title = (STRPTR)MSG(MSG_GUI_COL_CODE);
+    g_columns[2].ci_Title = (STRPTR)MSG(MSG_GUI_COL_LEFT);
 
     /* Read CX_* tooltypes (WBStartup icon) or CLI args uniformly (amiga.lib). */
     tt = ArgArrayInit(argc, (CONST_STRPTR *)argv);
@@ -2483,7 +2497,7 @@ int main(int argc, char **argv)
                     changed = 1;
                     rc = gui_save(&v, path);
                     if (rc != VAULT_OK)
-                        gui_requester(win, "Could not save the vault.", "OK", NULL);
+                        gui_requester(win, MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
                 }
                 memset(&acct, 0, sizeof acct);
             }
@@ -2508,7 +2522,7 @@ int main(int argc, char **argv)
                     changed = 1;
                     if (rc == VAULT_OK) rc = gui_save(&v, path);
                     if (rc != VAULT_OK)
-                        gui_requester(win, "Could not save the vault.", "OK", NULL);
+                        gui_requester(win, MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
                 }
             }
 

@@ -31,6 +31,7 @@
 #include "pbkdf2.h"
 #include "prefs.h"
 #include "qrencode.h"                /* qr_encode_uri/qr_render_ascii (#45) */
+#include "catalog.h"                /* locale.library message catalogs (#67) */
 
 #if defined(__unix__) || defined(__APPLE__) || defined(__linux__)
 #  include <unistd.h>
@@ -551,7 +552,7 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
     exists = fopen(path, "rb");
     if (exists) {
         fclose(exists);
-        fprintf(stderr, "AmiAuth: %s already exists\n", path);
+        fprintf(stderr, MSG(MSG_CLI_ALREADY_EXISTS), path);
         return 2;
     }
 
@@ -598,7 +599,7 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
     if (rc == VAULT_OK) rc = save_vault(&v, path);
     if (rc != VAULT_OK) {
         vault_lock(&v);
-        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
+        fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc));
         return 2;
     }
     printf("Created %s vault at %s\n",
@@ -666,18 +667,18 @@ static int cmd_add(const char *path, const char *uri)
     rc = open_vault(&v, path);
     if (rc != VAULT_OK) {
         memset(&acct, 0, sizeof(acct));
-        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
+        fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc));
         return 2;
     }
 
     rc = vault_add(&v, &acct);
     if (rc == VAULT_OK) rc = save_vault(&v, path);
     memset(&acct, 0, sizeof(acct));
-    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
 
     {
         const otp_account *added = &v.accounts[v.count - 1];
-        if (added->issuer[0]) printf("Added %s:%s\n", added->issuer, added->label);
+        if (added->issuer[0]) printf(MSG(MSG_CLI_ADDED), added->issuer, added->label);
         else                  printf("Added %s\n", added->label);
     }
     vault_lock(&v);
@@ -722,15 +723,15 @@ static int cmd_add_secret(const char *path, const char *secret,
     rc = open_vault(&v, path);
     if (rc != VAULT_OK) {
         memset(&acct, 0, sizeof acct);
-        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
+        fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc));
         return 2;
     }
     rc = vault_add(&v, &acct);
     if (rc == VAULT_OK) rc = save_vault(&v, path);
     memset(&acct, 0, sizeof acct);
-    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
 
-    printf("Added %s:%s\n", issuer, label);
+    printf(MSG(MSG_CLI_ADDED), issuer, label);
     vault_lock(&v);
     return 0;
 }
@@ -743,7 +744,7 @@ static int cmd_list(const char *path)
     int fc = try_forward(AAP_LIST, NULL);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
 
     for (i = 0; i < v.count; i++) {
         const otp_account *a = &v.accounts[i];
@@ -766,7 +767,7 @@ static int cmd_get(const char *path, const char *account)
     clock_ctx clk;
     uint64_t now;
 
-    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
     idx = find_account(&v, account);
     if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
     a = &v.accounts[idx];
@@ -807,7 +808,7 @@ static int cmd_qr(const char *path, const char *account)
     int fc = try_forward(AAP_QR, account);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
     idx = find_account(&v, account);
     if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
 
@@ -832,15 +833,15 @@ static int cmd_remove(const char *path, const char *account)
     int fc = try_forward(AAP_REMOVE, account);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
 
     idx = find_account(&v, account);
     if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
     rc = vault_remove(&v, (size_t)idx);
     if (rc == VAULT_OK) rc = save_vault(&v, path);
-    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
 
-    printf("Removed '%s'\n", account);
+    printf(MSG(MSG_CLI_REMOVED), account);
     vault_lock(&v);
     return 0;
 }
@@ -850,8 +851,9 @@ static int usage(void)
     const char *p = g_prog;
     fprintf(stderr,
         "AmiAuth - TOTP/HOTP authenticator for AmigaOS\n"
-        "\n"
-        "Run as '%s <COMMAND> ...'  ('%s ?' shows the arg template):\n"
+        "\n");
+    fprintf(stderr, MSG(MSG_CLI_USAGE_RUNAS), p, p);
+    fprintf(stderr,
         "  CODE   <secret> [digits] [period]  Print a code (no vault)\n"
         "  INIT   [OPEN]                      Create a vault\n"
         "  ADD    \"<otpauth://...>\"           Import an account from a URI\n"
@@ -869,8 +871,7 @@ static int usage(void)
         "  OFFSET <seconds>                   Set + save a UTC offset\n"
         "  NUDGE  <+/-seconds>                Adjust + save the current offset\n"
         "  HELP\n"
-        "\n",
-        p, p);
+        "\n");
 #ifdef AMIAUTH_AMIGA
     fprintf(stderr,
         "Options: ISSUER/K LABEL/K STEAM/S (bare-secret ADD)  VAULT <path>  OPEN/S\n"
@@ -965,9 +966,10 @@ int main(int argc, char **argv)
 
     if (argc > 0 && argv[0] && argv[0][0]) g_prog = argv[0];
     crypto_select_init();
+    catalog_open();
     memset(opt, 0, sizeof opt);
     rda = ReadArgs((STRPTR)TMPL, opt, NULL);
-    if (!rda) { PrintFault(IoErr(), (STRPTR)g_prog); return 20; }  /* RETURN_FAIL */
+    if (!rda) { PrintFault(IoErr(), (STRPTR)g_prog); catalog_close(); return 20; }  /* RETURN_FAIL */
 
     memset(&a, 0, sizeof a);
     a.command    = (const char *)opt[P_COMMAND];
@@ -984,6 +986,7 @@ int main(int argc, char **argv)
 
     rc = dispatch(&a);
     FreeArgs(rda);
+    catalog_close();
     return rc;
 }
 
@@ -997,6 +1000,7 @@ int main(int argc, char **argv)
     int npos = 0, i;
 
     if (argc > 0 && argv[0] && argv[0][0]) g_prog = argv[0];
+    catalog_open();
     memset(&a, 0, sizeof a);
     a.iterations = -1;
 
@@ -1032,7 +1036,11 @@ int main(int argc, char **argv)
     a.value   = npos > 1 ? pos[1] : NULL;   /* the command's positional argument */
     a.digits  = npos > 2 ? pos[2] : NULL;   /* CODE only */
     a.period  = npos > 3 ? pos[3] : NULL;   /* CODE only */
-    return dispatch(&a);
+    {
+        int rc = dispatch(&a);
+        catalog_close();
+        return rc;
+    }
 }
 
 #endif
