@@ -23,8 +23,10 @@ Drop a `<language>.catalog` file — named after your language, e.g.
 
 (`LOCALE:` is normally assigned to `SYS:Locale`.) AmiAuth picks it up
 automatically next time it starts, based on your system's default language
-(**Locale** in Prefs). No translation installed, or none for your language,
-is not an error — AmiAuth just uses its built-in English text.
+(**Locale** in Prefs) — and if there's no catalog for your primary language,
+it tries each of your other preferred languages (Locale prefs' full priority
+list, not just the first one) before giving up. No translation installed for
+any of them is not an error — AmiAuth just uses its built-in English text.
 
 ## Contributing a translation
 
