@@ -51,7 +51,6 @@ extern struct Library *LocaleBase;
 
 #ifdef AmiAuth_NUMBERS
 
-#define MSG_CLI_ERR 0
 #define MSG_CLI_ALREADY_EXISTS 1
 #define MSG_CLI_ADDED 2
 #define MSG_CLI_REMOVED 3
@@ -77,8 +76,7 @@ extern struct Library *LocaleBase;
 
 #ifdef AmiAuth_STRINGS
 
-#define MSG_CLI_ERR_STR "AmiAuth: %s\n"
-#define MSG_CLI_ALREADY_EXISTS_STR "AmiAuth: %s already exists\n"
+#define MSG_CLI_ALREADY_EXISTS_STR "%s: %s already exists\n"
 #define MSG_CLI_ADDED_STR "Added %s:%s\n"
 #define MSG_CLI_REMOVED_STR "Removed '%s'\n"
 #define MSG_CLI_USAGE_RUNAS_STR "Run as '%s <COMMAND> ...'  ('%s ?' shows the arg template):\n"
@@ -111,7 +109,6 @@ struct AmiAuth_ArrayType
 
 static const struct AmiAuth_ArrayType AmiAuth_Array[] =
 {
-    { MSG_CLI_ERR, (STRPTR)MSG_CLI_ERR_STR },
     { MSG_CLI_ALREADY_EXISTS, (STRPTR)MSG_CLI_ALREADY_EXISTS_STR },
     { MSG_CLI_ADDED, (STRPTR)MSG_CLI_ADDED_STR },
     { MSG_CLI_REMOVED, (STRPTR)MSG_CLI_REMOVED_STR },
@@ -142,10 +139,8 @@ static const struct AmiAuth_ArrayType AmiAuth_Array[] =
 static const char AmiAuth_Block[] =
 {
 
-     "\x00\x00\x00\x00" "\x00\x0c"
-    MSG_CLI_ERR_STR ""
-     "\x00\x00\x00\x01" "\x00\x1c"
-    MSG_CLI_ALREADY_EXISTS_STR "\x00"
+     "\x00\x00\x00\x01" "\x00\x16"
+    MSG_CLI_ALREADY_EXISTS_STR ""
      "\x00\x00\x00\x02" "\x00\x0c"
     MSG_CLI_ADDED_STR ""
      "\x00\x00\x00\x03" "\x00\x0e"

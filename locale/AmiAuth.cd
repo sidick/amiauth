@@ -3,22 +3,31 @@
 ; FlexCat's CatComp_h.sd template -> src/core/catalog_strings.h).
 ;
 ; This is Phase 1 (#67): a representative slice, not the full string set -
-; see docs/LOCALIZATION.md for the migration plan and translator workflow.
+; see userdocs/Localization.md for the migration plan and translator workflow.
 ;
 ; Do NOT add: CLI subcommand keywords, ReadArgs template field names, or
 ; ARexx port command keywords - those are the scripting protocol, not
 ; user-facing prose, and must stay identical across every locale.
+;
+; Do NOT hardcode "AmiAuth" (or any other proper noun) into a translatable
+; string - pass it as a %s argument instead (see MSG_CLI_ALREADY_EXISTS/
+; MSG_CLI_USAGE_RUNAS below). Translators should never need to copy a
+; literal brand name verbatim into every language.
+;
+; Do NOT add a wrapper template with no real content of its own. The plain
+; "AmiAuth: %s\n" prefix wrapping vault_err()'s own (not yet migrated -
+; Phase 2) error text has nothing left to translate once the brand name is
+; an argument rather than literal text - id 0 is deliberately left unused
+; rather than assigned to that, to leave room for it once vault_err()'s
+; strings actually get migrated.
 ;
 #language english
 #version 0
 ;
 ; --- CLI (src/cli/main.c) ---------------------------------------------
 ;
-MSG_CLI_ERR (0//)
-AmiAuth: %s\n
-;
 MSG_CLI_ALREADY_EXISTS (1//)
-AmiAuth: %s already exists\n
+%s: %s already exists\n
 ;
 MSG_CLI_ADDED (2//)
 Added %s:%s\n

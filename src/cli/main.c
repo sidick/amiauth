@@ -552,7 +552,7 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
     exists = fopen(path, "rb");
     if (exists) {
         fclose(exists);
-        fprintf(stderr, MSG(MSG_CLI_ALREADY_EXISTS), path);
+        fprintf(stderr, MSG(MSG_CLI_ALREADY_EXISTS), "AmiAuth", path);
         return 2;
     }
 
@@ -599,7 +599,7 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
     if (rc == VAULT_OK) rc = save_vault(&v, path);
     if (rc != VAULT_OK) {
         vault_lock(&v);
-        fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc));
+        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
         return 2;
     }
     printf("Created %s vault at %s\n",
@@ -667,14 +667,14 @@ static int cmd_add(const char *path, const char *uri)
     rc = open_vault(&v, path);
     if (rc != VAULT_OK) {
         memset(&acct, 0, sizeof(acct));
-        fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc));
+        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
         return 2;
     }
 
     rc = vault_add(&v, &acct);
     if (rc == VAULT_OK) rc = save_vault(&v, path);
     memset(&acct, 0, sizeof(acct));
-    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
 
     {
         const otp_account *added = &v.accounts[v.count - 1];
@@ -723,13 +723,13 @@ static int cmd_add_secret(const char *path, const char *secret,
     rc = open_vault(&v, path);
     if (rc != VAULT_OK) {
         memset(&acct, 0, sizeof acct);
-        fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc));
+        fprintf(stderr, "AmiAuth: %s\n", vault_err(rc));
         return 2;
     }
     rc = vault_add(&v, &acct);
     if (rc == VAULT_OK) rc = save_vault(&v, path);
     memset(&acct, 0, sizeof acct);
-    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
 
     printf(MSG(MSG_CLI_ADDED), issuer, label);
     vault_lock(&v);
@@ -744,7 +744,7 @@ static int cmd_list(const char *path)
     int fc = try_forward(AAP_LIST, NULL);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
 
     for (i = 0; i < v.count; i++) {
         const otp_account *a = &v.accounts[i];
@@ -767,7 +767,7 @@ static int cmd_get(const char *path, const char *account)
     clock_ctx clk;
     uint64_t now;
 
-    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
     idx = find_account(&v, account);
     if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
     a = &v.accounts[idx];
@@ -808,7 +808,7 @@ static int cmd_qr(const char *path, const char *account)
     int fc = try_forward(AAP_QR, account);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
     idx = find_account(&v, account);
     if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
 
@@ -833,13 +833,13 @@ static int cmd_remove(const char *path, const char *account)
     int fc = try_forward(AAP_REMOVE, account);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
-    if (rc != VAULT_OK) { fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
 
     idx = find_account(&v, account);
     if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
     rc = vault_remove(&v, (size_t)idx);
     if (rc == VAULT_OK) rc = save_vault(&v, path);
-    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, MSG(MSG_CLI_ERR), vault_err(rc)); return 2; }
+    if (rc != VAULT_OK) { vault_lock(&v); fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
 
     printf(MSG(MSG_CLI_REMOVED), account);
     vault_lock(&v);
