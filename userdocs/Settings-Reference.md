@@ -15,6 +15,10 @@ The vault itself is **not** here — it is user data, not a preference, and
 lives in `PROGDIR:` by default (see [Vault and Passphrases](Vault-and-Passphrases.md)). `ENV:` is
 RAM-backed and would be lost on reboot.
 
+AmiAuth's display language is likewise **not** an AmiAuth setting — it
+follows your system's own **Locale** preference, via a `.catalog`
+translation file. See [Localization](Localization.md).
+
 ## Variables
 
 | Variable | Type | Written by | Meaning |

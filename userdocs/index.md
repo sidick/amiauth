@@ -40,6 +40,7 @@ ReAction/ClassAct.
 | [Vault and Passphrases](Vault-and-Passphrases.md) | Encryption, always-unlocked mode, re-keying, backups |
 | [Time and Clock Sync](Time-and-Clock-Sync.md) | SNTP, UTC offsets, and the red/amber/green indicator |
 | [Settings Reference](Settings-Reference.md) | Every `ENVARC:AmiAuth/` setting |
+| [Localization](Localization.md) | Installing and contributing translations |
 | [Security Model](Security-Model.md) | What the vault does and does not protect — read this |
 | [Troubleshooting and FAQ](Troubleshooting-and-FAQ.md) | Common problems and questions |
 | [Building from Source](Building-from-Source.md) | Host and m68k builds, tests |

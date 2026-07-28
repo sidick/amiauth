@@ -55,6 +55,7 @@ nav:
   - Under the hood:
       - Vault and Passphrases: Vault-and-Passphrases.md
       - Settings Reference: Settings-Reference.md
+      - Localization: Localization.md
       - Security Model: Security-Model.md
   - Help:
       - Troubleshooting and FAQ: Troubleshooting-and-FAQ.md

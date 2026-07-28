@@ -35,6 +35,7 @@ PAGES = [
     ('Time-and-Clock-Sync', 'Time and Clock Sync'),
     ('Vault-and-Passphrases', 'Vault and Passphrases'),
     ('Settings-Reference', 'Settings Reference'),
+    ('Localization', 'Localization'),
     ('Security-Model', 'Security Model'),
     ('Troubleshooting-and-FAQ', 'Troubleshooting and FAQ'),
     ('Building-from-Source', 'Building from Source'),
