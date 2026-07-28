@@ -131,3 +131,68 @@ void run_bare_secret_tests(void)
     TEST_CHECK(otp_account_from_secret_steam("X", "", "JBSWY3DP", &a) == -1);
     TEST_CHECK(otp_account_from_secret_steam("X", "y", "not!base32", &a) == -1);
 }
+
+/* otpauth_build (#45, QR export): the inverse of otpauth_parse. */
+void run_uri_build_tests(void)
+{
+    otp_account a, b;
+    char uri[512];
+
+    /* Exact string for a simple, fully-specified TOTP account. */
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/GitHub:alice?secret=JBSWY3DPEHPK3PXP&issuer=GitHub"
+        "&digits=6&period=30", &a) == 0);
+    TEST_CHECK(otpauth_build(&a, uri, sizeof(uri)) == 0);
+    TEST_CHECK(strcmp(uri,
+        "otpauth://totp/GitHub:alice?secret=JBSWY3DPEHPK3PXP&issuer=GitHub"
+        "&algorithm=SHA1&digits=6&period=30") == 0);
+
+    /* Round-trip (parse -> build -> parse) preserves every field, across
+     * TOTP/HOTP, every algorithm, and Steam. */
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/x?secret=JBSWY3DP&algorithm=SHA256&digits=8&period=60", &a) == 0);
+    TEST_CHECK(otpauth_build(&a, uri, sizeof(uri)) == 0);
+    TEST_CHECK(otpauth_parse(uri, &b) == 0);
+    TEST_CHECK(strcmp(a.type, b.type) == 0 && strcmp(a.algorithm, b.algorithm) == 0);
+    TEST_CHECK(a.digits == b.digits && a.period == b.period);
+    TEST_CHECK(a.secret_len == b.secret_len &&
+               memcmp(a.secret, b.secret, a.secret_len) == 0);
+
+    TEST_CHECK(otpauth_parse(
+        "otpauth://hotp/Acme:bob?secret=JBSWY3DPEHPK3PXP&algorithm=SHA512"
+        "&digits=8&counter=4294967297", &a) == 0);      /* counter > 32 bits */
+    TEST_CHECK(otpauth_build(&a, uri, sizeof(uri)) == 0);
+    TEST_CHECK(otpauth_parse(uri, &b) == 0);
+    TEST_CHECK(strcmp(b.type, "hotp") == 0 && strcmp(b.algorithm, "SHA512") == 0);
+    TEST_CHECK(b.digits == 8 && b.counter == 4294967297ULL);
+
+    TEST_CHECK(otpauth_parse(
+        "otpauth://steam/Steam:you?secret=JBSWY3DP&issuer=Steam", &a) == 0);
+    TEST_CHECK(otpauth_build(&a, uri, sizeof(uri)) == 0);
+    TEST_CHECK(otpauth_parse(uri, &b) == 0);
+    TEST_CHECK(strcmp(b.type, "steam") == 0 && b.digits == 5);
+    TEST_CHECK(strcmp(b.issuer, "Steam") == 0 && strcmp(b.label, "you") == 0);
+
+    /* Issuer/label containing space and '@' round-trip through percent
+     * encoding (build) and percent decoding (parse). */
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/Example%20Co:john%40example.com?secret=JBSWY3DP"
+        "&issuer=Example%20Co", &a) == 0);
+    TEST_CHECK(otpauth_build(&a, uri, sizeof(uri)) == 0);
+    TEST_CHECK(otpauth_parse(uri, &b) == 0);
+    TEST_CHECK(strcmp(b.issuer, "Example Co") == 0);
+    TEST_CHECK(strcmp(b.label, "john@example.com") == 0);
+
+    /* No issuer: no leading "issuer:" on the label, no &issuer= param. */
+    TEST_CHECK(otpauth_parse("otpauth://totp/x?secret=JBSWY3DP", &a) == 0);
+    TEST_CHECK(otpauth_build(&a, uri, sizeof(uri)) == 0);
+    TEST_CHECK(strstr(uri, "issuer") == NULL);
+    TEST_CHECK(strncmp(uri, "otpauth://totp/x?", 17) == 0);
+
+    /* Too-small buffer is an error, not a truncation. */
+    TEST_CHECK(otpauth_build(&a, uri, 5) == -1);
+
+    /* NULL arguments. */
+    TEST_CHECK(otpauth_build(NULL, uri, sizeof(uri)) == -1);
+    TEST_CHECK(otpauth_build(&a, NULL, sizeof(uri)) == -1);
+}

@@ -2,7 +2,7 @@
 
 AmiAuth ships zero *mandatory runtime* dependencies: everything it needs is
 either an AmigaOS-standard shared library or compiled into the binary from
-source in this repository. The only vendored third-party source is:
+source in this repository. The vendored third-party source is:
 
 ## quirc — QR-code recognition library
 
@@ -23,3 +23,22 @@ no dependencies of its own (standard C only) and is built with
 of the program uses.
 
 Its ISC licence text is preserved verbatim in every vendored source file.
+
+## qrcodegen — QR-code generation library
+
+- **Location:** [`src/qr/`](src/qr/) (`qrcodegen.h`, `qrcodegen.c`)
+- **Upstream:** https://github.com/nayuki/QR-Code-generator (the `c/`
+  subdirectory), pinned to commit `2c9044de6b049ca25cb3cd1649ed7e27aa055138`.
+  Actively maintained, so unlike quirc no fork is tracked for this one.
+- **Author:** Project Nayuki
+- **License:** MIT (permissive; compatible with AmiAuth's BSD 2-Clause)
+
+Used by the GUI and CLI to render an account's `otpauth://` URI as a QR code
+for export (#45) — the encode-side counterpart to quirc's decode. It has no
+dependencies of its own (standard C only), does no dynamic allocation (every
+buffer is caller-supplied), and is integer-only (no floating point), so it
+needs no special build flags for the plain-68000 target. The wrapper in
+[`src/qr/qrencode.c`](src/qr/qrencode.c) (AmiAuth's own code) is the only
+interface the rest of the program uses.
+
+Its MIT licence text is preserved verbatim in every vendored source file.

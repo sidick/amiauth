@@ -36,3 +36,30 @@ int base32_decode(const char *in, uint8_t *out, size_t outcap)
     /* Any leftover < 8 bits are padding and discarded. */
     return (int)n;
 }
+
+int base32_encode(const uint8_t *in, size_t inlen, char *out, size_t outcap)
+{
+    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    uint32_t buf = 0;   /* bit accumulator (MSB-first) */
+    int bits = 0;       /* valid bits currently in buf */
+    size_t n = 0;
+    size_t i;
+
+    if (!in || !out) return -1;
+
+    for (i = 0; i < inlen; i++) {
+        buf = (buf << 8) | in[i];
+        bits += 8;
+        while (bits >= 5) {
+            bits -= 5;
+            if (n + 1 >= outcap) return -1;   /* leave room for the NUL */
+            out[n++] = alphabet[(buf >> bits) & 0x1f];
+        }
+    }
+    if (bits > 0) {
+        if (n + 1 >= outcap) return -1;
+        out[n++] = alphabet[(buf << (5 - bits)) & 0x1f];
+    }
+    out[n] = '\0';
+    return (int)n;
+}

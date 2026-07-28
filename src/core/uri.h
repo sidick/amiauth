@@ -34,6 +34,11 @@ int otpauth_parse(const char *uri, otp_account *out);
  * to route add-account input between URI parsing and the bare-secret path. */
 int otpauth_is_uri(const char *s);
 
+/* Build an otpauth:// URI from `a` — the inverse of otpauth_parse(), for QR
+ * export (#45). Returns 0 on success, -1 if `out` (capacity outcap) is too
+ * small. See uri.c for the exact grammar/encoding rules. */
+int otpauth_build(const otp_account *a, char *out, size_t outcap);
+
 /* Build an account directly from a bare Base32 secret, with the defaults
  * nearly every service issues (TOTP, SHA-1, 6 digits, 30 s) — the shortcut
  * for services that show only the raw secret, no URI. `label` must be

@@ -6,6 +6,7 @@
  *   ADD  <otpauth://...>                     import an account
  *   LIST                                     list account names
  *   GET  <account>                           print an account's current code
+ *   QR   <account>                           print an ASCII-art QR code
  *   REMOVE <account>                         delete an account
  *   HELP
  *
@@ -29,6 +30,7 @@
 #include "vault.h"
 #include "pbkdf2.h"
 #include "prefs.h"
+#include "qrencode.h"                /* qr_encode_uri/qr_render_ascii (#45) */
 
 #if defined(__unix__) || defined(__APPLE__) || defined(__linux__)
 #  include <unistd.h>
@@ -611,7 +613,10 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
  * the GUI handled it, or -1 if no GUI is running (do it locally). */
 static int try_forward(int cmd, const char *arg)
 {
-    static char buf[2600];   /* off the ~4 KB shell stack; holds a LIST reply */
+    /* Off the ~4 KB shell stack. Sized for the largest reply any forwarded
+     * command can produce: AAP_QR's ASCII-art render (QR_ENC_ASCII_BUF_LEN,
+     * ~11.9 KB) dwarfs LIST's "issuer:label\n" lines. */
+    static char buf[QR_ENC_ASCII_BUF_LEN];
     int result = AAR_OK;
 
     if (gui_forward(cmd, arg, buf, sizeof buf, &result) != 0)
@@ -619,7 +624,7 @@ static int try_forward(int cmd, const char *arg)
 
     switch (result) {
         case AAR_OK:
-            if (buf[0]) fputs(buf, stdout);   /* GET code / LIST names (with \n) */
+            if (buf[0]) fputs(buf, stdout);   /* GET code / LIST names / QR art */
             return 0;
         case AAR_LOCKED:
             fprintf(stderr, "AmiAuth: the running GUI's vault is locked; "
@@ -636,6 +641,9 @@ static int try_forward(int cmd, const char *arg)
             return 2;
         case AAR_SAVEFAIL:
             fprintf(stderr, "AmiAuth: applied in the GUI but the re-save failed\n");
+            return 2;
+        case AAR_TOOLONG:
+            fprintf(stderr, "AmiAuth: this account's URI is too long to encode as a QR code\n");
             return 2;
         default:
             fprintf(stderr, "AmiAuth: the running GUI could not handle that\n");
@@ -786,6 +794,36 @@ static int cmd_get(const char *path, const char *account)
     return 0;
 }
 
+/* Print an account's otpauth:// URI as ASCII-art QR code (#45), for a phone
+ * to scan directly off a terminal. GUI counterpart: "Show QR code...". */
+static int cmd_qr(const char *path, const char *account)
+{
+    static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
+    static char uri[512];
+    static uint8_t modules[QR_ENC_MAX_MODULES * QR_ENC_MAX_MODULES];
+    static char ascii[QR_ENC_ASCII_BUF_LEN];
+    vault_result rc;
+    int idx, qsize;
+    int fc = try_forward(AAP_QR, account);
+    if (fc >= 0) return fc;
+    rc = open_vault(&v, path);
+    if (rc != VAULT_OK) { fprintf(stderr, "AmiAuth: %s\n", vault_err(rc)); return 2; }
+    idx = find_account(&v, account);
+    if (idx < 0) { vault_lock(&v); fprintf(stderr, "AmiAuth: no account matching '%s'\n", account); return 2; }
+
+    if (otpauth_build(&v.accounts[idx], uri, sizeof uri) != 0 ||
+        qr_encode_uri(uri, modules, &qsize) != QRENC_OK) {
+        vault_lock(&v);
+        fprintf(stderr, "AmiAuth: this account's URI is too long to encode as a QR code\n");
+        return 2;
+    }
+    qr_render_ascii(modules, qsize, ascii, sizeof ascii);
+    fputs(ascii, stdout);
+
+    vault_lock(&v);
+    return 0;
+}
+
 static int cmd_remove(const char *path, const char *account)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
@@ -822,6 +860,8 @@ static int usage(void)
         "                                     add STEAM for a Steam Guard code)\n"
         "  LIST                               List account names\n"
         "  GET    <account>                   Print an account's code\n"
+        "  QR     <account>                   Print an ASCII-art QR code\n"
+        "                                     of the account (for a phone)\n"
         "  REMOVE <account>                   Delete an account\n"
         "  SHOW                               Pop the running GUI to front\n"
         "  CLOCK                              Show UTC offset + status\n"
@@ -895,6 +935,7 @@ static int dispatch(const cli_args *a)
     }
     if (ci_streq(a->command, "LIST"))   return cmd_list(vault);
     if (ci_streq(a->command, "GET"))    return a->value ? cmd_get(vault, a->value) : usage();
+    if (ci_streq(a->command, "QR"))     return a->value ? cmd_qr(vault, a->value) : usage();
     if (ci_streq(a->command, "REMOVE")) return a->value ? cmd_remove(vault, a->value) : usage();
     if (ci_streq(a->command, "SHOW"))   return cmd_show();
     if (ci_streq(a->command, "CLOCK"))  return cmd_clock();

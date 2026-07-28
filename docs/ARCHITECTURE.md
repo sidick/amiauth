@@ -64,7 +64,7 @@ Resolves corrected UTC without touching the system clock (full design in
 ## Front-ends
 
 - **CLI** — no GUI dependency at all; retains full code-generation on OS 2.x and
-  floppy-booted machines. Commands: `CODE`, `INIT`, `ADD`, `LIST`, `GET`,
+  floppy-booted machines. Commands: `CODE`, `INIT`, `ADD`, `LIST`, `GET`, `QR`,
   `REMOVE`, `SHOW`, `CLOCK`, `SYNC`, `OFFSET`. Amiga-only front-end glue (bsdsocket
   SNTP, entropy, the GUI-forward client, ...) lives in `src/amiga/` and is linked
   into the m68k build only; the host build stubs it. When a GUI is resident the
@@ -73,9 +73,12 @@ Resolves corrected UTC without touching the system clock (full design in
 - **GUI (ClassAct/ReAction)** — a multi-column `listbrowser.gadget` (all accounts
   with live codes + countdown), a large selected-code display, a
   `fuelgauge.gadget` countdown, add / remove / edit, clipboard copy (iffparse
-  FTXT, auto-clear), the clock-status LED, and **QR-image import** (decode an
+  FTXT, auto-clear), the clock-status LED, **QR-image import** (decode an
   `otpauth://` QR from an image file via `datatypes.library` + a vendored quirc
-  decoder in `src/qr/`). Uses only classes common to ClassAct 3.3 and ReAction.
+  decoder in `src/qr/`) and **QR export** (render an account's `otpauth://`
+  URI as an on-screen QR code for a phone to scan, via a vendored qrcodegen
+  encoder also in `src/qr/`; CLI counterpart is `QR`, both share the encoder
+  and its ASCII-art renderer). Uses only classes common to ClassAct 3.3 and ReAction.
 - **Commodity shell** — runs resident via `commodities.library`: `CX_POPKEY` /
   `CX_POPUP` / `CX_PRIORITY` tooltypes, default hotkey `ctrl alt a`, window hides
   (not quits) on close, full Exchange integration (show/hide/enable/disable/kill),

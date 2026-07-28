@@ -3,6 +3,7 @@
  *            &period=...&counter=...
  * LABEL is "accountname" or "issuer:accountname", percent-encoded.
  * Validated against tests/test_uri.c. */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -77,6 +78,56 @@ static void copy_str(char *dst, size_t dstcap, const char *src)
     size_t i = 0;
     while (src[i] && i + 1 < dstcap) { dst[i] = src[i]; i++; }
     dst[i] = '\0';
+}
+
+/* Append `src` to *cur (advancing it and shrinking *remain), bounds-checked.
+ * Used to build a URI without ever risking an overflow. */
+static int str_append(char **cur, size_t *remain, const char *src)
+{
+    size_t len = strlen(src);
+    if (len >= *remain) return -1;
+    memcpy(*cur, src, len);
+    *cur += len;
+    *remain -= len;
+    return 0;
+}
+
+/* Percent-encode src and append it (RFC 3986 unreserved set passes through
+ * unescaped; everything else becomes %XX). Inverse of url_decode(). */
+static int url_encode_append(char **cur, size_t *remain, const char *src)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    for (; *src; src++) {
+        unsigned char c = (unsigned char)*src;
+        int unreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                         (c >= '0' && c <= '9') ||
+                         c == '-' || c == '.' || c == '_' || c == '~';
+        if (unreserved) {
+            if (*remain < 2) return -1;      /* this char + eventual NUL */
+            *(*cur)++ = (char)c;
+            (*remain)--;
+        } else {
+            if (*remain < 4) return -1;      /* %XX + eventual NUL */
+            *(*cur)++ = '%';
+            *(*cur)++ = hex[c >> 4];
+            *(*cur)++ = hex[c & 0xf];
+            *remain -= 3;
+        }
+    }
+    return 0;
+}
+
+/* Manual decimal conversion: libnix's sprintf() can't be trusted with a
+ * uint64_t (no %llu), so the HOTP counter — the one field that can exceed 32
+ * bits — gets its own portable formatter. buf must hold at least 21 bytes. */
+static void u64_to_str(uint64_t v, char *buf)
+{
+    char tmp[20];
+    int i = 0, j = 0;
+    if (v == 0) { buf[0] = '0'; buf[1] = '\0'; return; }
+    while (v > 0) { tmp[i++] = (char)('0' + (int)(v % 10)); v /= 10; }
+    while (i > 0) buf[j++] = tmp[--i];
+    buf[j] = '\0';
 }
 
 int otpauth_parse(const char *uri, otp_account *out)
@@ -183,6 +234,73 @@ int otpauth_parse(const char *uri, otp_account *out)
 int otpauth_is_uri(const char *s)
 {
     return s != NULL && ci_startswith(s, "otpauth://");
+}
+
+/* Build an otpauth:// URI from `a` (the inverse of otpauth_parse — see the
+ * grammar comment at the top of this file). Percent-encodes issuer/label
+ * separately and joins them with a literal ':', matching how real-world
+ * otpauth:// generators write the label rather than percent-encoding the
+ * whole "issuer:label" as one blob. Always emits algorithm=/digits= and
+ * period= (TOTP) or counter= (HOTP) explicitly rather than relying on
+ * otpauth_parse's defaults, so the URI is self-describing even if those
+ * defaults ever change. Steam accounts carry none of those three — Steam
+ * Guard isn't configurable and otpauth_parse ignores them for type=steam
+ * anyway. Returns 0 on success, -1 if `out` (capacity outcap) is too small
+ * or the secret fails to Base32-encode. */
+int otpauth_build(const otp_account *a, char *out, size_t outcap)
+{
+    char *cur = out;
+    size_t remain = outcap;
+    char secretb32[OTP_MAX_SECRET * 8 / 5 + 8];
+    char numbuf[21];              /* fits any uint64_t decimal + NUL */
+    int is_steam, is_hotp;
+
+    if (!a || !out || outcap == 0) return -1;
+    out[0] = '\0';
+    if (base32_encode(a->secret, a->secret_len, secretb32, sizeof(secretb32)) < 0)
+        return -1;
+
+    is_steam = strcmp(a->type, "steam") == 0;
+    is_hotp  = strcmp(a->type, "hotp")  == 0;
+
+    if (str_append(&cur, &remain, "otpauth://") != 0) return -1;
+    if (str_append(&cur, &remain, is_steam ? "steam" : is_hotp ? "hotp" : "totp") != 0)
+        return -1;
+    if (str_append(&cur, &remain, "/") != 0) return -1;
+    if (a->issuer[0]) {
+        if (url_encode_append(&cur, &remain, a->issuer) != 0) return -1;
+        if (str_append(&cur, &remain, ":") != 0) return -1;
+    }
+    if (url_encode_append(&cur, &remain, a->label) != 0) return -1;
+
+    if (str_append(&cur, &remain, "?secret=") != 0) return -1;
+    if (str_append(&cur, &remain, secretb32) != 0) return -1;
+    if (a->issuer[0]) {
+        if (str_append(&cur, &remain, "&issuer=") != 0) return -1;
+        if (url_encode_append(&cur, &remain, a->issuer) != 0) return -1;
+    }
+
+    if (!is_steam) {
+        if (str_append(&cur, &remain, "&algorithm=") != 0) return -1;
+        if (str_append(&cur, &remain, a->algorithm) != 0) return -1;
+
+        sprintf(numbuf, "%lu", (unsigned long)a->digits);   /* small value: safe */
+        if (str_append(&cur, &remain, "&digits=") != 0) return -1;
+        if (str_append(&cur, &remain, numbuf) != 0) return -1;
+
+        if (is_hotp) {
+            u64_to_str(a->counter, numbuf);
+            if (str_append(&cur, &remain, "&counter=") != 0) return -1;
+            if (str_append(&cur, &remain, numbuf) != 0) return -1;
+        } else {
+            sprintf(numbuf, "%lu", (unsigned long)a->period);
+            if (str_append(&cur, &remain, "&period=") != 0) return -1;
+            if (str_append(&cur, &remain, numbuf) != 0) return -1;
+        }
+    }
+
+    *cur = '\0';
+    return 0;
 }
 
 static int account_from_secret(const char *issuer, const char *label,
