@@ -214,12 +214,18 @@ static struct ColumnInfo g_columns[] = {
  * straight out of each string (index 1, right after the '_') instead of
  * duplicating it as a separate literal - renaming a label's mnemonic can't
  * silently desync its keyboard shortcut. */
-static const char LBL_ADD[]        = "_Add";
-static const char LBL_EDIT[]       = "_Edit";
-static const char LBL_REMOVE[]     = "_Remove";
-static const char LBL_COPY[]       = "_Copy";
-static const char LBL_NUDGE_DOWN[] = "_D -10s";
-static const char LBL_NUDGE_UP[]   = "_U +10s";
+/* Pointers, not arrays: English defaults at static-init time (MSG() is a
+ * function call, illegal there), repointed at the translated (or same, if no
+ * catalog) string by main() once catalog_open() has run - same reasoning as
+ * g_columns[].ci_Title below. GetCatalogStr()'s result stays valid for the
+ * whole process lifetime (the catalog only closes at exit), so holding the
+ * raw pointer here needs no copy buffer. */
+static const char *LBL_ADD        = "_Add";
+static const char *LBL_EDIT       = "_Edit";
+static const char *LBL_REMOVE     = "_Remove";
+static const char *LBL_COPY       = "_Copy";
+static const char *LBL_NUDGE_DOWN = "_D -10s";
+static const char *LBL_NUDGE_UP   = "_U +10s";
 
 /* Menu strip (window.class WINDOW_NewMenu). nm_UserData carries the command id. */
 static struct NewMenu g_menu[] = {
@@ -287,10 +293,9 @@ static const char *open_libs(void)
     RexxSysBase     = (struct RxsLib *)OpenLibrary((STRPTR)"rexxsyslib.library", 0);  /* optional: ARexx port, #46 */
     catalog_open();   /* optional: message catalog, #67 */
     if (!IntuitionBase || !UtilityBase)
-        return "needs intuition.library / utility.library v37+ (OS 2.04)";
+        return MSG(MSG_GUI_NEEDS_INTUITION);
     if (!WindowBase || !LayoutBase || !ListBrowserBase || !FuelGaugeBase || !ButtonBase)
-        return "needs ReAction/ClassAct classes (window/layout/listbrowser/"
-               "fuelgauge/button)";
+        return MSG(MSG_GUI_NEEDS_REACTION);
     return NULL;
 }
 
@@ -328,13 +333,13 @@ static void clock_status_text(const clock_ctx *c, char *buf)
     long off = c->offset_seconds;
     const char *sign = off < 0 ? "-" : "+";     /* %s, not %c (libnix sprintf) */
     unsigned long a = (unsigned long)(off < 0 ? -off : off);
-    const char *word = c->state == CLOCK_SYNCED ? "synced"
-                     : c->state == CLOCK_MANUAL ? "manual"
-                     : "unverified";
+    const char *word = c->state == CLOCK_SYNCED ? MSG(MSG_GUI_CLOCK_SYNCED)
+                     : c->state == CLOCK_MANUAL ? MSG(MSG_GUI_CLOCK_MANUAL)
+                     : MSG(MSG_GUI_CLOCK_UNVERIFIED);
     if (c->state == CLOCK_UNVERIFIED)
-        sprintf(buf, "Clock: %s", word);
+        sprintf(buf, MSG(MSG_GUI_CLOCK_LINE_SHORT), word);
     else
-        sprintf(buf, "Clock: %s %s%lu:%02lu", word, sign, a / 3600, (a % 3600) / 60);
+        sprintf(buf, MSG(MSG_GUI_CLOCK_LINE_FULL), word, sign, a / 3600, (a % 3600) / 60);
 }
 
 /* Allocate the red/amber/green pens from the window's screen (best-effort). */
@@ -594,22 +599,19 @@ static void gui_maybe_rekey(struct Window *win, vault *v, const char *path,
 
     if (unlock_ms < KDF_TARGET_MS / 8 && ideal > v->iterations) {
         /* Much faster machine -> offer to strengthen (safe; one confirm). */
-        LONG r = gui_requester(win,
-            "This machine is much faster than the one that secured this vault.\n"
-            "Strengthen it now (re-key to more PBKDF2 iterations)?",
-            "Strengthen|Not now|Never here", NULL);
+        LONG r = gui_requester(win, MSG(MSG_GUI_REKEY_STRENGTHEN_BODY),
+            MSG(MSG_GUI_REKEY_STRENGTHEN_BTNS), NULL);
         if (r == 0) { prefs_set("rekey", "off"); return; }   /* Never (rightmost) */
         if (r != 1) return;                                  /* Not now */
     } else if (unlock_ms > KDF_TARGET_MS * 8) {
         /* Much slower machine -> offer to speed up, but this weakens it: two
          * confirms, mirroring the CLI's typed "yes". */
         char msg[136];
-        sprintf(msg, "Unlock took about %lu seconds; this vault was tuned for "
-                "faster hardware.\nRe-key LOWER for quicker unlocks here? "
-                "This REDUCES security.", (unsigned long)((unlock_ms + 500) / 1000));
-        if (gui_requester(win, msg, "Re-key lower|Cancel", NULL) != 1) return;
-        if (gui_requester(win, "Really reduce this vault's security?",
-                          "Reduce|Cancel", NULL) != 1) return;
+        sprintf(msg, MSG(MSG_GUI_REKEY_SLOW_BODY),
+                (unsigned long)((unlock_ms + 500) / 1000));
+        if (gui_requester(win, msg, MSG(MSG_GUI_REKEY_LOWER_BTNS), NULL) != 1) return;
+        if (gui_requester(win, MSG(MSG_GUI_REKEY_CONFIRM_BODY),
+                          MSG(MSG_GUI_REKEY_REDUCE_BTNS), NULL) != 1) return;
     } else {
         return;                                       /* within range; nothing to do */
     }
@@ -641,7 +643,7 @@ static int gui_add_uri(struct Window *win, vault *v, const char *path, const cha
         if (rc == VAULT_OK) { changed = 1; rc = gui_save(v, path); }
         if (rc != VAULT_OK)
             gui_requester(win, rc == VAULT_ERR_FULL
-                          ? "The vault is full (max 64 accounts)."
+                          ? MSG(MSG_GUI_VAULT_FULL)
                           : MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
     }
     memset(&acct, 0, sizeof acct);
@@ -660,11 +662,11 @@ static int do_add_qr_impl(struct Window *win, vault *v, const char *vpath, const
     lr = qrimage_load_gray(img, &gray, &iw, &ih);
     if (lr != QRIMAGE_OK) {
         gui_requester(win,
-            lr == QRIMAGE_ERR_TOOBIG  ? "That image is too large to decode."
-          : lr == QRIMAGE_ERR_UNAVAIL ? "QR import needs datatypes.library."
-          : lr == QRIMAGE_ERR_NOMEM   ? "Not enough memory to load that image."
-          :                             "Could not read that image "
-                                        "(needs picture.datatype).", "OK", NULL);
+            lr == QRIMAGE_ERR_TOOBIG  ? MSG(MSG_GUI_IMG_TOOBIG)
+          : lr == QRIMAGE_ERR_UNAVAIL ? MSG(MSG_GUI_QR_UNAVAIL)
+          : lr == QRIMAGE_ERR_NOMEM   ? MSG(MSG_GUI_IMG_NOMEM)
+          :                             MSG(MSG_GUI_IMG_READ_FAILED),
+            MSG(MSG_GUI_OK), NULL);
         return 0;
     }
     /* Decoding is slow on the FPU-less CPU (quirc's soft-float geometry can take
@@ -672,8 +674,10 @@ static int do_add_qr_impl(struct Window *win, vault *v, const char *vpath, const
      * "Decoding" title so the wait is expected. SetWindowPointer is v39+, which
      * we already have wherever datatypes.library (v39) opened for QR import. */
     if (IntuitionBase->LibNode.lib_Version >= 39) {
+        static char decoding_title[64];   /* off the stack */
         SetWindowPointer(win, WA_BusyPointer, TRUE, WA_PointerDelay, TRUE, TAG_END);
-        SetWindowTitles(win, (STRPTR)"AmiAuth - Decoding QR image...", (STRPTR)~0UL);
+        sprintf(decoding_title, MSG(MSG_GUI_TITLE_DECODING), "AmiAuth");
+        SetWindowTitles(win, (STRPTR)decoding_title, (STRPTR)~0UL);
     }
     dr = qr_decode_gray(gray, iw, ih, uri, sizeof uri);
     if (IntuitionBase->LibNode.lib_Version >= 39) {
@@ -730,7 +734,7 @@ static int qr_file_request(struct Window *win, char *path, size_t cap)
     if (!AslBase) return 0;
     fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
         ASLFR_Window,         (ULONG)win,
-        ASLFR_TitleText,      (ULONG)"Select a QR image",
+        ASLFR_TitleText,      (ULONG)MSG(MSG_GUI_QR_FILE_TITLE),
         ASLFR_DoPatterns,     TRUE,
         ASLFR_InitialPattern, (ULONG)"#?.(png|jpg|jpeg|gif|iff|ilbm|lbm|bmp)",
         TAG_END);
@@ -756,6 +760,7 @@ static int qr_file_request(struct Window *win, char *path, size_t cap)
 static int passphrase_request(const char *msg, char *buf, size_t cap)
 {
     static char stars[130];                 /* mask display; kept off the stack */
+    static char title[64];                  /* window title; kept off the stack */
     Object *win, *maskobj, *okobj, *cancelobj, *layoutobj;
     struct Window *w;
     ULONG sig = 0;
@@ -774,9 +779,9 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
     maskobj   = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ReadOnly, TRUE, GA_Text, (ULONG)"|", TAG_END);
     okobj     = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID, PWID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"OK",     TAG_END);
+        GA_ID, PWID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)MSG(MSG_GUI_OK),     TAG_END);
     cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID, PWID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)"Cancel", TAG_END);
+        GA_ID, PWID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)MSG(MSG_GUI_CANCEL), TAG_END);
     {
         Object *labelobj = NewObject(NULL, (STRPTR)"button.gadget",
             GA_ReadOnly, TRUE, GA_Text, (ULONG)msg, TAG_END);
@@ -795,8 +800,9 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
             LAYOUT_AddChild,      (ULONG)buttons,
             CHILD_WeightedHeight, 0,
             TAG_END);
+        sprintf(title, MSG(MSG_GUI_TITLE_UNLOCK), "AmiAuth");
         win = NewObject(WINDOW_GetClass(), NULL,
-            WA_Title,        (ULONG)"AmiAuth - Unlock",
+            WA_Title,        (ULONG)title,
             WA_Activate,     TRUE,
             WA_CloseGadget,  TRUE,
             WA_DragBar,      TRUE,
@@ -913,7 +919,7 @@ static int vault_location_request(char *path, size_t cap)
     int ok = 0;
     if (!AslBase) return 0;
     fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
-        ASLFR_TitleText,   (ULONG)"Choose where to keep the vault",
+        ASLFR_TitleText,   (ULONG)MSG(MSG_GUI_CHOOSE_LOCATION),
         ASLFR_DoSaveMode,  TRUE,
         ASLFR_InitialFile, (ULONG)"AmiAuth.vault",
         TAG_END);
@@ -942,38 +948,36 @@ static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted,
                          int deferred)
 {
     char pass[128], confirm[128];
+    static char welcome[600];   /* MSG_GUI_WELCOME + up to a full vault path; off the stack */
     vault_result rc = VAULT_ERR_IO;
 
-    if (gui_requester(NULL,
-            "Welcome to AmiAuth!\n\nThere is no vault yet - it will be created at\n%s",
-            deferred ? "Create a vault...|Not now" : "Create a vault...|Quit",
-            path) != 1)
+    sprintf(welcome, MSG(MSG_GUI_WELCOME), "AmiAuth", path);
+    if (gui_requester(NULL, welcome,
+            deferred ? MSG(MSG_GUI_CREATE_VAULT_BTNS_DEFER)
+                     : MSG(MSG_GUI_CREATE_VAULT_BTNS_QUIT),
+            NULL) != 1)
         return 0;
 
     for (;;) {
-        if (!passphrase_request("New passphrase (empty = always-unlocked):",
+        if (!passphrase_request(MSG(MSG_GUI_NEW_PASS_PROMPT),
                                 pass, sizeof pass))
             return 0;
         if (!pass[0]) {
-            if (gui_requester(NULL,
-                    "Store the vault UNENCRYPTED?\n\n"
-                    "With no passphrase there is no at-rest protection:\n"
-                    "anyone with access to the file can read your secrets.\n"
-                    "(You can add a passphrase later.)",
-                    "Store unencrypted|Go back", NULL) != 1)
+            if (gui_requester(NULL, MSG(MSG_GUI_STORE_UNENCRYPTED_BODY),
+                    MSG(MSG_GUI_STORE_UNENCRYPTED_BTNS), NULL) != 1)
                 continue;
             rc = vault_create(v, NULL, 0, NULL);
             *encrypted = 0;
             break;
         }
-        if (!passphrase_request("Confirm passphrase:", confirm, sizeof confirm)) {
+        if (!passphrase_request(MSG(MSG_CONFIRM_PASSPHRASE), confirm, sizeof confirm)) {
             memset(pass, 0, sizeof pass);
             return 0;
         }
         if (strcmp(pass, confirm) != 0) {
             memset(confirm, 0, sizeof confirm);
             memset(pass, 0, sizeof pass);
-            gui_requester(NULL, "The passphrases did not match.", "Try again", NULL);
+            gui_requester(NULL, MSG(MSG_GUI_PASS_MISMATCH), MSG(MSG_GUI_TRY_AGAIN), NULL);
             continue;
         }
         memset(confirm, 0, sizeof confirm);
@@ -981,10 +985,7 @@ static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted,
             uint8_t salt[VAULT_SALT_SIZE];
             if (amiga_random(salt, sizeof salt) != 0) {
                 memset(pass, 0, sizeof pass);
-                gui_requester(NULL,
-                    "No secure random source is available, so an\n"
-                    "encrypted vault cannot be created safely.",
-                    "Cancel", NULL);
+                gui_requester(NULL, MSG(MSG_GUI_NO_RNG_BODY), MSG(MSG_GUI_CANCEL), NULL);
                 return 0;
             }
             /* a second or two of PBKDF2 probing - same ~1s policy as the CLI */
@@ -999,9 +1000,8 @@ static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted,
     if (rc == VAULT_OK) rc = gui_save(v, path);
     while (rc == VAULT_ERR_IO) {
         /* the resolved spot is unwritable (read-only install?): offer another */
-        if (gui_requester(NULL,
-                "Cannot write the vault to\n%s\n\nChoose another location?",
-                AslBase ? "Choose location...|Quit" : "Quit", path) != 1 ||
+        if (gui_requester(NULL, MSG(MSG_GUI_CANNOT_WRITE_BODY),
+                AslBase ? MSG(MSG_GUI_CHOOSE_LOCATION_BTNS) : MSG(MSG_GUI_QUIT), path) != 1 ||
             !vault_location_request(path, cap)) {
             vault_lock(v);
             return 0;
@@ -1010,7 +1010,7 @@ static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted,
     }
     if (rc != VAULT_OK) {
         vault_lock(v);
-        gui_requester(NULL, "Creating the vault failed.", "Quit", NULL);
+        gui_requester(NULL, MSG(MSG_GUI_CREATE_FAILED), MSG(MSG_GUI_QUIT), NULL);
         return 0;
     }
     {   /* a VAULT= or AMIAUTH_VAULT override is session-scoped: don't make
@@ -1040,7 +1040,7 @@ static int gui_open_vault(vault *v, char *path, size_t cap, int *encrypted,
         UnLock(l);                         /* exists but unreadable: below */
     }
     if (rc == VAULT_ERR_LOCKED) {
-        const char *msg = "Enter passphrase:";
+        const char *msg = MSG(MSG_GUI_ENTER_PASS);
         *encrypted = 1;                    /* enables idle auto-lock */
         for (;;) {
             if (!passphrase_request(msg, pass, sizeof pass))
@@ -1053,15 +1053,15 @@ static int gui_open_vault(vault *v, char *path, size_t cap, int *encrypted,
             }
             memset(pass, 0, sizeof pass);  /* scrub immediately */
             if (rc == VAULT_OK) return 1;
-            if (rc == VAULT_ERR_AUTH) { msg = "Wrong passphrase - try again:"; continue; }
+            if (rc == VAULT_ERR_AUTH) { msg = MSG(MSG_GUI_WRONG_PASS); continue; }
             break;                         /* IO/format error: reported below */
         }
     }
     if (rc != VAULT_OK) {
         /* a WB-launched process has no console, so a requester must carry
          * the error; keep the Printf for Shell launches */
-        gui_requester(NULL, MSG(MSG_GUI_CANNOT_OPEN_VAULT), "Quit", path);
-        Printf((CONST_STRPTR)"AmiAuth: cannot open the vault (%ld)\n", (LONG)rc);
+        gui_requester(NULL, MSG(MSG_GUI_CANNOT_OPEN_VAULT), MSG(MSG_GUI_QUIT), path);
+        Printf((CONST_STRPTR)MSG(MSG_GUI_CANNOT_OPEN_PRINTF), (ULONG)"AmiAuth", (LONG)rc);
         return -1;
     }
     return 1;
@@ -1101,6 +1101,7 @@ static int uri_request(char *buf, size_t cap)
     struct Window *w;
     ULONG sig = 0;
     int done = -1;
+    static char title[64];   /* off the stack */
 
     if (!StringBase || cap == 0) return 0;
     buf[0] = '\0';
@@ -1112,12 +1113,12 @@ static int uri_request(char *buf, size_t cap)
         STRINGA_MaxChars, (ULONG)(cap - 1),
         TAG_END);
     okobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID, PWID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"OK",     TAG_END);
+        GA_ID, PWID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)MSG(MSG_GUI_OK),     TAG_END);
     cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID, PWID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)"Cancel", TAG_END);
+        GA_ID, PWID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)MSG(MSG_GUI_CANCEL), TAG_END);
     labelobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ReadOnly, TRUE, GA_Text,
-        (ULONG)"Paste or type an otpauth:// URI or Base32 secret:", TAG_END);
+        (ULONG)MSG(MSG_GUI_URI_PASTE_LABEL), TAG_END);
     buttons = NewObject(LAYOUT_GetClass(), NULL,
         LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
         LAYOUT_AddChild, (ULONG)okobj,
@@ -1130,8 +1131,9 @@ static int uri_request(char *buf, size_t cap)
         LAYOUT_AddChild, (ULONG)strobj,   CHILD_WeightedHeight, 0, CHILD_MinWidth, 360,
         LAYOUT_AddChild, (ULONG)buttons,  CHILD_WeightedHeight, 0,
         TAG_END);
+    sprintf(title, MSG(MSG_GUI_TITLE_ADD_ACCOUNT), "AmiAuth");
     win = NewObject(WINDOW_GetClass(), NULL,
-        WA_Title,        (ULONG)"AmiAuth - Add account",
+        WA_Title,        (ULONG)title,
         WA_Activate,     TRUE,
         WA_CloseGadget,  TRUE,
         WA_DragBar,      TRUE,
@@ -1205,6 +1207,7 @@ static int edit_request(otp_account *acct)
     /* Writable buffers the string gadgets edit into (a string.gadget needs a
      * STRINGA_Buffer or OM_NEW fails). Off the stack; prefilled with the field. */
     static char ibuf[OTP_MAX_ISSUER], lbuf[OTP_MAX_LABEL], dbuf[8], pbuf[12];
+    static char title[64];   /* off the stack */
 
     if (!StringBase) return 0;
     strcpy(ibuf, acct->issuer);
@@ -1221,9 +1224,9 @@ static int edit_request(otp_account *acct)
     periodg = NewObject(STRING_GetClass(), NULL, GA_ID, EDID_PERIOD, GA_RelVerify, TRUE,
         STRINGA_Buffer, (ULONG)pbuf, STRINGA_MaxChars, 6, TAG_END);
     okobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID, EDID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"OK",     TAG_END);
+        GA_ID, EDID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)MSG(MSG_GUI_OK),     TAG_END);
     cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID, EDID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)"Cancel", TAG_END);
+        GA_ID, EDID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)MSG(MSG_GUI_CANCEL), TAG_END);
     buttons = NewObject(LAYOUT_GetClass(), NULL,
         LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
         LAYOUT_AddChild, (ULONG)okobj,
@@ -1232,14 +1235,15 @@ static int edit_request(otp_account *acct)
     layoutobj = NewObject(LAYOUT_GetClass(), NULL,
         LAYOUT_Orientation, LAYOUT_ORIENT_VERT,
         LAYOUT_SpaceOuter, TRUE,
-        LAYOUT_AddChild, (ULONG)labeled_row("Issuer:", issuerg), CHILD_WeightedHeight, 0, CHILD_MinWidth, 300,
-        LAYOUT_AddChild, (ULONG)labeled_row("Label:",  labelg),  CHILD_WeightedHeight, 0,
-        LAYOUT_AddChild, (ULONG)labeled_row("Digits:", digitsg), CHILD_WeightedHeight, 0,
-        LAYOUT_AddChild, (ULONG)labeled_row("Period:", periodg), CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)labeled_row(MSG(MSG_GUI_LABEL_ISSUER), issuerg), CHILD_WeightedHeight, 0, CHILD_MinWidth, 300,
+        LAYOUT_AddChild, (ULONG)labeled_row(MSG(MSG_GUI_LABEL_LABEL),  labelg),  CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)labeled_row(MSG(MSG_GUI_LABEL_DIGITS), digitsg), CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)labeled_row(MSG(MSG_GUI_LABEL_PERIOD), periodg), CHILD_WeightedHeight, 0,
         LAYOUT_AddChild, (ULONG)buttons,                         CHILD_WeightedHeight, 0,
         TAG_END);
+    sprintf(title, MSG(MSG_GUI_TITLE_EDIT_ACCOUNT), "AmiAuth");
     win = NewObject(WINDOW_GetClass(), NULL,
-        WA_Title,        (ULONG)"AmiAuth - Edit account",
+        WA_Title,        (ULONG)title,
         WA_Activate,     TRUE,
         WA_CloseGadget,  TRUE,
         WA_DragBar,      TRUE,
@@ -1291,9 +1295,9 @@ static int edit_request(otp_account *acct)
                             done = 1;
                         } else {
                             gui_requester(w, is_steam
-                                ? "Label is required."
-                                : "Label is required; digits must be 6-8, period 1-86400.",
-                                "OK", NULL);                     /* stay open to fix */
+                                ? MSG(MSG_GUI_LABEL_REQUIRED_STEAM)
+                                : MSG(MSG_GUI_LABEL_REQUIRED_FULL),
+                                MSG(MSG_GUI_OK), NULL);          /* stay open to fix */
                         }
                     }
                     break;
@@ -1362,22 +1366,21 @@ static void qr_display(struct Window *parent, const otp_account *acct)
     int done = -1;
 
     if (otpauth_build(acct, uri, sizeof(uri)) != 0) {
-        gui_requester(parent, "Could not build a QR code for this account.", "OK", NULL);
+        gui_requester(parent, MSG(MSG_GUI_QR_BUILD_FAILED), MSG(MSG_GUI_OK), NULL);
         return;
     }
     if (qr_encode_uri(uri, modules, &size) != QRENC_OK) {
-        gui_requester(parent,
-            "This account's URI is too long to encode as a QR code.", "OK", NULL);
+        gui_requester(parent, MSG(MSG_GUI_QR_TOO_LONG), MSG(MSG_GUI_OK), NULL);
         return;
     }
 
-    if (acct->issuer[0]) sprintf(title, "AmiAuth - QR: %s:%s", acct->issuer, acct->label);
-    else                 sprintf(title, "AmiAuth - QR: %s", acct->label);
+    if (acct->issuer[0]) sprintf(title, MSG(MSG_GUI_TITLE_QR_ISSUER), "AmiAuth", acct->issuer, acct->label);
+    else                 sprintf(title, MSG(MSG_GUI_TITLE_QR_NOISSUER), "AmiAuth", acct->label);
 
     qrobj = NewObject(NULL, (STRPTR)"button.gadget",
         GA_ReadOnly, TRUE, GA_Text, (ULONG)" ", TAG_END);
     if (!qrobj) {
-        gui_requester(parent, "Could not build the QR display.", "OK", NULL);
+        gui_requester(parent, MSG(MSG_GUI_QR_DISPLAY_FAILED), MSG(MSG_GUI_OK), NULL);
         return;
     }
     layoutobj = NewObject(LAYOUT_GetClass(), NULL,
@@ -1389,7 +1392,7 @@ static void qr_display(struct Window *parent, const otp_account *acct)
         TAG_END);
     if (!layoutobj) {
         DisposeObject(qrobj);
-        gui_requester(parent, "Could not build the QR display.", "OK", NULL);
+        gui_requester(parent, MSG(MSG_GUI_QR_DISPLAY_FAILED), MSG(MSG_GUI_OK), NULL);
         return;
     }
     win = NewObject(WINDOW_GetClass(), NULL,
@@ -1404,14 +1407,14 @@ static void qr_display(struct Window *parent, const otp_account *acct)
         TAG_END);
     if (!win) {
         DisposeObject(layoutobj);
-        gui_requester(parent, "Could not open the QR window.", "OK", NULL);
+        gui_requester(parent, MSG(MSG_GUI_QR_WINDOW_FAILED), MSG(MSG_GUI_OK), NULL);
         return;
     }
 
     w = (struct Window *)DoMethod(win, WM_OPEN, NULL);
     if (!w) {
         DisposeObject(win);
-        gui_requester(parent, "Could not open the QR window.", "OK", NULL);
+        gui_requester(parent, MSG(MSG_GUI_QR_WINDOW_FAILED), MSG(MSG_GUI_OK), NULL);
         return;
     }
     GetAttr(WINDOW_SigMask, win, &sig);
@@ -1445,6 +1448,7 @@ static int secret_meta_request(char *issuer, char *label)
     ULONG sig = 0;
     int done = -1;
     static char ibuf[OTP_MAX_ISSUER], lbuf[OTP_MAX_LABEL];   /* gadget buffers */
+    static char title[64];   /* off the stack */
 
     if (!StringBase) return 0;
     ibuf[0] = lbuf[0] = '\0';
@@ -1454,9 +1458,9 @@ static int secret_meta_request(char *issuer, char *label)
     labelg  = NewObject(STRING_GetClass(), NULL, GA_ID, EDID_LABEL, GA_RelVerify, TRUE,
         STRINGA_Buffer, (ULONG)lbuf, STRINGA_MaxChars, OTP_MAX_LABEL - 1, TAG_END);
     okobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID, EDID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)"Add",    TAG_END);
+        GA_ID, EDID_OK,     GA_RelVerify, TRUE, GA_Text, (ULONG)MSG(MSG_GUI_ADD_BTN), TAG_END);
     cancelobj = NewObject(NULL, (STRPTR)"button.gadget",
-        GA_ID, EDID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)"Cancel", TAG_END);
+        GA_ID, EDID_CANCEL, GA_RelVerify, TRUE, GA_Text, (ULONG)MSG(MSG_GUI_CANCEL), TAG_END);
     buttons = NewObject(LAYOUT_GetClass(), NULL,
         LAYOUT_Orientation, LAYOUT_ORIENT_HORIZ,
         LAYOUT_AddChild, (ULONG)okobj,
@@ -1467,14 +1471,15 @@ static int secret_meta_request(char *issuer, char *label)
         LAYOUT_SpaceOuter, TRUE,
         LAYOUT_AddChild, (ULONG)NewObject(NULL, (STRPTR)"button.gadget",
             GA_ReadOnly, TRUE, GA_Text,
-            (ULONG)"A bare secret carries no name - who is this account for?",
+            (ULONG)MSG(MSG_GUI_SECRET_META_HINT),
             TAG_END), CHILD_WeightedHeight, 0,
-        LAYOUT_AddChild, (ULONG)labeled_row("Issuer:", issuerg), CHILD_WeightedHeight, 0, CHILD_MinWidth, 300,
-        LAYOUT_AddChild, (ULONG)labeled_row("Label:",  labelg),  CHILD_WeightedHeight, 0,
+        LAYOUT_AddChild, (ULONG)labeled_row(MSG(MSG_GUI_LABEL_ISSUER), issuerg), CHILD_WeightedHeight, 0, CHILD_MinWidth, 300,
+        LAYOUT_AddChild, (ULONG)labeled_row(MSG(MSG_GUI_LABEL_LABEL),  labelg),  CHILD_WeightedHeight, 0,
         LAYOUT_AddChild, (ULONG)buttons,                         CHILD_WeightedHeight, 0,
         TAG_END);
+    sprintf(title, MSG(MSG_GUI_TITLE_ADD_ACCOUNT), "AmiAuth");
     win = NewObject(WINDOW_GetClass(), NULL,
-        WA_Title,        (ULONG)"AmiAuth - Add account",
+        WA_Title,        (ULONG)title,
         WA_Activate,     TRUE,
         WA_CloseGadget,  TRUE,
         WA_DragBar,      TRUE,
@@ -1510,8 +1515,8 @@ static int secret_meta_request(char *issuer, char *label)
                         GetAttr(STRINGA_TextVal, labelg, (ULONG *)&t);
                         if (t) { strncpy(label, (char *)t, OTP_MAX_LABEL - 1); label[OTP_MAX_LABEL - 1] = '\0'; }
                         if (issuer[0] && label[0]) done = 1;
-                        else gui_requester(w, "Issuer and Label are both required.",
-                                           "OK", NULL);          /* stay open to fix */
+                        else gui_requester(w, MSG(MSG_GUI_ISSUER_LABEL_REQUIRED),
+                                           MSG(MSG_GUI_OK), NULL);          /* stay open to fix */
                     }
                     break;
             }
@@ -1553,7 +1558,7 @@ static int gui_add_secret(struct Window *win, vault *v, const char *path, const 
         if (rc == VAULT_OK) { changed = 1; rc = gui_save(v, path); }
         if (rc != VAULT_OK)
             gui_requester(win, rc == VAULT_ERR_FULL
-                          ? "The vault is full (max 64 accounts)."
+                          ? MSG(MSG_GUI_VAULT_FULL)
                           : MSG(MSG_GUI_SAVE_FAILED), MSG(MSG_GUI_OK), NULL);
     }
     memset(&acct, 0, sizeof acct);
@@ -1731,7 +1736,7 @@ static struct Window *win_show(struct gui_widgets *gw, struct List *lblist,
         WINDOW_Layout,   (ULONG)layoutobj,
         TAG_END);
     if (!gw->winobj) {
-        Printf((CONST_STRPTR)"AmiAuth: could not create the window\n");
+        Printf((CONST_STRPTR)MSG(MSG_GUI_WINDOW_CREATE_FAILED), (ULONG)"AmiAuth");
         return NULL;
     }
     /* PUBSCREEN=<name>: set as a separate SetAttrs() only when actually in
@@ -1879,17 +1884,34 @@ int main(int argc, char **argv)
     NewList(&lblist);
 
     if ((err = open_libs()) != NULL) {
-        Printf((CONST_STRPTR)"AmiAuth: %s\n", (ULONG)err);
+        Printf((CONST_STRPTR)MSG(MSG_CLI_ERR), (ULONG)"AmiAuth", (ULONG)err);
         close_libs();
         return 20;
     }
 
-    /* g_columns is a static initializer (English only - MSG() is a function
-     * call, illegal there); fill in the real (translated, or same if no
-     * catalog) titles now that catalog_open() has run. */
+    /* g_columns/g_menu/LBL_* are static initializers (English only - MSG() is
+     * a function call, illegal there); fill in the real (translated, or same
+     * if no catalog) text now that catalog_open() has run. */
     g_columns[0].ci_Title = (STRPTR)MSG(MSG_GUI_COL_ACCOUNT);
     g_columns[1].ci_Title = (STRPTR)MSG(MSG_GUI_COL_CODE);
     g_columns[2].ci_Title = (STRPTR)MSG(MSG_GUI_COL_LEFT);
+    g_menu[0].nm_Label = (STRPTR)MSG(MSG_GUI_MENU_PROJECT);
+    g_menu[1].nm_Label = (STRPTR)MSG(MSG_GUI_QUIT);
+    g_menu[2].nm_Label = (STRPTR)MSG(MSG_GUI_MENU_ACCOUNT);
+    g_menu[3].nm_Label = (STRPTR)MSG(MSG_GUI_MENU_ADD_CLIP);
+    g_menu[4].nm_Label = (STRPTR)MSG(MSG_GUI_MENU_ADD_TYPE);
+    g_menu[5].nm_Label = (STRPTR)MSG(MSG_GUI_MENU_ADD_QR);
+    g_menu[6].nm_Label = (STRPTR)MSG(MSG_GUI_MENU_EDIT);
+    g_menu[7].nm_Label = (STRPTR)MSG(MSG_GUI_MENU_COPY);
+    g_menu[8].nm_Label = (STRPTR)MSG(MSG_GUI_MENU_SHOW_QR);
+    /* g_menu[9] is the NM_BARLABEL separator - no label to patch. */
+    g_menu[10].nm_Label = (STRPTR)MSG(MSG_GUI_MENU_REMOVE);
+    LBL_ADD        = MSG(MSG_GUI_BTN_ADD);
+    LBL_EDIT       = MSG(MSG_GUI_BTN_EDIT);
+    LBL_REMOVE     = MSG(MSG_GUI_BTN_REMOVE);
+    LBL_COPY       = MSG(MSG_GUI_BTN_COPY);
+    LBL_NUDGE_DOWN = MSG(MSG_GUI_BTN_NUDGE_DOWN);
+    LBL_NUDGE_UP   = MSG(MSG_GUI_BTN_NUDGE_UP);
 
     /* Read CX_* tooltypes (WBStartup icon) or CLI args uniformly (amiga.lib). */
     tt = ArgArrayInit(argc, (CONST_STRPTR *)argv);
@@ -1935,7 +1957,7 @@ int main(int argc, char **argv)
         nb.nb_Version = NB_VERSION;
         nb.nb_Name    = (STRPTR)"AmiAuth";
         nb.nb_Title   = (STRPTR)"AmiAuth";
-        nb.nb_Descr   = (STRPTR)"TOTP/HOTP authenticator";
+        nb.nb_Descr   = (STRPTR)MSG(MSG_GUI_CX_DESCR);
         nb.nb_Unique  = NBU_UNIQUE | NBU_NOTIFY;   /* one instance; notify the elder */
         nb.nb_Flags   = COF_SHOW_HIDE;             /* Exchange Show/Hide */
         nb.nb_Pri     = (BYTE)ArgInt((CONST_STRPTR *)tt, (CONST_STRPTR)"CX_PRIORITY", 0);
@@ -2049,7 +2071,7 @@ int main(int argc, char **argv)
     if (popup) {
         win = win_show(&gw, &lblist, &v, have_clip, &clk, statbuf, &winsig, clk.state);
         if (!win && !broker) {                /* a plain window app needs its window */
-            if (gw.winobj) Printf((CONST_STRPTR)"AmiAuth: could not open the window\n");
+            if (gw.winobj) Printf((CONST_STRPTR)MSG(MSG_GUI_WINDOW_OPEN_FAILED), (ULONG)"AmiAuth");
             goto cleanup;
         }
     }
@@ -2349,7 +2371,7 @@ int main(int argc, char **argv)
             WaitIO((struct IORequest *)g_treq);   /* consume the request */
             if (win && copied > 0 && --copied == 0)  /* revert the "Copied" flash */
                 SetGadgetAttrs((struct Gadget *)gw.copyobj, win, NULL,
-                               GA_Text, (ULONG)"Copy", TAG_END);
+                               GA_Text, (ULONG)MSG(MSG_GUI_COPY_PLAIN), TAG_END);
             /* auto-clear our copied code once it has sat ~30s, but only if the
              * clipboard is still ours (don't clobber something copied since). */
             if (clear_secs > 0 && --clear_secs == 0 && clip_write_id() == our_clipid)
@@ -2466,7 +2488,7 @@ int main(int argc, char **argv)
                 our_clipid = clip_write_text(curcode);
                 clear_secs = CLIP_CLEAR_SECS;         /* start/reset auto-clear */
                 SetGadgetAttrs((struct Gadget *)gw.copyobj, win, NULL,
-                               GA_Text, (ULONG)"Copied", TAG_END);
+                               GA_Text, (ULONG)MSG(MSG_GUI_COPIED), TAG_END);
                 copied = 2;                           /* revert after ~2 ticks */
             }
 
@@ -2517,7 +2539,7 @@ int main(int argc, char **argv)
                 a = &v.accounts[sel];
                 if (a->issuer[0]) { strcpy(name, a->issuer); strcat(name, ":"); strcat(name, a->label); }
                 else              strcpy(name, a->label);
-                if (gui_requester(win, "Remove %s?", "Remove|Cancel", name) == 1) {
+                if (gui_requester(win, MSG(MSG_GUI_REMOVE_CONFIRM), MSG(MSG_GUI_REMOVE_BTNS), name) == 1) {
                     rc = vault_remove(&v, sel);
                     changed = 1;
                     if (rc == VAULT_OK) rc = gui_save(&v, path);

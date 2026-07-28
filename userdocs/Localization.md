@@ -4,13 +4,15 @@ AmiAuth reads its user-visible text through AmigaOS's standard
 **locale.library catalog** system (OS 2.1+), so a community translation can
 be dropped in as a single file — no rebuild, no reinstall of AmiAuth itself.
 
-**Status:** this is an early, in-progress rollout. A representative slice of
-strings (CLI status/error messages, a few GUI requesters, the account list's
-column headers) already goes through the catalog system; most of the
-application's text is still English-only pending a fuller migration. If your
-language isn't fully covered yet, that's why — check back in a future
-release, or see [Building from Source](Building-from-Source.md) if you'd
-like to help.
+**Status:** every user-visible string in both the CLI and the GUI goes
+through the catalog system — prompts, error messages, menus, buttons, form
+labels, and requester text. A handful of things are deliberately left in
+English only: CLI subcommand keywords, `ReadArgs` field names and
+[ARexx port](ARexx-Port.md) command keywords (the scripting protocol, not
+prose — see below), file paths, and the CLI `usage()` command-list table and
+`ADD`'s bare-secret help text (too tightly interleaved with literal
+command/argument syntax to translate safely). If a string you'd expect to be
+translatable isn't, it likely falls into one of those categories.
 
 ## Installing a translation
 
@@ -51,6 +53,14 @@ keywords (`GETCODE`, `STATUS`, ...) — none of these are in `AmiAuth.cd` in
 the first place, since they're the scripting protocol, not user-facing
 prose, and must stay identical across every locale so scripts keep working
 everywhere.
+
+**GUI button mnemonics:** the account-list toolbar's button labels (`_Add`,
+`_Edit`, `_Remove`, `_Copy`, `_D -10s`, `_U +10s`) carry a keyboard shortcut
+as a leading underscore before one letter — AmiAuth reads that letter back
+out of the string at runtime. When translating these, keep exactly one `_`
+immediately before an ASCII letter (ideally one that doesn't collide with
+another button's shortcut); dropping it, or moving it in front of a digit or
+symbol, silently breaks that button's keyboard shortcut.
 
 ## Baseline
 
