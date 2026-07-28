@@ -1,0 +1,523 @@
+; deutsch.ct - DRAFT German translation of locale/AmiAuth.cd.
+;
+; MACHINE-GENERATED FIRST PASS, NOT REVIEWED BY A NATIVE SPEAKER.
+; See locale/drafts/README.md before using or building this file - it is
+; not wired into any build target and must not be installed as-is.
+;
+; Terminology used throughout, for reviewer consistency:
+;   vault      -> Tresor          passphrase -> Passphrase (not Passwort)
+;   account    -> Konto           secret     -> Secret (loanword, RFC term)
+;   issuer     -> Aussteller      label      -> Bezeichnung
+;   re-key     -> neu verschlüsseln / Neuverschlüsselung
+;   always-unlocked -> immer entsperrt
+; Tone: neutral/impersonal (no "Du"/"Sie" address needed for most strings;
+; imperative infinitive for buttons, e.g. "Hinzufügen" not "Füge hinzu").
+;
+##version $VER: AmiAuth.catalog 1.0 (28.07.2026)
+##language deutsch
+##codeset 0
+;
+; --- CLI (src/cli/main.c) ---------------------------------------------
+;
+MSG_CLI_ALREADY_EXISTS
+%s: %s existiert bereits\n
+;
+MSG_CLI_ADDED
+%s:%s hinzugefügt\n
+;
+MSG_CLI_REMOVED
+'%s' entfernt\n
+;
+MSG_CLI_USAGE_RUNAS
+Aufruf als '%s <COMMAND> ...'  ('%s ?' zeigt die Argumentvorlage):\n
+;
+; --- GUI (src/gui/main.c): account list column headers -----------------
+;
+MSG_GUI_COL_ACCOUNT
+Konto
+;
+MSG_GUI_COL_CODE
+Code
+;
+MSG_GUI_COL_LEFT
+Rest
+;
+; --- GUI: requester text -------------------------------------------------
+;
+MSG_GUI_CANNOT_OPEN_VAULT
+Der Tresor kann nicht geöffnet werden:\n%s
+;
+MSG_GUI_BAD_URI
+Das ist keine gültige otpauth://-URI.
+;
+MSG_GUI_BAD_SECRET
+Das ist weder eine otpauth://-URI noch ein Base32-Secret.
+;
+MSG_GUI_NO_QR
+In diesem Bild wurde kein otpauth-QR-Code gefunden.
+;
+MSG_GUI_SAVE_FAILED
+Der Tresor konnte nicht gespeichert werden.
+;
+MSG_GUI_REKEY_DONE
+Tresor wurde für diesen Rechner neu verschlüsselt.
+;
+MSG_GUI_REKEY_FAILED
+Neuverschlüsselung fehlgeschlagen; der Tresor bleibt unverändert.
+;
+; --- GUI: common requester button labels ----------------------------------
+;
+MSG_GUI_OK
+OK
+;
+MSG_GUI_CANCEL
+Abbrechen
+;
+; --- CLI: vault_err()'s own strings, wrapped by MSG_CLI_ERR below ---------
+;
+MSG_ERR_IO
+die Tresordatei kann nicht gelesen/geschrieben werden
+;
+MSG_ERR_FORMAT
+keine gültige Tresordatei
+;
+MSG_ERR_AUTH
+falsche Passphrase, oder die Datei wurde manipuliert
+;
+MSG_ERR_LOCKED
+Tresor ist gesperrt
+;
+MSG_ERR_FULL
+Tresor ist voll
+;
+MSG_ERR_RANGE
+kein solches Konto
+;
+MSG_ERR_UNKNOWN
+Fehler
+;
+; --- CLI: generic error wrapper ("AmiAuth" + vault_err()/other message) --
+;
+MSG_CLI_ERR
+%s: %s\n
+;
+MSG_CLI_WARN_HOTP_PERSIST
+%s: Warnung: HOTP-Zähler konnte nicht gespeichert werden (%s)\n
+;
+; --- CLI: passphrase prompts ----------------------------------------------
+;
+MSG_CLI_PROMPT_PASSPHRASE
+Passphrase:
+;
+MSG_CLI_NO_TTY
+%s: dieser Tresor ist verschlüsselt; bitte in einem interaktiven Terminal ausführen, oder für Skripte einen immer entsperrten Tresor verwenden\n
+;
+MSG_CLI_NO_RNG_SAVE
+%s: keine sichere Zufallsquelle vorhanden, um einen verschlüsselten Tresor zu speichern (Phase 4)\n
+;
+; --- CLI: adaptive re-key (maybe_rekey) -----------------------------------
+;
+; REVIEWER: the letter(s) in "(x)" and the word in '...' below are read back
+; out of this translated string at runtime (locale/AmiAuth.cd's header has
+; the full convention) - j/N/i and 'ja' are just this draft's choice, freely
+; change them, just keep exactly one "(x)" per choice in the same
+; left-to-right order, with the accept and never-ask letters distinct.
+MSG_CLI_REKEY_STRENGTHEN_PROMPT
+Dieser Rechner ist deutlich schneller als der, der diesen Tresor gesichert hat.\nJetzt stärken? [(j)a/(N)ein/n(i)e hier fragen]
+;
+MSG_CLI_REKEY_SLOW_NOTICE
+%s: Entsperren dauerte ~%lus; dieser Tresor wurde für schnellere Hardware eingestellt.\n
+;
+MSG_CLI_REKEY_LOWER_PROMPT
+Für schnelleres Entsperren hier ABSCHWÄCHEN? Dies VERRINGERT die Sicherheit. [(j)a/(N)ein]
+;
+MSG_CLI_CONFIRM_YES_PROMPT
+Zur Bestätigung 'ja' eingeben:
+;
+MSG_CLI_REKEYED
+%s: neu verschlüsselt mit %lu Iterationen\n
+;
+MSG_CLI_REKEY_FAILED
+%s: Neuverschlüsselung fehlgeschlagen; Tresor unverändert\n
+;
+; --- CLI: CODE ---------------------------------------------------------
+;
+MSG_CLI_BAD_SECRET
+%s: ungültiges oder leeres Base32-Secret\n
+;
+MSG_CLI_SECONDS_REMAINING
+(noch %u Sekunden)\n
+;
+; --- CLI: CLOCK/SYNC/OFFSET/NUDGE ---------------------------------------
+;
+MSG_CLI_CLOCK_SYNCED
+synchronisiert (grün)
+;
+MSG_CLI_CLOCK_MANUAL
+Offset gesetzt (gelb)
+;
+MSG_CLI_CLOCK_UNVERIFIED
+nicht geprüft (rot)
+;
+MSG_CLI_CLOCK_OFFSET_LINE
+UTC-Offset : %+ld Sekunden (%+ld Min)\n
+;
+MSG_CLI_CLOCK_STATUS_LINE
+Status     : %s\n
+;
+MSG_CLI_CLOCK_CORRECTED_LINE
+korrigiert : %04d-%02d-%02d %02d:%02d:%02d UTC\n
+;
+MSG_CLI_QUERYING
+Frage %s ab ...\n
+;
+MSG_CLI_SYNC_FAILED
+%s: SNTP-Abgleich fehlgeschlagen (kein TCP/IP-Stack oder keine Antwort von %s)\n
+;
+MSG_CLI_OFFSET_SAVE_FAILED
+%s: Offset konnte nicht gespeichert werden\n
+;
+; --- CLI: INIT -----------------------------------------------------------
+;
+MSG_CLI_INIT_PASS_PROMPT
+Neue Passphrase (leer lassen für einen immer entsperrten Tresor):
+;
+MSG_CLI_INIT_NO_TTY
+%s: INIT benötigt ein interaktives Terminal (für einen nicht-interaktiven, immer entsperrten Tresor 'INIT --open' verwenden)\n
+;
+MSG_CONFIRM_PASSPHRASE
+Passphrase bestätigen:
+;
+MSG_CLI_PASS_MISMATCH
+%s: Passphrasen stimmen nicht überein\n
+;
+MSG_CLI_INIT_NO_RNG
+%s: keine sichere Zufallsquelle für einen verschlüsselten Tresor (Phase 4); mit 'INIT --open' einen immer entsperrten Tresor anlegen\n
+;
+MSG_CLI_KDF_ITERATIONS
+%s: KDF-Iterationen = %lu\n
+;
+MSG_CLI_CREATED
+Tresor (%s) angelegt unter %s\n
+;
+MSG_CLI_ALWAYS_UNLOCKED
+immer entsperrt
+;
+MSG_CLI_ENCRYPTED
+verschlüsselt
+;
+; --- CLI: GUI forwarding (try_forward) ------------------------------------
+;
+MSG_CLI_GUI_LOCKED
+%s: der Tresor der laufenden GUI ist gesperrt; bitte dort zuerst entsperren\n
+;
+MSG_CLI_NO_ACCOUNT
+%s: kein Konto passend zu '%s'\n
+;
+MSG_CLI_VAULT_FULL
+%s: der Tresor ist voll (max. 64 Konten)\n
+;
+MSG_CLI_BAD_OTPURI
+%s: keine gültige otpauth://-URI\n
+;
+MSG_CLI_GUI_SAVEFAIL
+%s: in der GUI übernommen, aber das erneute Speichern ist fehlgeschlagen\n
+;
+MSG_CLI_URI_TOO_LONG
+%s: die URI dieses Kontos ist zu lang, um als QR-Code kodiert zu werden\n
+;
+MSG_CLI_GUI_UNKNOWN
+%s: die laufende GUI konnte das nicht verarbeiten\n
+;
+; --- CLI: ADD --------------------------------------------------------------
+;
+MSG_CLI_PARSE_FAILED
+%s: otpauth://-URI konnte nicht gelesen werden\n
+;
+MSG_CLI_ADDED_NOISSUER
+%s hinzugefügt\n
+;
+MSG_CLI_BAD_BASE32
+%s: das sieht nicht wie ein Base32-Secret aus\n
+;
+; --- CLI: SHOW / usage -----------------------------------------------------
+;
+MSG_CLI_NO_GUI
+%s: keine laufende GUI zum Anzeigen\n
+;
+MSG_CLI_TAGLINE
+%s - TOTP/HOTP-Authentifizierung für AmigaOS\n\n
+;
+MSG_CLI_ENCRYPTED_NOTE
+Verschlüsselte Tresore fragen die Passphrase im Terminal ab.\n
+;
+; --- GUI: main menu (g_menu[]) ---------------------------------------------
+;
+MSG_GUI_MENU_PROJECT
+Projekt
+;
+MSG_GUI_QUIT
+Beenden
+;
+MSG_GUI_MENU_ACCOUNT
+Konto
+;
+MSG_GUI_MENU_ADD_CLIP
+Aus Zwischenablage hinzufügen
+;
+MSG_GUI_MENU_ADD_TYPE
+Hinzufügen (URI/Secret eingeben)...
+;
+MSG_GUI_MENU_ADD_QR
+Aus QR-Bild hinzufügen...
+;
+MSG_GUI_MENU_EDIT
+Auswahl bearbeiten...
+;
+MSG_GUI_MENU_COPY
+Code kopieren
+;
+MSG_GUI_MENU_SHOW_QR
+QR-Code anzeigen...
+;
+MSG_GUI_MENU_REMOVE
+Auswahl entfernen...
+;
+; --- GUI: toolbar button mnemonics (LBL_*, see the underscore note above) -
+; REVIEWER: the six mnemonic letters below (H/B/E/K/M/P) are chosen to be
+; distinct from each other, since all six buttons are visible together in
+; the same window - keep them distinct if you change the wording.
+;
+MSG_GUI_BTN_ADD
+_Hinzufügen
+;
+MSG_GUI_BTN_EDIT
+_Bearbeiten
+;
+MSG_GUI_BTN_REMOVE
+_Entfernen
+;
+MSG_GUI_BTN_COPY
+_Kopieren
+;
+MSG_GUI_BTN_NUDGE_DOWN
+_M -10s
+;
+MSG_GUI_BTN_NUDGE_UP
+_P +10s
+;
+; --- GUI: copy-code button's transient states (no mnemonic) ---------------
+;
+MSG_GUI_COPY_PLAIN
+Kopieren
+;
+MSG_GUI_COPIED
+Kopiert
+;
+; --- GUI: clock-status line --------------------------------------------
+;
+MSG_GUI_CLOCK_SYNCED
+synchron
+;
+MSG_GUI_CLOCK_MANUAL
+manuell
+;
+MSG_GUI_CLOCK_UNVERIFIED
+ungeprüft
+;
+MSG_GUI_CLOCK_LINE_SHORT
+Uhr: %s
+;
+MSG_GUI_CLOCK_LINE_FULL
+Uhr: %s %s%lu:%02lu
+;
+; --- GUI: adaptive re-key (gui_maybe_rekey) -------------------------------
+;
+MSG_GUI_REKEY_STRENGTHEN_BODY
+Dieser Rechner ist deutlich schneller als der, der diesen Tresor gesichert hat.\nJetzt stärken (Neuverschlüsselung mit mehr PBKDF2-Iterationen)?
+;
+MSG_GUI_REKEY_STRENGTHEN_BTNS
+Stärken|Jetzt nicht|Hier nie
+;
+MSG_GUI_REKEY_SLOW_BODY
+Entsperren dauerte etwa %lu Sekunden; dieser Tresor wurde für schnellere Hardware eingestellt.\nHier für schnelleres Entsperren ABSCHWÄCHEN? Dies VERRINGERT die Sicherheit.
+;
+MSG_GUI_REKEY_LOWER_BTNS
+Abschwächen|Abbrechen
+;
+MSG_GUI_REKEY_CONFIRM_BODY
+Sicherheit dieses Tresors wirklich verringern?
+;
+MSG_GUI_REKEY_REDUCE_BTNS
+Verringern|Abbrechen
+;
+; --- GUI: add account (uri/secret, shared gui_add_uri/gui_add_secret) ----
+;
+MSG_GUI_VAULT_FULL
+Der Tresor ist voll (max. 64 Konten).
+;
+; --- GUI: QR import (do_add_qr_impl) --------------------------------------
+;
+MSG_GUI_IMG_TOOBIG
+Dieses Bild ist zu groß, um decodiert zu werden.
+;
+MSG_GUI_QR_UNAVAIL
+Der QR-Import benötigt datatypes.library.
+;
+MSG_GUI_IMG_NOMEM
+Nicht genug Speicher, um dieses Bild zu laden.
+;
+MSG_GUI_IMG_READ_FAILED
+Dieses Bild konnte nicht gelesen werden (benötigt picture.datatype).
+;
+MSG_GUI_TITLE_DECODING
+%s - QR-Bild wird decodiert...
+;
+MSG_GUI_QR_FILE_TITLE
+QR-Bild auswählen
+;
+; --- GUI: unlock prompt (passphrase_request title) ------------------------
+;
+MSG_GUI_TITLE_UNLOCK
+%s - Entsperren
+;
+; --- GUI: first-run vault creation -----------------------------------------
+;
+MSG_GUI_CHOOSE_LOCATION
+Speicherort für den Tresor wählen
+;
+MSG_GUI_WELCOME
+Willkommen bei %s!\n\nEs gibt noch keinen Tresor - er wird angelegt unter\n%s
+;
+MSG_GUI_CREATE_VAULT_BTNS_DEFER
+Tresor anlegen...|Jetzt nicht
+;
+MSG_GUI_CREATE_VAULT_BTNS_QUIT
+Tresor anlegen...|Beenden
+;
+MSG_GUI_NEW_PASS_PROMPT
+Neue Passphrase (leer = immer entsperrt):
+;
+MSG_GUI_STORE_UNENCRYPTED_BODY
+Tresor UNVERSCHLÜSSELT speichern?\n\nOhne Passphrase gibt es keinen Schutz im Ruhezustand:\njeder mit Zugriff auf die Datei kann Ihre Secrets lesen.\n(Eine Passphrase kann später hinzugefügt werden.)
+;
+MSG_GUI_STORE_UNENCRYPTED_BTNS
+Unverschlüsselt speichern|Zurück
+;
+MSG_GUI_PASS_MISMATCH
+Die Passphrasen stimmen nicht überein.
+;
+MSG_GUI_TRY_AGAIN
+Erneut versuchen
+;
+MSG_GUI_NO_RNG_BODY
+Es ist keine sichere Zufallsquelle verfügbar, daher kann\nkein verschlüsselter Tresor sicher angelegt werden.
+;
+MSG_GUI_CANNOT_WRITE_BODY
+Der Tresor kann nicht geschrieben werden nach\n%s\n\nAnderen Speicherort wählen?
+;
+MSG_GUI_CHOOSE_LOCATION_BTNS
+Ort wählen...|Beenden
+;
+MSG_GUI_CREATE_FAILED
+Anlegen des Tresors fehlgeschlagen.
+;
+; --- GUI: unlock loop (gui_open_vault) --------------------------------
+;
+MSG_GUI_ENTER_PASS
+Passphrase eingeben:
+;
+MSG_GUI_WRONG_PASS
+Falsche Passphrase - erneut versuchen:
+;
+MSG_GUI_CANNOT_OPEN_PRINTF
+%s: Tresor kann nicht geöffnet werden (%ld)\n
+;
+; --- GUI: add account form (uri_request) ------------------------------
+;
+MSG_GUI_URI_PASTE_LABEL
+otpauth://-URI oder Base32-Secret einfügen oder eingeben:
+;
+MSG_GUI_TITLE_ADD_ACCOUNT
+%s - Konto hinzufügen
+;
+; --- GUI: edit account form (edit_request) ------------------------------
+;
+MSG_GUI_LABEL_ISSUER
+Aussteller:
+;
+MSG_GUI_LABEL_LABEL
+Bezeichnung:
+;
+MSG_GUI_LABEL_DIGITS
+Stellen:
+;
+MSG_GUI_LABEL_PERIOD
+Intervall:
+;
+MSG_GUI_TITLE_EDIT_ACCOUNT
+%s - Konto bearbeiten
+;
+MSG_GUI_LABEL_REQUIRED_STEAM
+Bezeichnung ist erforderlich.
+;
+MSG_GUI_LABEL_REQUIRED_FULL
+Bezeichnung ist erforderlich; Stellen müssen 6-8, Intervall 1-86400 sein.
+;
+; --- GUI: QR export display (qr_display) --------------------------------
+;
+MSG_GUI_QR_BUILD_FAILED
+Für dieses Konto konnte kein QR-Code erstellt werden.
+;
+MSG_GUI_QR_TOO_LONG
+Die URI dieses Kontos ist zu lang, um als QR-Code kodiert zu werden.
+;
+MSG_GUI_QR_DISPLAY_FAILED
+Die QR-Anzeige konnte nicht erstellt werden.
+;
+MSG_GUI_QR_WINDOW_FAILED
+Das QR-Fenster konnte nicht geöffnet werden.
+;
+MSG_GUI_TITLE_QR_ISSUER
+%s - QR: %s:%s
+;
+MSG_GUI_TITLE_QR_NOISSUER
+%s - QR: %s
+;
+; --- GUI: bare-secret add form (secret_meta_request) ----------------------
+;
+MSG_GUI_SECRET_META_HINT
+Ein reines Secret trägt keinen Namen - für wen ist dieses Konto?
+;
+MSG_GUI_ADD_BTN
+Hinzufügen
+;
+MSG_GUI_ISSUER_LABEL_REQUIRED
+Aussteller und Bezeichnung sind beide erforderlich.
+;
+; --- GUI: commodity broker (Exchange) -------------------------------------
+;
+MSG_GUI_CX_DESCR
+TOTP/HOTP-Authentifizierung
+;
+; --- GUI: remove confirmation ---------------------------------------------
+;
+MSG_GUI_REMOVE_CONFIRM
+%s entfernen?
+;
+MSG_GUI_REMOVE_BTNS
+Entfernen|Abbrechen
+;
+; --- GUI: startup failures (open_libs/main) -------------------------------
+;
+MSG_GUI_NEEDS_INTUITION
+benötigt intuition.library / utility.library v37+ (OS 2.04)
+;
+MSG_GUI_NEEDS_REACTION
+benötigt ReAction/ClassAct-Klassen (window/layout/listbrowser/fuelgauge/button)
+;
+MSG_GUI_WINDOW_CREATE_FAILED
+%s: Fenster konnte nicht erstellt werden\n
+;
+MSG_GUI_WINDOW_OPEN_FAILED
+%s: Fenster konnte nicht geöffnet werden\n

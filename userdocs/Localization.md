@@ -62,6 +62,22 @@ immediately before an ASCII letter (ideally one that doesn't collide with
 another button's shortcut); dropping it, or moving it in front of a digit or
 symbol, silently breaks that button's keyboard shortcut.
 
+**CLI re-key prompts:** the three interactive re-key confirmations (offered
+after unlocking a vault on much faster/slower hardware than it was tuned
+for) work the same way — the accepted answer is read back out of the
+translated prompt itself, not hardcoded. `Strengthen it now? [(y)es/(N)o/
+ne(v)er ask here]`'s 1st `"(x)"` is the accept letter and its 3rd is the
+"never ask again" letter (the 2nd, "no", is never checked); `[(y)es/(N)o]`'s
+1st `"(x)"` is its accept letter; and `Type 'yes' to confirm:`'s accepted
+answer is whatever word sits between the first pair of `'` quotes. Translate
+freely — the letters don't have to be `y`/`N`/`v`, and don't have to be the
+first letter of the translated word — just keep exactly one `"(x)"` per
+choice (same left-to-right order, accept and never-ask letters distinct from
+each other) and one `'...'`-quoted word. If the accept and never-ask letters
+do end up the same, AmiAuth degrades safely rather than misreading your
+answer: the never-ask shortcut (which writes a persisted preference) simply
+becomes unreachable, it never fires on a "yes" by mistake.
+
 ## Baseline
 
 Locale.library catalogs require AmigaOS 2.1 (V38) — one step above AmiAuth's
