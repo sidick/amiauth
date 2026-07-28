@@ -26,8 +26,9 @@ AmiAuth accepts all three forms.
 The URI's issuer, label, secret, algorithm, digits, period (TOTP) or counter
 (HOTP) are all imported. AmiAuth supports SHA-1 (the near-universal default),
 SHA-256 and SHA-512 (`algorithm=SHA256`/`SHA512` in the URI — rare, but some
-services offer it), 6 or 8 digits, and any period. A URI naming an algorithm
-AmiAuth doesn't implement is rejected rather than silently imported as SHA-1.
+services offer it), 6-8 digits, and any period. A URI naming an algorithm or
+digit count AmiAuth doesn't implement is rejected rather than silently
+imported as SHA-1/6-digit.
 
 ### From a bare Base32 secret
 

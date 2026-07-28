@@ -44,6 +44,26 @@ static int dims_ok(ULONG w, ULONG h)
            w * h <= QRIMAGE_MAX_AREA;
 }
 
+/* Compact `height` rows of `width` live bytes each from a `pitch`-wide (>=
+ * width) stride down to a dense width*height block, in place. dest is always
+ * at a lower address than its row's source (pitch > width), which is the
+ * direction a naive forward byte-copy handles correctly regardless of
+ * whether the two ranges actually overlap for a given row - unlike CopyMem(),
+ * whose overlap behaviour isn't part of its documented contract (only
+ * CopyMemQuick()/memmove-alikes promise that), so a fast-copy library patch
+ * replacing CopyMem() need not preserve it. Row 0 needs no move (already at
+ * the front). */
+static void compact_rows(unsigned char *buf, ULONG width, ULONG pitch, ULONG height)
+{
+    ULONG y, k;
+    if (pitch == width) return;
+    for (y = 1; y < height; y++) {
+        unsigned char *dst = buf + y * width;
+        const unsigned char *src = buf + y * pitch;
+        for (k = 0; k < width; k++) dst[k] = src[k];
+    }
+}
+
 /* Primary: picture.datatype v43 GREY8. Returns QRIMAGE_OK, or QRIMAGE_ERR_READ
  * if the v43 method isn't available (caller then tries the classic path). */
 #ifndef QRIMAGE_FORCE_V39
@@ -53,7 +73,7 @@ static int load_v43(const char *path, unsigned char **gray, int *w, int *h)
     struct BitMapHeader *bmhd = NULL;
     struct pdtBlitPixelArray pa;
     unsigned char *buf;
-    ULONG width, height, pitch, y;
+    ULONG width, height, pitch;
 
     o = NewDTObject((APTR)path,
         DTA_SourceType,  DTST_FILE,
@@ -91,9 +111,7 @@ static int load_v43(const char *path, unsigned char **gray, int *w, int *h)
     DisposeDTObject(o);
 
     /* Compact padded rows down to a dense width stride, in place (dest < src). */
-    if (pitch != width)
-        for (y = 1; y < height; y++)
-            CopyMem(buf + y * pitch, buf + y * width, width);
+    compact_rows(buf, width, pitch, height);
 
     *gray = buf; *w = (int)width; *h = (int)height;
     return QRIMAGE_OK;
@@ -111,7 +129,7 @@ static int load_v39(const char *path, unsigned char **gray, int *w, int *h)
     struct RastPort rp, trp;
     struct BitMap *tbm;
     unsigned char *buf;
-    ULONG width, height, pitch, i, n, y;
+    ULONG width, height, pitch, i, n, numcolors = 0;
 
     if (!GfxBase || GfxBase->LibNode.lib_Version < 39)
         return QRIMAGE_ERR_READ;          /* AllocBitMap/ReadPixelArray8 are v39 */
@@ -130,8 +148,9 @@ static int load_v39(const char *path, unsigned char **gray, int *w, int *h)
         PDTA_BitMapHeader,   (ULONG)&bmhd,
         PDTA_BitMap,         (ULONG)&bm,
         PDTA_ColorRegisters, (ULONG)&cregs,
+        PDTA_NumColors,      (ULONG)&numcolors,
         TAG_END);
-    if (!bmhd || !bm || !cregs) { DisposeDTObject(o); return QRIMAGE_ERR_READ; }
+    if (!bmhd || !bm || !cregs || !numcolors) { DisposeDTObject(o); return QRIMAGE_ERR_READ; }
     width = bmhd->bmh_Width; height = bmhd->bmh_Height;
     if (!dims_ok(width, height)) { DisposeDTObject(o); return QRIMAGE_ERR_TOOBIG; }
 
@@ -153,14 +172,16 @@ static int load_v39(const char *path, unsigned char **gray, int *w, int *h)
     FreeBitMap(tbm);
 
     /* Compact pen rows from the aligned pitch down to a dense width stride. */
-    if (pitch != width)
-        for (y = 1; y < height; y++)
-            CopyMem(buf + y * pitch, buf + y * width, width);
+    compact_rows(buf, width, pitch, height);
 
-    /* Map pen indices to greyscale luminance over the dense width*height area. */
+    /* Map pen indices to greyscale luminance over the dense width*height area.
+     * A malformed/deep image can carry pen values the registered palette
+     * doesn't cover (bitmap depth allows more pens than PDTA_NumColors
+     * actually filled in) - clamp rather than read past cregs[]. */
     n = width * height;
     for (i = 0; i < n; i++) {
-        const struct ColorRegister *c = &cregs[buf[i]];
+        ULONG pen = buf[i] < numcolors ? buf[i] : numcolors - 1;
+        const struct ColorRegister *c = &cregs[pen];
         buf[i] = (unsigned char)((c->red * 77 + c->green * 150 + c->blue * 29) >> 8);
     }
 

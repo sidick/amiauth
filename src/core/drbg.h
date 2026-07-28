@@ -21,10 +21,16 @@ typedef struct {
 } drbg_state;
 
 /* Instantiate from seed material (entropy || nonce || personalisation, in any
- * combination the caller has gathered). */
+ * combination the caller has gathered). `seedlen == 0` is accepted by the
+ * algorithm (it degenerates to the fixed SP 800-90A initial K/V with no
+ * folded-in data) but is NOT a safe way to seed this generator - the result
+ * is then fully deterministic and public. Guaranteeing real entropy is the
+ * caller's responsibility, not this primitive's (see src/amiga/random.c,
+ * whose seed is always a full SHA1_DIGEST_SIZE-byte digest, never empty). */
 void drbg_init(drbg_state *st, const uint8_t *seed, size_t seedlen);
 
-/* Fold additional entropy into the running state (SP 800-90A reseed). */
+/* Fold additional entropy into the running state (SP 800-90A reseed). Same
+ * non-empty-input caveat as drbg_init above. */
 void drbg_reseed(drbg_state *st, const uint8_t *in, size_t inlen);
 
 /* Emit n pseudo-random bytes and advance the state. */

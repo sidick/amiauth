@@ -68,11 +68,19 @@ def inline(s):
     s = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', s)   # images have no guide analogue
     out = []
     i = 0
-    # [text](url) / **bold** / `code`
+    # [text](url) / **bold** / *emphasis* / `code`
+    # AmigaGuide has no italic markup used elsewhere in this converter, so
+    # single-asterisk emphasis renders identically to **bold** (@{b}...@{ub})
+    # rather than passing through as literal asterisks - group 3 (**bold**)
+    # is tried first in the alternation, so it always wins at a `**` run;
+    # group 4 only matches a lone `*` (no `*`/whitespace as its next char,
+    # ruling out `**` and stray "3 * 4"-style spaced asterisks - userdocs
+    # doesn't use `*` for anything else, e.g. no `* ` list bullets).
     pat = re.compile(
         r'\[([^\]]+)\]\(([^)]+)\)'            # 1: text, 2: url
         r'|\*\*([^*]+)\*\*'                   # 3: bold
-        r'|`([^`]+)`')                        # 4: code
+        r'|\*([^*\s][^*]*?)\*'                # 4: single-asterisk emphasis
+        r'|`([^`]+)`')                        # 5: code
     for m in pat.finditer(s):
         out.append(esc(s[i:m.start()]))
         if m.group(1) is not None:
@@ -87,8 +95,10 @@ def inline(s):
                 out.append('%s <%s>' % (text, esc(url)))
         elif m.group(3) is not None:
             out.append('@{b}%s@{ub}' % esc(m.group(3)))
+        elif m.group(4) is not None:
+            out.append('@{b}%s@{ub}' % esc(m.group(4)))
         else:
-            out.append(esc(m.group(4)))
+            out.append(esc(m.group(5)))
         i = m.end()
     out.append(esc(s[i:]))
     return ''.join(out)

@@ -47,3 +47,14 @@ needs no special build flags for the plain-68000 target. The wrapper in
 interface the rest of the program uses.
 
 Its MIT licence text is preserved verbatim in every vendored source file.
+
+**`assert()` is deliberately left active (no `-DNDEBUG` anywhere in the
+build).** Unlike quirc, which decodes untrusted external images and had its
+own bounds-checking hardened (#109/#110), qrcodegen only ever encodes
+already-validated internal data (an `otp_account` built by `otpauth_build`),
+so its ~50 `assert()`s are pure internal-invariant checks — a "should never
+happen" one firing means the encoder has already produced an inconsistent
+QR. `abort()`ing loudly on that is safer than `-DNDEBUG` silently disabling
+the check and shipping a corrupted or wrong QR encoding of an account
+secret. This is a considered choice, not an oversight — if `-DNDEBUG` is
+ever added elsewhere in the build, keep it off this file specifically.

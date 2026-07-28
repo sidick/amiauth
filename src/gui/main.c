@@ -286,7 +286,9 @@ static const char *open_libs(void)
     FuelGaugeBase   = OpenLibrary((STRPTR)"gadgets/fuelgauge.gadget", 0);
     ButtonBase      = OpenLibrary((STRPTR)"gadgets/button.gadget", 0);
     IFFParseBase    = OpenLibrary((STRPTR)"iffparse.library", 37);  /* optional: clipboard copy */
-    GfxBase         = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 37);
+    /* 39, not 37: led_pens_alloc uses ObtainBestPenA/ReleasePen (V39). The GUI
+     * already requires OS 3.0 (ReAction), so this asks for nothing extra. */
+    GfxBase         = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 39);
     StringBase      = OpenLibrary((STRPTR)"gadgets/string.gadget", 0);  /* optional: typed URI */
     GadToolsBase    = OpenLibrary((STRPTR)"gadtools.library", 37);      /* optional: menus */
     /* QR import — all optional and feature-detected; absence just disables it:
@@ -305,13 +307,22 @@ static const char *open_libs(void)
     return NULL;
 }
 
+/* On any failure, undo exactly what was actually allocated - the caller only
+ * calls timer_close() when timer_open() returned 1, so a partial success
+ * (port and/or IORequest allocated, device open failed) must clean up here
+ * or it leaks until reboot (Exec doesn't track this). */
 static int timer_open(void)
 {
     g_tport = CreateMsgPort();
     if (!g_tport) return 0;
     g_treq = (struct timerequest *)CreateIORequest(g_tport, sizeof *g_treq);
-    if (!g_treq) return 0;
-    return OpenDevice((STRPTR)TIMERNAME, UNIT_VBLANK, (struct IORequest *)g_treq, 0) == 0;
+    if (!g_treq) { DeleteMsgPort(g_tport); g_tport = NULL; return 0; }
+    if (OpenDevice((STRPTR)TIMERNAME, UNIT_VBLANK, (struct IORequest *)g_treq, 0) != 0) {
+        DeleteIORequest((struct IORequest *)g_treq); g_treq = NULL;
+        DeleteMsgPort(g_tport);                      g_tport = NULL;
+        return 0;
+    }
+    return 1;
 }
 
 static void timer_close(void)
@@ -412,22 +423,26 @@ static void led_draw(struct Window *win, Object *labelobj, int state)
  * via iffparse.library (the OS-standard IFF path). All best-effort: if
  * iffparse or the clipboard is unavailable, clip_open() returns 0 and the copy
  * feature is simply disabled. --- */
+static void clip_close(void)
+{
+    if (g_iff)  { FreeIFF(g_iff);        g_iff  = NULL; }
+    if (g_clip) { CloseClipboard(g_clip); g_clip = NULL; }
+}
+
+/* clip_close() above is also this function's own partial-failure cleanup
+ * (freeing whichever of g_iff/g_clip actually got allocated); the caller
+ * only calls clip_close() when clip_open() returned 1, so a partial success
+ * (clipboard opened, AllocIFF failed) must be undone here or it leaks. */
 static int clip_open(void)
 {
     if (!IFFParseBase) return 0;
     g_clip = OpenClipboard(PRIMARY_CLIP);
     if (!g_clip) return 0;
     g_iff = AllocIFF();
-    if (!g_iff) return 0;
+    if (!g_iff) { clip_close(); return 0; }   /* frees the clipboard just opened */
     g_iff->iff_Stream = (ULONG)g_clip;
     InitIFFasClip(g_iff);
     return 1;
-}
-
-static void clip_close(void)
-{
-    if (g_iff)  FreeIFF(g_iff);
-    if (g_clip) CloseClipboard(g_clip);
 }
 
 /* The clip ID of the most recent clipboard write (0 if unavailable). Advances
@@ -590,7 +605,17 @@ static void build_nodes(struct List *lblist, const vault *v)
             LBNA_Column, 1, LBNCA_Text, (ULONG)g_code[i],
             LBNA_Column, 2, LBNCA_Text, (ULONG)g_left[i],
             TAG_END);
-        if (node) AddTail(lblist, node);
+        if (node) {
+            AddTail(lblist, node);
+        } else {
+            /* A skipped row would desync every later row index from its
+             * account index (row N no longer means v->accounts[N]) - the
+             * next click could act on the wrong account. Fail closed: drop
+             * everything built so far rather than leave a mismatched list;
+             * this call happens again on the next Show/rebuild. */
+            while ((n = RemHead(lblist)) != NULL) FreeListBrowserNode(n);
+            return;
+        }
     }
 }
 
@@ -778,7 +803,9 @@ static int qr_file_request(struct Window *win, char *path, size_t cap)
  */
 static int passphrase_request(const char *msg, char *buf, size_t cap)
 {
-    static char stars[130];                 /* mask display; kept off the stack */
+    static char stars[258];                 /* mask display, sized for the largest
+                                              * passphrase buffer (256) + cursor +
+                                              * NUL; kept off the stack */
     static char title[64];                  /* window title; kept off the stack */
     Object *win, *maskobj, *okobj, *cancelobj, *layoutobj;
     struct Window *w;
@@ -862,7 +889,8 @@ static int passphrase_request(const char *msg, char *buf, size_t cap)
                             SetGadgetAttrs((struct Gadget *)maskobj, w, NULL,
                                            GA_Text, (ULONG)stars, TAG_END);
                         }
-                    } else if (code >= 0x20 && code < 0x7F) {        /* printable */
+                    } else if ((code >= 0x20 && code < 0x7F) ||      /* ASCII printable */
+                               code >= 0xA0) {                       /* Latin-1 (accents) */
                         if (len < cap - 1 && len < sizeof stars - 2) {
                             buf[len] = (char)code; stars[len] = '*';
                             len++;
@@ -966,7 +994,7 @@ static int vault_location_request(char *path, size_t cap)
 static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted,
                          int deferred)
 {
-    char pass[128], confirm[128];
+    char pass[256], confirm[256];   /* match the CLI's cap (main.c) */
     static char welcome[600];   /* MSG_GUI_WELCOME + up to a full vault path; off the stack */
     vault_result rc = VAULT_ERR_IO;
 
@@ -1049,7 +1077,7 @@ static int gui_first_run(vault *v, char *path, size_t cap, int *encrypted,
 static int gui_open_vault(vault *v, char *path, size_t cap, int *encrypted,
                           int deferred)
 {
-    char pass[128];
+    char pass[256];   /* match the CLI's cap (main.c) */
     vault_result rc = vault_load(v, path, NULL);
 
     if (rc == VAULT_ERR_IO) {
@@ -1824,7 +1852,10 @@ static int gui_do_show(struct gui_widgets *gw, struct List *lblist, vault *v,
                                     gw->listobj, naccounts)) {
         *deferred = 0;
         *win = win_show(gw, lblist, v, have_clip, clk, statbuf, winsig, clk->state);
-        return 1;
+        /* win_show can itself fail (window-object/WM_OPEN failure) - that's
+         * not "declined", so callers (incl. ARexx SHOW) must see it as a
+         * real failure rather than RC 0 with no window. */
+        return *win != NULL;
     }
     return 0;
 }
@@ -2004,7 +2035,13 @@ int main(int argc, char **argv)
         }
         if (broker) {
             STRPTR popkey = ArgString((CONST_STRPTR *)tt, (CONST_STRPTR)"CX_POPKEY", (CONST_STRPTR)"ctrl alt a");
-            AttachCxObj(broker, HotKey((CONST_STRPTR)popkey, cxport, EVT_HOTKEY));
+            CxObj *hk = HotKey((CONST_STRPTR)popkey, cxport, EVT_HOTKEY);
+            /* A malformed CX_POPKEY (typo'd tooltype) silently produces a
+             * hotkey-less commodity otherwise - worst with CX_POPUP=no,
+             * where the hotkey is then the only way to show the window. */
+            if (!hk || CxObjError(hk))
+                Printf((CONST_STRPTR)MSG(MSG_GUI_BAD_POPKEY), (ULONG)"AmiAuth", (ULONG)popkey);
+            AttachCxObj(broker, hk);
             ActivateCxObj(broker, 1);
             cxsig = 1UL << cxport->mp_SigBit;
             /* CX_POPUP=no starts hidden (window opens on the hotkey/Exchange). */

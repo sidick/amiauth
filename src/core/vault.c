@@ -268,6 +268,17 @@ vault_result vault_add(vault *v, const otp_account *acct)
     if (!v || !acct) return VAULT_ERR_IO;
     if (!v->unlocked) return VAULT_ERR_LOCKED;
     if (v->count >= VAULT_MAX_ACCOUNTS) return VAULT_ERR_FULL;
+    /* Defense-in-depth: every current constructor (otpauth_parse,
+     * account_from_secret, the GUI edit form, ...) already bounds
+     * secret_len and NUL-terminates issuer/label within their arrays, so
+     * this never trips today - but serialize_payload() unconditionally
+     * memcpy()s secret_len bytes and strlen()s issuer/label, and a future
+     * caller that skipped that discipline would silently overrun the
+     * fixed-size secret[]/g_payload[] buffers instead of failing cleanly
+     * here. */
+    if (acct->secret_len > OTP_MAX_SECRET) return VAULT_ERR_FORMAT;
+    if (!memchr(acct->issuer, '\0', sizeof acct->issuer)) return VAULT_ERR_FORMAT;
+    if (!memchr(acct->label,  '\0', sizeof acct->label))  return VAULT_ERR_FORMAT;
     v->accounts[v->count++] = *acct;
     return VAULT_OK;
 }

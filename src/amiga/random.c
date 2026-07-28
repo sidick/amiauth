@@ -228,10 +228,14 @@ int amiga_read_passphrase(const char *prompt, char *buf, size_t cap)
     if (!IsInteractive(in)) return -1;          /* encrypted vaults need a console */
 
     pool_ensure();
-    if (prompt) Write(out, (APTR)prompt, (LONG)strlen(prompt));
 
     have_timer = timer_ready();                 /* per-keystroke timing source */
     raw_ok = (SetMode(in, 1) != 0);             /* 1 = RAW (unbuffered, no echo) */
+    if (!raw_ok) return -1;   /* can't guarantee no-echo: refuse rather than
+                                * risk the passphrase appearing on screen
+                                * (RAW's own echo alongside our own "*"s) */
+
+    if (prompt) Write(out, (APTR)prompt, (LONG)strlen(prompt));
 
     for (;;) {
         char c;

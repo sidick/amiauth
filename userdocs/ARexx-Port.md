@@ -42,13 +42,13 @@ commodity).
 
 | Command | Argument | RESULT | Notes |
 |---------|----------|--------|-------|
-| `GETCODE` | account name (required) | the current code | RC 20 if the vault is locked *or* if [`arexxgetcode`](Settings-Reference.md) is off — deliberately the same RC either way, so a script can't tell which. RC 10 if no account matches. |
-| `TIMELEFT` | account name (required) | seconds remaining, or `-1` for HOTP (no time concept — not an error) | Same locked/gated/not-found RCs as `GETCODE`. |
-| `LIST` | — | one `issuer:label` (or just `label`) per line | RC 20 if locked. |
+| `GETCODE` | account name (required) | the current code, with a trailing newline | RC 20 if the vault is locked *or* if [`arexxgetcode`](Settings-Reference.md) is off — deliberately the same RC either way, so a script can't tell which. RC 10 if no account matches. For an HOTP account, RC 20 if persisting the advanced counter fails (the code itself was still generated correctly — see [Vault and Passphrases](Vault-and-Passphrases.md) on why a failed save is reported rather than silently accepted). |
+| `TIMELEFT` | account name (required) | seconds remaining; `-1` for HOTP (no time concept — not an error); a Steam Guard account returns seconds like TOTP | Same locked/gated/not-found RCs as `GETCODE`. |
+| `LIST` | — | one `issuer:label` (or just `label`) per line, each newline-terminated | RC 20 if locked. |
 | `STATUS` | — | `"<mode> <count>"`, e.g. `unlocked 7`, `locked 0`, `always-unlocked 7` | Always answers, even locked — this is how a script decides whether to `UNLOCK` at all. |
 | `LOCK` | — | `locked`, or `always-unlocked` | A no-op (RC 0) for an always-unlocked vault. |
 | `UNLOCK` | — | `unlocked`, `already-unlocked`, `always-unlocked`, or `cancelled` | **Interactive** — opens the same passphrase requester as the GUI. RC 5 if the user cancels it. |
-| `SHOW` | — | — | Only meaningful while running as a registered commodity (RC 20 otherwise) — mirrors the window's own close-gadget behaviour, which hides rather than quits only when a commodity broker is present. |
+| `SHOW` | — | — | Only meaningful while running as a registered commodity (RC 20 otherwise) — mirrors the window's own close-gadget behaviour, which hides rather than quits only when a commodity broker is present. RC 5 if the vault is locked and the user cancels the unlock requester. |
 | `HIDE` | — | — | Same commodity-only restriction as `SHOW`. |
 | `QUIT` | `FORCE` (optional switch) | — | Quits the resident instance. `FORCE` is accepted (the reserved ARexx convention) but is a documented no-op: every vault change already saves immediately, so there's never an unsaved-changes prompt to suppress. |
 

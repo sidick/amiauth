@@ -199,6 +199,8 @@ extern struct Library *LocaleBase;
 #define MSG_ERR_TMPKEPT 146
 #define MSG_GUI_SAVE_FAILED_TMPKEPT 147
 #define MSG_CLI_GUI_WAIT 148
+#define MSG_GUI_BAD_POPKEY 149
+#define MSG_CLI_BAD_NUMBER 150
 
 #endif /* AmiAuth_NUMBERS */
 
@@ -356,6 +358,8 @@ extern struct Library *LocaleBase;
 #define MSG_ERR_TMPKEPT_STR "save failed; your accounts survive in the vault's .tmp file - rename it back"
 #define MSG_GUI_SAVE_FAILED_TMPKEPT_STR "Could not replace the vault file. Your accounts survive in the vault's .tmp file - rename it back over the vault."
 #define MSG_CLI_GUI_WAIT_STR "AmiAuth: waiting for the resident GUI to reply (cannot abort safely; if the GUI has crashed, this will wait forever)\n"
+#define MSG_GUI_BAD_POPKEY_STR "%s: CX_POPKEY \"%s\" is not a valid hotkey description; no hotkey registered\n"
+#define MSG_CLI_BAD_NUMBER_STR "%s: \"%s\" is not a number\n"
 
 #endif /* AmiAuth_STRINGS */
 
@@ -521,6 +525,8 @@ static const struct AmiAuth_ArrayType AmiAuth_Array[] =
     { MSG_ERR_TMPKEPT, (STRPTR)MSG_ERR_TMPKEPT_STR },
     { MSG_GUI_SAVE_FAILED_TMPKEPT, (STRPTR)MSG_GUI_SAVE_FAILED_TMPKEPT_STR },
     { MSG_CLI_GUI_WAIT, (STRPTR)MSG_CLI_GUI_WAIT_STR },
+    { MSG_GUI_BAD_POPKEY, (STRPTR)MSG_GUI_BAD_POPKEY_STR },
+    { MSG_CLI_BAD_NUMBER, (STRPTR)MSG_CLI_BAD_NUMBER_STR },
 };
 
 
@@ -831,6 +837,10 @@ static const char AmiAuth_Block[] =
     MSG_GUI_SAVE_FAILED_TMPKEPT_STR "\x00"
      "\x00\x00\x00\x94" "\x00\x76"
     MSG_CLI_GUI_WAIT_STR "\x00"
+     "\x00\x00\x00\x95" "\x00\x4c"
+    MSG_GUI_BAD_POPKEY_STR "\x00"
+     "\x00\x00\x00\x96" "\x00\x1a"
+    MSG_CLI_BAD_NUMBER_STR "\x00"
 
 };
 

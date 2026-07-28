@@ -18,7 +18,7 @@ CObjINC := -Isrc/core
 
 # --- m68k cross toolchain (Amiga build) ---
 M68K_CC     ?= m68k-amigaos-gcc
-M68K_CFLAGS ?= -std=c99 -O2 -Wall -m68000 -noixemul $(CObjINC) -Isrc/amiga
+M68K_CFLAGS ?= -std=c99 -O2 -Wall -Wextra -m68000 -noixemul $(CObjINC) -Isrc/amiga
 
 # GUI window title shows the commit hash unless this build is exactly on a
 # release tag (the tag-driven release workflow always builds from a `vX.Y`
@@ -104,7 +104,7 @@ QUIRC_M68K_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-m68k/%.o,$(QUIRC_SRCS))
 QRCODEGEN_HOST_OBJ := $(BUILD)/qr-host/qrcodegen.o
 QRCODEGEN_M68K_OBJ := $(BUILD)/qr-m68k/qrcodegen.o
 
-.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke arexx-onhw arexx-onhw-docker arexx-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench flexcat flexcat-docker catalog-strings catalog-strings-docker check-catalog catalog-onhw-smoke catalog-nolib-onhw catalog-nolib-onhw-docker clean
+.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke arexx-onhw arexx-onhw-docker arexx-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench flexcat flexcat-docker catalog-strings catalog-strings-docker check-catalog catalog-onhw-smoke catalog-nolib-onhw catalog-nolib-onhw-docker asm-tests asm-tests-docker guide dist movepointer movepointer-docker clean
 
 all: test cli
 
@@ -121,7 +121,7 @@ $(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) $(QR
 # Vendored quirc objects — host toolchain, warnings suppressed (third-party).
 $(BUILD)/qr-host/%.o: src/qr/%.c $(QR_HDRS) | $(BUILD)
 	@mkdir -p $(BUILD)/qr-host
-	$(CC) -std=c99 -O2 -w $(QR_CPPFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -w $(QR_CPPFLAGS) -c $< -o $@
 
 # --- Host: native CLI (for local development) ---
 # Named distinctly from the m68k 'AmiAuth' binary so the two don't collide on a
@@ -176,7 +176,7 @@ GUI_SRCS := src/gui/main.c src/amiga/qrimage.c src/amiga/arexx.c
 # Vendored quirc objects — m68k toolchain, warnings suppressed (third-party).
 $(BUILD)/qr-m68k/%.o: src/qr/%.c $(QR_HDRS) | $(BUILD)
 	@mkdir -p $(BUILD)/qr-m68k
-	$(M68K_CC) -std=c99 -O2 -m68000 -noixemul -w $(QR_CPPFLAGS) -c $< -o $@
+	$(M68K_CC) $(M68K_CFLAGS) -w $(QR_CPPFLAGS) -c $< -o $@
 
 gui: $(QUIRC_M68K_OBJS) $(QRCODEGEN_M68K_OBJ) | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(VERSION_DEFS) $(QR_CPPFLAGS) $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) \

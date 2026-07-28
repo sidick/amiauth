@@ -35,7 +35,11 @@ static const uint64_t K[80] = {
 
 static void sha512_compress(uint64_t state[8], const uint8_t block[SHA512_BLOCK_SIZE])
 {
-    uint64_t w[80];
+    /* 640 B - off the (~4 KB) Amiga shell stack, same convention as every
+     * other large buffer in this codebase. Not reentrant, but nothing here
+     * calls sha512_compress recursively or concurrently (single-threaded,
+     * one call completes before the next starts). */
+    static uint64_t w[80];
     uint64_t a, b, c, d, e, f, g, h;
     int i;
 
