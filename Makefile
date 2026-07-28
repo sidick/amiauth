@@ -80,7 +80,7 @@ BUILD := build
 QUIRC_HOST_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-host/%.o,$(QUIRC_SRCS))
 QUIRC_M68K_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-m68k/%.o,$(QUIRC_SRCS))
 
-.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench clean
+.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench clean
 
 all: test cli
 
@@ -210,6 +210,18 @@ copperline-smoke: serialtest-m68k-docker
 # needs a Kickstart ROM (timer.device EClock isn't available under AROS).
 pbkdf2-bench:
 	sh tests/copperline/bench.sh
+
+# Compare the portable C SHA-1 compress function against the hand-written
+# 68000 asm one (#47), same boot/CPU. Dev-only, verifies the asm path is
+# actually worth its runtime-dispatch complexity.
+asm-bench:
+	sh tests/copperline/asm-bench.sh
+
+# Compare AmiSSL's PBKDF2-HMAC-SHA1 against the builtin one, same boot/CPU
+# (issue #85 groundwork). Dev-only: needs tests/gui/.env (AMIAUTH_WB_HDD/
+# AMIAUTH_ROM) and the AmiSSL SDK (auto-fetched, cached).
+amissl-bench:
+	sh tests/copperline/amissl-bench.sh
 
 # --- guide: AmigaGuide user documentation, generated from userdocs/ ----------
 # userdocs/ is the single source of truth for user docs (published as the
