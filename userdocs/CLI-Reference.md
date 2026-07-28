@@ -201,6 +201,8 @@ Sets and saves a manual UTC offset (added to the system clock), for machines
 without a network. Positive or negative, e.g. `OFFSET -3600` if your clock
 runs one hour ahead of UTC. **Replaces** whatever offset was previously
 stored. See [Time and Clock Sync](Time-and-Clock-Sync.md) for choosing the value.
+A non-numeric argument is rejected with an error rather than silently
+treated as zero.
 
 ### NUDGE
 
@@ -220,7 +222,8 @@ work out the new absolute offset yourself:
     ...
 
 See [Time and Clock Sync](Time-and-Clock-Sync.md) for a full worked example, and the GUI's
-`-10s`/`+10s` buttons for the same thing without the Shell.
+`-10s`/`+10s` buttons for the same thing without the Shell. Same non-numeric
+rejection as `OFFSET`.
 
 ### HELP
 
