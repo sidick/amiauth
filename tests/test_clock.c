@@ -85,6 +85,12 @@ void run_clock_tests(void)
         /* rejects stratum 0 (kiss o' death) */
         pkt[0] = 0x24; pkt[1] = 0;
         TEST_CHECK(clock_ntp_parse_response(pkt, &o, &of, &r, &t) == -1);
+        /* rejects a zero transmit timestamp (RFC 4330: server has no
+         * reliable clock) - restore a valid stratum first so only the zero
+         * transmit timestamp itself is under test. */
+        pkt[0] = 0x24; pkt[1] = 2;
+        memset(pkt + 40, 0, 8);
+        TEST_CHECK(clock_ntp_parse_response(pkt, &o, &of, &r, &t) == -1);
     }
 
     /* --- request/echo round trip: server echoes our tx into originate --- */
@@ -96,6 +102,7 @@ void run_clock_tests(void)
         memset(resp, 0, sizeof(resp));
         resp[0] = 0x24; resp[1] = 3;
         memcpy(resp + 24, req + 40, 8);                 /* echo tx -> originate */
+        put_ntp(resp + 40, 1700000200ULL);              /* server's own transmit (T3) */
         TEST_CHECK(clock_ntp_parse_response(resp, &o, &of, NULL, NULL) == 0);
         TEST_CHECK(o == 1700000123ULL);
         TEST_CHECK(of == 0x5eed1e55UL);                /* nonce survives the echo */

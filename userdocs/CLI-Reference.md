@@ -137,7 +137,9 @@ the label, the issuer, or the combined `issuer:label` — so
 
 For **HOTP** accounts, `GET` uses the stored counter, then increments it and
 saves the vault, as RFC 4226 requires — each `GET` produces the next code in
-the sequence.
+the sequence. The printed code is still the correct one even if that save
+fails (a full disk, say); AmiAuth warns on standard error rather than
+silently losing the counter advance.
 
 ### QR
 

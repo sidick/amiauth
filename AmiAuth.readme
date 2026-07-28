@@ -17,7 +17,8 @@ platform - tackles the accurate-time problem that TOTP depends on.
 
 Features
 --------
-  - TOTP (RFC 6238) and HOTP (RFC 4226), 6- or 8-digit codes.
+  - TOTP (RFC 6238) and HOTP (RFC 4226), SHA-1/256/512, 6-8-digit codes, plus
+    Steam Guard's own TOTP variant.
   - Multiple accounts in a single vault; import from standard
     "otpauth://" URIs.
   - Optional vault encryption (ChaCha20 + PBKDF2-HMAC-SHA1), with the
@@ -34,6 +35,10 @@ Features
     hotkey, can start from WBStartup, and is single-instance. While it is
     running it owns the unlocked vault, and the CLI transparently forwards
     commands to it instead of re-prompting for the passphrase.
+  - ARexx port: script GETCODE / LIST / TIMELEFT / STATUS / LOCK / UNLOCK /
+    SHOW / HIDE / QUIT against a resident GUI from any ARexx-aware program.
+  - Localized: CLI and GUI strings load from locale.library message
+    catalogs, selected by the user's preferred languages.
   - Self-contained: no mandatory external libraries or archives to install.
 
 Requirements
@@ -46,6 +51,8 @@ Requirements
         import.
       * commodities.library - the hotkey / Exchange integration.
       * bsdsocket.library (a TCP/IP stack) - SNTP time sync.
+      * rexxsyslib.library - the ARexx port.
+      * locale.library - localized strings (falls back to English).
 
 Installation
 ------------

@@ -83,6 +83,12 @@ int clock_ntp_parse_response(const uint8_t pkt[NTP_PACKET_SIZE],
 
     if (mode != 4) return -1;                 /* must be a server response */
     if (stratum == 0 || stratum > 15) return -1;  /* kiss-o'-death / invalid */
+    /* RFC 4330: a server with no reliable clock sends a zero transmit
+     * timestamp (T3) and the client must discard the reply rather than
+     * trust it - otherwise clock_apply_offset would compute an offset of
+     * roughly -now and silently mark the clock CLOCK_SYNCED (green) from a
+     * server that just said it doesn't know the time. */
+    if (rd_be32(pkt + 40) < NTP_UNIX_DELTA) return -1;
 
     if (originate)      *originate      = ntp_ts_to_unix(pkt + 24);
     if (originate_frac) *originate_frac = rd_be32(pkt + 28);

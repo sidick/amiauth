@@ -207,8 +207,14 @@ static int otpauth_parse_fields(const char *uri, otp_account *out)
                     if (alg < 0) return -1;
                     strcpy(out->algorithm, otp_alg_name((otp_alg)alg));
                 } else if (key_is(q, klen, "digits")) {
+                    /* 6-8, matching what the vault format and GUI edit form
+                     * accept (vault.c's parse_payload, MSG_GUI_LABEL_REQUIRED_
+                     * FULL) - reject anything else rather than silently
+                     * keeping the 6-digit default, the same "refuse, don't
+                     * guess" policy as algorithm= just above. */
                     int d = atoi(dec);
-                    if (d == 6 || d == 8) out->digits = d;
+                    if (d < 6 || d > 8) return -1;
+                    out->digits = d;
                 } else if (key_is(q, klen, "period")) {
                     long pr = atol(dec);
                     if (pr > 0) out->period = (uint32_t)pr;

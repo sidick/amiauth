@@ -38,7 +38,24 @@ void run_uri_tests(void)
     TEST_CHECK(otpauth_parse("otpauth://totp/x?secret=JBSWY3DP", &a) == 0);
     TEST_CHECK(a.digits == OTP_DEFAULT_DIGITS && a.period == OTP_DEFAULT_PERIOD);
     TEST_CHECK(strcmp(a.algorithm, "SHA1") == 0);
+
     TEST_CHECK(strcmp(a.label, "x") == 0 && a.issuer[0] == '\0');
+
+    /* digits=7 is accepted (matches the vault format's/GUI's 6-8 range),
+     * not silently downgraded to the 6-digit default. */
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/x?secret=JBSWY3DP&digits=7", &a) == 0);
+    TEST_CHECK(a.digits == 7);
+
+    /* An unsupported digits value is refused outright, same "refuse, don't
+     * guess" policy as an unsupported algorithm=; the account is zeroed on
+     * any parse failure (see otpauth_parse's wrapper), not left holding
+     * whatever partial state the failed attempt built up. */
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/x?secret=JBSWY3DP&digits=5", &a) == -1);
+    TEST_CHECK(a.label[0] == '\0');
+    TEST_CHECK(otpauth_parse(
+        "otpauth://totp/x?secret=JBSWY3DP&digits=9", &a) == -1);
 
     /* Issuer query parameter overrides the label prefix. */
     TEST_CHECK(otpauth_parse(

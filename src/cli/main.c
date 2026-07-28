@@ -37,6 +37,7 @@
 #  include <unistd.h>
 #  include <fcntl.h>
 #  include <termios.h>
+#  include <signal.h>
 #  define AMIAUTH_POSIX 1
 #endif
 
@@ -211,23 +212,49 @@ static void strip_eol(char *s)      /* only the fgets-based paths need this */
 }
 #endif
 
+#ifdef AMIAUTH_POSIX
+/* Host dev-build only (never shipped): fgets() below blocks on a signal-
+ * interruptible read, and the default SIGINT action terminates the process
+ * immediately - skipping the tcsetattr() restore just below it and leaving
+ * the real terminal stuck in no-echo mode after a Ctrl-C. This handler
+ * restores echo, then re-raises SIGINT with the default disposition so the
+ * process still dies the normal way (matching what happens with no terminal
+ * at all). tcsetattr() isn't on POSIX's async-signal-safe list, but every
+ * common implementation (Linux, macOS/BSD, readline, less, ...) makes the
+ * same practical call here. */
+static volatile int g_pass_tty_fd = -1;
+static struct termios g_pass_tty_old;
+
+static void restore_tty_and_reraise(int sig)
+{
+    if (g_pass_tty_fd >= 0) tcsetattr(g_pass_tty_fd, TCSANOW, &g_pass_tty_old);
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+#endif
+
 /* Prompt on the controlling terminal and read a passphrase without echo.
  * Returns 0 on success, -1 if there is no terminal or on error. */
 static int read_passphrase(const char *prompt, char *buf, size_t cap)
 {
 #ifdef AMIAUTH_POSIX
-    struct termios old, quiet;
+    struct termios quiet;
     FILE *tty = fopen("/dev/tty", "r+");
+    void (*old_sigint)(int);
     int fd, ok;
     if (!tty) return -1;                    /* no controlling terminal */
     fd = fileno(tty);
-    if (tcgetattr(fd, &old) != 0) { fclose(tty); return -1; }
-    quiet = old;
+    if (tcgetattr(fd, &g_pass_tty_old) != 0) { fclose(tty); return -1; }
+    quiet = g_pass_tty_old;
     quiet.c_lflag &= ~(tcflag_t)ECHO;
     fputs(prompt, tty); fflush(tty);
+    g_pass_tty_fd = fd;
+    old_sigint = signal(SIGINT, restore_tty_and_reraise);
     tcsetattr(fd, TCSANOW, &quiet);
     ok = fgets(buf, (int)cap, tty) != NULL;
-    tcsetattr(fd, TCSANOW, &old);
+    tcsetattr(fd, TCSANOW, &g_pass_tty_old);
+    signal(SIGINT, old_sigint);
+    g_pass_tty_fd = -1;
     fputc('\n', tty);
     fclose(tty);
     if (!ok) return -1;
@@ -565,10 +592,32 @@ static int cmd_sync(const char *server)
     return 0;
 }
 
+/* strtol() with a real error check: atol()/atoi() return 0 on any garbage
+ * input (a typo'd "OFFSET banana" would otherwise silently persist an offset
+ * of 0), and this app takes the offset from free-typed CLI/Shell arguments,
+ * not a fixed protocol field. Whitespace-only or trailing-junk input is
+ * rejected too (leading whitespace is tolerated, matching strtol's own and
+ * atol's behaviour). */
+static int parse_long(const char *s, long *out)
+{
+    char *end;
+    long v;
+    if (!s || !*s) return -1;
+    v = strtol(s, &end, 10);
+    if (end == s || *end != '\0') return -1;
+    *out = v;
+    return 0;
+}
+
 static int cmd_offset(const char *arg)
 {
     clock_ctx c;
-    if (prefs_set_long("offset", atol(arg)) != 0) {
+    long off;
+    if (parse_long(arg, &off) != 0) {
+        fprintf(stderr, MSG(MSG_CLI_BAD_NUMBER), "AmiAuth", arg);
+        return 2;
+    }
+    if (prefs_set_long("offset", off) != 0) {
         fprintf(stderr, MSG(MSG_CLI_OFFSET_SAVE_FAILED), "AmiAuth");
         return 2;
     }
@@ -583,8 +632,13 @@ static int cmd_offset(const char *arg)
 static int cmd_nudge(const char *arg)
 {
     clock_ctx c;
+    long delta;
+    if (parse_long(arg, &delta) != 0) {
+        fprintf(stderr, MSG(MSG_CLI_BAD_NUMBER), "AmiAuth", arg);
+        return 2;
+    }
     cli_clock_init(&c);
-    clock_nudge(&c, atol(arg));
+    clock_nudge(&c, delta);
     if (prefs_set_long("offset", c.offset_seconds) != 0) {
         fprintf(stderr, MSG(MSG_CLI_OFFSET_SAVE_FAILED), "AmiAuth");
         return 2;
@@ -695,9 +749,11 @@ static int try_forward(int cmd, const char *arg)
 {
     /* Off the ~4 KB shell stack. Sized for the largest reply any forwarded
      * command can produce: AAP_QR's ASCII-art render (QR_ENC_ASCII_BUF_LEN,
-     * ~11.9 KB) dwarfs LIST's "issuer:label\n" lines. */
+     * ~11.9 KB) dwarfs LIST's "issuer:label\n" lines. May carry a GET code
+     * or a QR render that encodes an account secret - zeroed before every
+     * return, matching this file's zeroization discipline elsewhere. */
     static char buf[QR_ENC_ASCII_BUF_LEN];
-    int result = AAR_OK;
+    int result = AAR_OK, rc;
 
     if (gui_forward(cmd, arg, buf, sizeof buf, &result) != 0)
         return -1;                            /* no resident GUI -> local path */
@@ -705,29 +761,39 @@ static int try_forward(int cmd, const char *arg)
     switch (result) {
         case AAR_OK:
             if (buf[0]) fputs(buf, stdout);   /* GET code / LIST names / QR art */
-            return 0;
+            rc = 0;
+            break;
         case AAR_LOCKED:
             fprintf(stderr, MSG(MSG_CLI_GUI_LOCKED), "AmiAuth");
-            return 2;
+            rc = 2;
+            break;
         case AAR_NOTFOUND:
             fprintf(stderr, MSG(MSG_CLI_NO_ACCOUNT), "AmiAuth", arg ? arg : "");
-            return 2;
+            rc = 2;
+            break;
         case AAR_FULL:
             fprintf(stderr, MSG(MSG_CLI_VAULT_FULL), "AmiAuth");
-            return 2;
+            rc = 2;
+            break;
         case AAR_BADARG:
             fprintf(stderr, MSG(MSG_CLI_BAD_OTPURI), "AmiAuth");
-            return 2;
+            rc = 2;
+            break;
         case AAR_SAVEFAIL:
             fprintf(stderr, MSG(MSG_CLI_GUI_SAVEFAIL), "AmiAuth");
-            return 2;
+            rc = 2;
+            break;
         case AAR_TOOLONG:
             fprintf(stderr, MSG(MSG_CLI_URI_TOO_LONG), "AmiAuth");
-            return 2;
+            rc = 2;
+            break;
         default:
             fprintf(stderr, MSG(MSG_CLI_GUI_UNKNOWN), "AmiAuth");
-            return 2;
+            rc = 2;
+            break;
     }
+    memset(buf, 0, sizeof buf);
+    return rc;
 }
 
 static int cmd_add(const char *path, const char *uri)
@@ -877,11 +943,14 @@ static int cmd_get(const char *path, const char *account)
 static int cmd_qr(const char *path, const char *account)
 {
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
+    /* All three encode the account secret (uri literally, modules/ascii as a
+     * scannable QR of it) - zeroed before every return, not left in BSS
+     * until the next command reuses these statics or the process exits. */
     static char uri[512];
     static uint8_t modules[QR_ENC_MAX_MODULES * QR_ENC_MAX_MODULES];
     static char ascii[QR_ENC_ASCII_BUF_LEN];
     vault_result rc;
-    int idx, qsize;
+    int idx, qsize, ret;
     int fc = try_forward(AAP_QR, account);
     if (fc >= 0) return fc;
     rc = open_vault(&v, path);
@@ -893,13 +962,17 @@ static int cmd_qr(const char *path, const char *account)
         qr_encode_uri(uri, modules, &qsize) != QRENC_OK) {
         vault_lock(&v);
         fprintf(stderr, MSG(MSG_CLI_URI_TOO_LONG), "AmiAuth");
-        return 2;
+        ret = 2;
+    } else {
+        qr_render_ascii(modules, qsize, ascii, sizeof ascii);
+        fputs(ascii, stdout);
+        vault_lock(&v);
+        ret = 0;
     }
-    qr_render_ascii(modules, qsize, ascii, sizeof ascii);
-    fputs(ascii, stdout);
-
-    vault_lock(&v);
-    return 0;
+    memset(uri, 0, sizeof uri);
+    memset(modules, 0, sizeof modules);
+    memset(ascii, 0, sizeof ascii);
+    return ret;
 }
 
 static int cmd_remove(const char *path, const char *account)

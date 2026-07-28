@@ -577,3 +577,13 @@ Could not replace the vault file. Your accounts survive in the vault's .tmp file
 ;
 MSG_CLI_GUI_WAIT (148//)
 AmiAuth: waiting for the resident GUI to reply (cannot abort safely; if the GUI has crashed, this will wait forever)\n
+;
+; --- GUI: CX_POPKEY tooltype failed to parse as a hotkey description ------
+;
+MSG_GUI_BAD_POPKEY (149//)
+%s: CX_POPKEY "%s" is not a valid hotkey description; no hotkey registered\n
+;
+; --- CLI: OFFSET/NUDGE argument didn't parse as a number -------------------
+;
+MSG_CLI_BAD_NUMBER (150//)
+%s: "%s" is not a number\n

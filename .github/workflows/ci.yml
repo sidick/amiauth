@@ -31,7 +31,7 @@ jobs:
         name: Classify changed files
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            for k in host core build target docs; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            for k in host core build target docs catalog; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
           files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD")

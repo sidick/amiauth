@@ -44,8 +44,9 @@ AmiAuth aims to make "my A1200 is my 2FA device" a real, daily-useful thing.
 
 All implemented:
 
-- **TOTP & HOTP** — SHA-1, 6/8-digit codes, configurable period (30s default)
-  and T0, validated against the official RFC test vectors.
+- **TOTP & HOTP** — SHA-1/256/512, 6-8-digit codes, configurable period (30s
+  default) and T0, plus Steam Guard's own TOTP variant, all validated against
+  the official RFC (or independently-derived Steam) test vectors.
 - **Easy secret entry** — padding/whitespace/case-tolerant Base32 decoding and
   `otpauth://` URI parsing, so secrets from another authenticator paste directly.
 - **Multi-account store** — issuer/label per account, ordered list.
@@ -71,6 +72,12 @@ All implemented:
   from WBStartup, and is single-instance: one resident process holds the unlocked
   vault, and the CLI forwards commands to it (no second passphrase prompt) rather
   than opening the vault independently.
+- **ARexx port** — script `GETCODE`, `LIST`, `TIMELEFT`, `STATUS`, `LOCK`,
+  `UNLOCK`, `SHOW`/`HIDE` and `QUIT` against a resident GUI from any ARexx-aware
+  program (no second passphrase prompt, same as CLI forwarding).
+- **Localization** — the CLI and GUI's strings load from `locale.library`
+  message catalogs, with translations selected by the user's preferred
+  languages.
 
 ## Design principles
 

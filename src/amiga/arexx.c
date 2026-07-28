@@ -69,8 +69,12 @@ void arexx_close(struct MsgPort *port)
     Forbid();
     RemPort(port);
     Permit();
-    while ((msg = (struct RexxMsg *)GetMsg(port)) != NULL)
-        arexx_reply(msg, AREXX_RC_FAIL, NULL);
+    while ((msg = (struct RexxMsg *)GetMsg(port)) != NULL) {
+        /* Same caution as arexx_receive(): only touch RexxMsg-specific
+         * fields (via arexx_reply) once IsRexxMsg confirms the layout. */
+        if (IsRexxMsg(msg)) arexx_reply(msg, AREXX_RC_FAIL, NULL);
+        else                ReplyMsg((struct Message *)msg);
+    }
     DeleteMsgPort(port);
 }
 
@@ -78,7 +82,17 @@ void *arexx_receive(struct MsgPort *port, arexx_parsed *out)
 {
     struct RexxMsg *msg;
     while ((msg = (struct RexxMsg *)GetMsg(port)) != NULL) {
-        if (!IsRexxMsg(msg)) continue;   /* not ours; shouldn't happen, drop it */
+        if (!IsRexxMsg(msg)) {
+            /* Not ours; shouldn't happen on a dedicated ARexx port ("AMIAUTH.N"),
+             * but every AmigaOS message must be replied by its receiver or the
+             * sender leaks/hangs waiting on a reply that never comes - drop
+             * only the assumption that it's a RexxMsg, not the reply itself.
+             * Plain ReplyMsg() only touches the generic Message fields
+             * (guaranteed by whoever sent it), unlike arexx_reply() which
+             * writes RexxMsg-specific fields we can't assume are there. */
+            ReplyMsg((struct Message *)msg);
+            continue;
+        }
         if (arexx_parse((const char *)ARG0(msg), out) != 0)
             out->type = AREXX_CMD_UNKNOWN;   /* still reply - RC 10, see caller */
         return (void *)msg;

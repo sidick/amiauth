@@ -47,6 +47,8 @@ with a single small UDP exchange against an NTP server. Zero configuration.
 - **CLI:** run `SYNC` (see [CLI Reference](CLI-Reference.md)). In both cases the measured
   offset and the server are saved to `ENVARC:AmiAuth/`, so subsequent
   `GET`/`CODE` calls use the corrected time even after the stack goes down.
+- The exchange waits up to 5 seconds for the server's reply before giving up
+  (an unreachable/blackholing server fails no faster than that).
 - The sync does **not** set your system clock; it only records the offset.
 - **Green means freshly verified.** The green state applies to the session in
   which the sync happened; a *stored* offset loaded on a later run is honestly

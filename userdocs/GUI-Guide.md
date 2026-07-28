@@ -69,7 +69,8 @@ Three ways, all under the **Account** menu:
 - **Add from QR image…** — pick an image file of the enrolment QR code
   (PNG/JPEG/GIF/IFF/ILBM/BMP — anything a picture datatype can load); AmiAuth
   decodes the QR and imports the account. You can also **drag an image file
-  onto the window** from Workbench. See [Managing Accounts](Managing-Accounts.md) for details and
+  onto the window** from Workbench. The window title briefly shows "Decoding
+  QR image..." while this runs. See [Managing Accounts](Managing-Accounts.md) for details and
   requirements.
 
 ## Editing, exporting and removing
@@ -77,7 +78,9 @@ Three ways, all under the **Account** menu:
 - **Edit selected…** opens a requester for the **issuer**, **label**,
   **digits** (6–8) and **period** (1–86400 s). The label is required. The
   secret and account type are deliberately not editable — re-add the account
-  if the secret changes.
+  if the secret changes. For a Steam Guard account, **digits** and **period**
+  are disabled (grayed out) — Steam Guard isn't configurable, so only issuer
+  and label can change.
 - **Show QR code…** opens a window with the selected account's `otpauth://`
   URI rendered as a QR code, for a phone's authenticator app to scan — the
   export counterpart to *Add from QR image…*. Just a display: close it with

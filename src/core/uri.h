@@ -18,7 +18,7 @@ typedef struct otp_account {
     char     label[OTP_MAX_LABEL];
     uint8_t  secret[OTP_MAX_SECRET];  /* raw key bytes (Base32-decoded) */
     size_t   secret_len;
-    int      digits;                  /* 6 or 8 (ignored for "steam": fixed 5) */
+    int      digits;                  /* 6-8 (ignored for "steam": fixed 5) */
     uint32_t period;                  /* TOTP/steam step, seconds (steam fixed 30) */
     uint64_t counter;                 /* HOTP counter */
 } otp_account;
