@@ -92,7 +92,7 @@ QUIRC_M68K_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-m68k/%.o,$(QUIRC_SRCS))
 QRCODEGEN_HOST_OBJ := $(BUILD)/qr-host/qrcodegen.o
 QRCODEGEN_M68K_OBJ := $(BUILD)/qr-m68k/qrcodegen.o
 
-.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke arexx-onhw arexx-onhw-docker arexx-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench flexcat flexcat-docker catalog-strings catalog-strings-docker catalog-onhw-smoke catalog-nolib-onhw catalog-nolib-onhw-docker clean
+.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke arexx-onhw arexx-onhw-docker arexx-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench flexcat flexcat-docker catalog-strings catalog-strings-docker check-catalog catalog-onhw-smoke catalog-nolib-onhw catalog-nolib-onhw-docker clean
 
 all: test cli
 
@@ -203,6 +203,15 @@ catalog-strings: $(BUILD)/flexcat
 catalog-strings-docker:
 	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'make catalog-strings'
+
+# Structural sanity checks on locale/AmiAuth.cd and any .ct translation -
+# placeholder consistency, button-mnemonic uniqueness, CLI re-key prompt
+# markers (tools/check_catalog.py). Pure Python, no FlexCat/Docker needed.
+# Runs against every .ct this repo has, including unreviewed locale/drafts/
+# ones - these are purely structural checks, not a translation-quality
+# review, so there's no reason to exempt a draft from them.
+check-catalog:
+	python3 tools/check_catalog.py locale/AmiAuth.cd $(wildcard locale/*.ct) $(wildcard locale/drafts/*.ct)
 
 # --- Headless GUI smoke test: boot WB 3.2 under Copperline, render AmiAuthGUI --
 # Boots an A1200/OS 3.2 under native Copperline, auto-launches AmiAuthGUI, and

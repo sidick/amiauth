@@ -22,6 +22,7 @@ jobs:
       build: ${{ steps.filter.outputs.build }}
       target: ${{ steps.filter.outputs.target }}
       docs: ${{ steps.filter.outputs.docs }}
+      catalog: ${{ steps.filter.outputs.catalog }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,6 +44,7 @@ jobs:
             echo "build=$(match "$always|^src/")"
             echo "target=$(match "$always|^(src/|tests/copperline/)")"
             echo "docs=$(match "$always|^(userdocs/|mkdocs\.yml|tools/docs2guide\.py|tools/docs-requirements\.txt)")"
+            echo "catalog=$(match "$always|^(locale/|tools/check_catalog\.py)")"
           } >> "$GITHUB_OUTPUT"
 
   docs-build:
@@ -75,6 +77,16 @@ jobs:
         run: make cli
       - name: CLI smoke test
         run: make smoke
+
+  catalog-lint:
+    name: Catalog structural checks
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.catalog == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check placeholders, mnemonics, re-key prompt markers
+        run: make check-catalog
 
   differential:
     name: Differential fuzz (vs OpenSSL)

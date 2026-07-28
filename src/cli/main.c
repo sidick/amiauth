@@ -296,6 +296,44 @@ static const char *vault_err(vault_result rc)
 
 static vault_result save_vault(const vault *v, const char *path);
 
+/* The Nth "(x)" single-letter mnemonic in a translated prompt (the same
+ * "(y)es/(N)o/ne(v)er" convention already visible in the English text) -
+ * so the accepted keystroke always matches what the catalog actually says,
+ * the same self-describing-string technique src/gui/main.c's LBL_* uses for
+ * its '_'-marked button mnemonics. 1-based nth. Returns the lowercased
+ * letter, or dflt if the Nth "(x)" isn't present (e.g. a mistranslation
+ * dropped it - falls back to the English default rather than being unusable). */
+static int prompt_letter(const char *s, int nth, int dflt)
+{
+    int n = 0;
+    for (; *s; s++) {
+        if (s[0] == '(' && s[1] != '\0' && s[1] != ')' && s[2] == ')') {
+            if (++n == nth) return s[1] | 0x20;
+            s += 2;
+        }
+    }
+    return dflt;
+}
+
+/* The word between the first pair of '...' quotes in a translated prompt
+ * (e.g. "Type 'yes' to confirm:") - what the user must type back. Copies
+ * into buf (cap bytes); returns 0 on success, -1 if no quoted word was
+ * found (buf untouched - caller supplies its own English fallback). */
+static int prompt_quoted_word(const char *s, char *buf, size_t cap)
+{
+    const char *start = strchr(s, '\'');
+    const char *end;
+    size_t len;
+    if (!start) return -1;
+    end = strchr(start + 1, '\'');
+    if (!end || end == start + 1) return -1;
+    len = (size_t)(end - start - 1);
+    if (len >= cap) len = cap - 1;
+    memcpy(buf, start + 1, len);
+    buf[len] = '\0';
+    return 0;
+}
+
 /* After a successful unlock we know the stored iteration count and how long the
  * KDF took, so we can tell whether this machine is much faster or slower than the
  * one that secured the vault, and offer to re-key (recalibrate to ~1s here and
@@ -307,6 +345,7 @@ static void maybe_rekey(vault *v, const char *path, const char *pass, uint32_t u
     uint32_t ideal;
     char prefbuf[8], line[16];
     char prompt[160];   /* MSG() text + the trailing space FlexCat trims */
+    const char *ptext;
 
     if (v->cipher != VAULT_CIPHER_CHACHA20) return;   /* encrypted only */
     if (g_no_rekey || unlock_ms == 0) return;         /* opted out / no timer */
@@ -316,25 +355,46 @@ static void maybe_rekey(vault *v, const char *path, const char *pass, uint32_t u
     ideal = vault_calibrate_iterations(v->iterations, unlock_ms);
 
     if (unlock_ms < KDF_TARGET_MS / 8 && ideal > v->iterations) {
-        /* Much faster machine -> offer to strengthen (safe; one confirm). */
-        int c;
-        sprintf(prompt, "%s ", MSG(MSG_CLI_REKEY_STRENGTHEN_PROMPT));
+        /* Much faster machine -> offer to strengthen (safe; one confirm).
+         * Accept/never-ask letters come from the prompt itself (1st/3rd
+         * "(x)"), not hardcoded - see the MSG_CLI_REKEY_STRENGTHEN_PROMPT
+         * note in locale/AmiAuth.cd. */
+        int c, yes_c, never_c;
+        ptext = MSG(MSG_CLI_REKEY_STRENGTHEN_PROMPT);
+        yes_c   = prompt_letter(ptext, 1, 'y');
+        never_c = prompt_letter(ptext, 3, 'v');
+        sprintf(prompt, "%s ", ptext);
         if (cli_readline(prompt, line, sizeof line) != 0)
             return;
         c = line[0] | 0x20;
-        if (c == 'v') { prefs_set("rekey", "off"); return; }
-        if (c != 'y') return;
+        /* never_c != yes_c guards a mistranslation that gave both the same
+         * letter: without it, a "yes" keypress would always be swallowed
+         * into "never ask again" (this check runs first) and silently
+         * write a persisted opt-out the user never actually chose. On a
+         * collision, "never" is simply unreachable this run - safer than
+         * either letter winning unpredictably. */
+        if (c == never_c && never_c != yes_c) { prefs_set("rekey", "off"); return; }
+        if (c != yes_c) return;
     } else if (unlock_ms > KDF_TARGET_MS * 8) {
-        /* Much slower machine -> offer to speed up, but this weakens it: friction. */
+        /* Much slower machine -> offer to speed up, but this weakens it:
+         * friction. Same self-describing-prompt convention as above; the
+         * confirm word comes from the quoted word in its own prompt. */
+        int yes_c;
+        char confirm_word[32];
         fprintf(stderr, MSG(MSG_CLI_REKEY_SLOW_NOTICE), "AmiAuth",
                 (unsigned long)((unlock_ms + 500) / 1000));
-        sprintf(prompt, "%s ", MSG(MSG_CLI_REKEY_LOWER_PROMPT));
+        ptext = MSG(MSG_CLI_REKEY_LOWER_PROMPT);
+        yes_c = prompt_letter(ptext, 1, 'y');
+        sprintf(prompt, "%s ", ptext);
         if (cli_readline(prompt, line, sizeof line) != 0
-            || (line[0] | 0x20) != 'y')
+            || (line[0] | 0x20) != yes_c)
             return;
-        sprintf(prompt, "%s ", MSG(MSG_CLI_CONFIRM_YES_PROMPT));
+        ptext = MSG(MSG_CLI_CONFIRM_YES_PROMPT);
+        if (prompt_quoted_word(ptext, confirm_word, sizeof confirm_word) != 0)
+            strcpy(confirm_word, "yes");   /* malformed translation: fall back */
+        sprintf(prompt, "%s ", ptext);
         if (cli_readline(prompt, line, sizeof line) != 0
-            || !ci_streq(line, "yes"))
+            || !ci_streq(line, confirm_word))
             return;
     } else {
         return;                                       /* within range; nothing to do */

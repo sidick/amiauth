@@ -1,0 +1,523 @@
+; francais.ct - DRAFT French translation of locale/AmiAuth.cd.
+;
+; MACHINE-GENERATED FIRST PASS, NOT REVIEWED BY A NATIVE SPEAKER.
+; See locale/drafts/README.md before using or building this file - it is
+; not wired into any build target and must not be installed as-is.
+;
+; Terminology used throughout, for reviewer consistency:
+;   vault      -> coffre-fort    passphrase -> phrase de passe
+;   account    -> compte         secret     -> secret (cognate, kept as-is)
+;   issuer     -> emetteur       label      -> etiquette
+;   re-key     -> rechiffrer / rechiffrement
+;   always-unlocked -> toujours deverrouille
+; (accents intact below - AmigaOS's ISO-8859-1 charset covers French fully)
+;
+##version $VER: AmiAuth.catalog 1.0 (28.07.2026)
+##language francais
+##codeset 0
+;
+; --- CLI (src/cli/main.c) ---------------------------------------------
+;
+MSG_CLI_ALREADY_EXISTS
+%s : %s existe déjà\n
+;
+MSG_CLI_ADDED
+%s:%s ajouté\n
+;
+MSG_CLI_REMOVED
+'%s' supprimé\n
+;
+MSG_CLI_USAGE_RUNAS
+Lancez avec '%s <COMMAND> ...'  ('%s ?' affiche le modèle d'arguments) :\n
+;
+; --- GUI (src/gui/main.c): account list column headers -----------------
+;
+MSG_GUI_COL_ACCOUNT
+Compte
+;
+MSG_GUI_COL_CODE
+Code
+;
+MSG_GUI_COL_LEFT
+Reste
+;
+; --- GUI: requester text -------------------------------------------------
+;
+MSG_GUI_CANNOT_OPEN_VAULT
+Impossible d'ouvrir le coffre-fort :\n%s
+;
+MSG_GUI_BAD_URI
+Ce n'est pas une URI otpauth:// valide.
+;
+MSG_GUI_BAD_SECRET
+Ce n'est ni une URI otpauth:// ni un secret Base32.
+;
+MSG_GUI_NO_QR
+Aucun code QR otpauth n'a été trouvé dans cette image.
+;
+MSG_GUI_SAVE_FAILED
+Impossible d'enregistrer le coffre-fort.
+;
+MSG_GUI_REKEY_DONE
+Coffre-fort rechiffré pour cet ordinateur.
+;
+MSG_GUI_REKEY_FAILED
+Échec du rechiffrement ; le coffre-fort reste inchangé.
+;
+; --- GUI: common requester button labels ----------------------------------
+;
+MSG_GUI_OK
+OK
+;
+MSG_GUI_CANCEL
+Annuler
+;
+; --- CLI: vault_err()'s own strings, wrapped by MSG_CLI_ERR below ---------
+;
+MSG_ERR_IO
+impossible de lire/écrire le fichier du coffre-fort
+;
+MSG_ERR_FORMAT
+fichier de coffre-fort invalide
+;
+MSG_ERR_AUTH
+phrase de passe incorrecte ou fichier altéré
+;
+MSG_ERR_LOCKED
+le coffre-fort est verrouillé
+;
+MSG_ERR_FULL
+le coffre-fort est plein
+;
+MSG_ERR_RANGE
+compte introuvable
+;
+MSG_ERR_UNKNOWN
+erreur
+;
+; --- CLI: generic error wrapper ("AmiAuth" + vault_err()/other message) --
+;
+MSG_CLI_ERR
+%s : %s\n
+;
+MSG_CLI_WARN_HOTP_PERSIST
+%s : attention : le compteur HOTP n'a pas pu être enregistré (%s)\n
+;
+; --- CLI: passphrase prompts ----------------------------------------------
+;
+MSG_CLI_PROMPT_PASSPHRASE
+Phrase de passe :
+;
+MSG_CLI_NO_TTY
+%s : ce coffre-fort est chiffré ; lancez depuis un terminal interactif, ou utilisez un coffre-fort toujours déverrouillé pour les scripts\n
+;
+MSG_CLI_NO_RNG_SAVE
+%s : aucune source aléatoire sécurisée pour enregistrer un coffre-fort chiffré (Phase 4)\n
+;
+; --- CLI: adaptive re-key (maybe_rekey) -----------------------------------
+;
+; REVIEWER: the letter(s) in "(x)" and the word in '...' below are read back
+; out of this translated string at runtime (locale/AmiAuth.cd's header has
+; the full convention) - o/n/j and 'oui' are just this draft's choice,
+; freely change them, just keep exactly one "(x)" per choice in the same
+; left-to-right order, with the accept and never-ask letters distinct.
+MSG_CLI_REKEY_STRENGTHEN_PROMPT
+Cet ordinateur est beaucoup plus rapide que celui qui a sécurisé ce coffre-fort.\nLe renforcer maintenant ? [(o)ui/(n)on/(j)amais redemander ici]
+;
+MSG_CLI_REKEY_SLOW_NOTICE
+%s : déverrouillage en ~%lus ; ce coffre-fort a été calibré pour du matériel plus rapide.\n
+;
+MSG_CLI_REKEY_LOWER_PROMPT
+Affaiblir ici pour des déverrouillages plus rapides ? Cela RÉDUIT la sécurité. [(o)ui/(n)on]
+;
+MSG_CLI_CONFIRM_YES_PROMPT
+Tapez 'oui' pour confirmer :
+;
+MSG_CLI_REKEYED
+%s : rechiffré avec %lu itérations\n
+;
+MSG_CLI_REKEY_FAILED
+%s : échec du rechiffrement ; coffre-fort inchangé\n
+;
+; --- CLI: CODE ---------------------------------------------------------
+;
+MSG_CLI_BAD_SECRET
+%s : secret Base32 invalide ou vide\n
+;
+MSG_CLI_SECONDS_REMAINING
+(encore %u secondes)\n
+;
+; --- CLI: CLOCK/SYNC/OFFSET/NUDGE ---------------------------------------
+;
+MSG_CLI_CLOCK_SYNCED
+synchronisé (vert)
+;
+MSG_CLI_CLOCK_MANUAL
+décalage appliqué (orange)
+;
+MSG_CLI_CLOCK_UNVERIFIED
+non vérifié (rouge)
+;
+MSG_CLI_CLOCK_OFFSET_LINE
+décalage UTC : %+ld secondes (%+ld min)\n
+;
+MSG_CLI_CLOCK_STATUS_LINE
+statut        : %s\n
+;
+MSG_CLI_CLOCK_CORRECTED_LINE
+corrigé       : %04d-%02d-%02d %02d:%02d:%02d UTC\n
+;
+MSG_CLI_QUERYING
+Interrogation de %s ...\n
+;
+MSG_CLI_SYNC_FAILED
+%s : échec de la synchronisation SNTP (pas de pile TCP/IP, ou pas de réponse de %s)\n
+;
+MSG_CLI_OFFSET_SAVE_FAILED
+%s : impossible d'enregistrer le décalage\n
+;
+; --- CLI: INIT -----------------------------------------------------------
+;
+MSG_CLI_INIT_PASS_PROMPT
+Nouvelle phrase de passe (vide pour un coffre-fort toujours déverrouillé) :
+;
+MSG_CLI_INIT_NO_TTY
+%s : INIT nécessite un terminal interactif (utilisez 'INIT --open' pour un coffre-fort toujours déverrouillé non interactif)\n
+;
+MSG_CONFIRM_PASSPHRASE
+Confirmez la phrase de passe :
+;
+MSG_CLI_PASS_MISMATCH
+%s : les phrases de passe ne correspondent pas\n
+;
+MSG_CLI_INIT_NO_RNG
+%s : aucune source aléatoire sécurisée pour un coffre-fort chiffré (Phase 4) ; créez un coffre-fort toujours déverrouillé avec 'INIT --open'\n
+;
+MSG_CLI_KDF_ITERATIONS
+%s : itérations KDF = %lu\n
+;
+MSG_CLI_CREATED
+Coffre-fort (%s) créé à %s\n
+;
+MSG_CLI_ALWAYS_UNLOCKED
+toujours déverrouillé
+;
+MSG_CLI_ENCRYPTED
+chiffré
+;
+; --- CLI: GUI forwarding (try_forward) ------------------------------------
+;
+MSG_CLI_GUI_LOCKED
+%s : le coffre-fort de l'interface graphique en cours est verrouillé ; déverrouillez-le d'abord là-bas\n
+;
+MSG_CLI_NO_ACCOUNT
+%s : aucun compte correspondant à '%s'\n
+;
+MSG_CLI_VAULT_FULL
+%s : le coffre-fort est plein (64 comptes max.)\n
+;
+MSG_CLI_BAD_OTPURI
+%s : ce n'est pas une URI otpauth:// valide\n
+;
+MSG_CLI_GUI_SAVEFAIL
+%s : appliqué dans l'interface graphique mais le nouvel enregistrement a échoué\n
+;
+MSG_CLI_URI_TOO_LONG
+%s : l'URI de ce compte est trop longue pour être encodée en code QR\n
+;
+MSG_CLI_GUI_UNKNOWN
+%s : l'interface graphique en cours n'a pas pu traiter cela\n
+;
+; --- CLI: ADD --------------------------------------------------------------
+;
+MSG_CLI_PARSE_FAILED
+%s : impossible d'analyser l'URI otpauth://\n
+;
+MSG_CLI_ADDED_NOISSUER
+%s ajouté\n
+;
+MSG_CLI_BAD_BASE32
+%s : cela ne ressemble pas à un secret Base32\n
+;
+; --- CLI: SHOW / usage -----------------------------------------------------
+;
+MSG_CLI_NO_GUI
+%s : aucune interface graphique en cours à afficher\n
+;
+MSG_CLI_TAGLINE
+%s - authentification TOTP/HOTP pour AmigaOS\n\n
+;
+MSG_CLI_ENCRYPTED_NOTE
+Les coffres-forts chiffrés demandent la phrase de passe dans le terminal.\n
+;
+; --- GUI: main menu (g_menu[]) ---------------------------------------------
+;
+MSG_GUI_MENU_PROJECT
+Projet
+;
+MSG_GUI_QUIT
+Quitter
+;
+MSG_GUI_MENU_ACCOUNT
+Compte
+;
+MSG_GUI_MENU_ADD_CLIP
+Ajouter depuis le presse-papiers
+;
+MSG_GUI_MENU_ADD_TYPE
+Ajouter (saisir URI/secret)...
+;
+MSG_GUI_MENU_ADD_QR
+Ajouter depuis une image QR...
+;
+MSG_GUI_MENU_EDIT
+Modifier la sélection...
+;
+MSG_GUI_MENU_COPY
+Copier le code
+;
+MSG_GUI_MENU_SHOW_QR
+Afficher le code QR...
+;
+MSG_GUI_MENU_REMOVE
+Supprimer la sélection...
+;
+; --- GUI: toolbar button mnemonics (LBL_*, see the underscore note above) -
+; REVIEWER: the '_' MUST stay the very first character of each string (the
+; code reads a fixed index, not "wherever the underscore is") - so the
+; mnemonic is always the first letter of whichever word you choose. The six
+; letters below (A/M/S/C/R/P) are distinct from each other.
+;
+MSG_GUI_BTN_ADD
+_Ajouter
+;
+MSG_GUI_BTN_EDIT
+_Modifier
+;
+MSG_GUI_BTN_REMOVE
+_Supprimer
+;
+MSG_GUI_BTN_COPY
+_Copier
+;
+MSG_GUI_BTN_NUDGE_DOWN
+_R -10s
+;
+MSG_GUI_BTN_NUDGE_UP
+_P +10s
+;
+; --- GUI: copy-code button's transient states (no mnemonic) ---------------
+;
+MSG_GUI_COPY_PLAIN
+Copier
+;
+MSG_GUI_COPIED
+Copié
+;
+; --- GUI: clock-status line --------------------------------------------
+;
+MSG_GUI_CLOCK_SYNCED
+synchronisé
+;
+MSG_GUI_CLOCK_MANUAL
+manuel
+;
+MSG_GUI_CLOCK_UNVERIFIED
+non vérifié
+;
+MSG_GUI_CLOCK_LINE_SHORT
+Horloge : %s
+;
+MSG_GUI_CLOCK_LINE_FULL
+Horloge : %s %s%lu:%02lu
+;
+; --- GUI: adaptive re-key (gui_maybe_rekey) -------------------------------
+;
+MSG_GUI_REKEY_STRENGTHEN_BODY
+Cet ordinateur est beaucoup plus rapide que celui qui a sécurisé ce coffre-fort.\nLe renforcer maintenant (rechiffrer avec plus d'itérations PBKDF2) ?
+;
+MSG_GUI_REKEY_STRENGTHEN_BTNS
+Renforcer|Pas maintenant|Jamais ici
+;
+MSG_GUI_REKEY_SLOW_BODY
+Le déverrouillage a pris environ %lu secondes ; ce coffre-fort a été calibré pour du matériel plus rapide.\nAffaiblir ici pour des déverrouillages plus rapides ? Cela RÉDUIT la sécurité.
+;
+MSG_GUI_REKEY_LOWER_BTNS
+Affaiblir|Annuler
+;
+MSG_GUI_REKEY_CONFIRM_BODY
+Vraiment réduire la sécurité de ce coffre-fort ?
+;
+MSG_GUI_REKEY_REDUCE_BTNS
+Réduire|Annuler
+;
+; --- GUI: add account (uri/secret, shared gui_add_uri/gui_add_secret) ----
+;
+MSG_GUI_VAULT_FULL
+Le coffre-fort est plein (64 comptes max.).
+;
+; --- GUI: QR import (do_add_qr_impl) --------------------------------------
+;
+MSG_GUI_IMG_TOOBIG
+Cette image est trop grande pour être décodée.
+;
+MSG_GUI_QR_UNAVAIL
+L'import QR nécessite datatypes.library.
+;
+MSG_GUI_IMG_NOMEM
+Pas assez de mémoire pour charger cette image.
+;
+MSG_GUI_IMG_READ_FAILED
+Impossible de lire cette image (nécessite picture.datatype).
+;
+MSG_GUI_TITLE_DECODING
+%s - Décodage de l'image QR...
+;
+MSG_GUI_QR_FILE_TITLE
+Sélectionnez une image QR
+;
+; --- GUI: unlock prompt (passphrase_request title) ------------------------
+;
+MSG_GUI_TITLE_UNLOCK
+%s - Déverrouiller
+;
+; --- GUI: first-run vault creation -----------------------------------------
+;
+MSG_GUI_CHOOSE_LOCATION
+Choisissez où conserver le coffre-fort
+;
+MSG_GUI_WELCOME
+Bienvenue dans %s !\n\nIl n'y a pas encore de coffre-fort - il sera créé à\n%s
+;
+MSG_GUI_CREATE_VAULT_BTNS_DEFER
+Créer un coffre-fort...|Pas maintenant
+;
+MSG_GUI_CREATE_VAULT_BTNS_QUIT
+Créer un coffre-fort...|Quitter
+;
+MSG_GUI_NEW_PASS_PROMPT
+Nouvelle phrase de passe (vide = toujours déverrouillé) :
+;
+MSG_GUI_STORE_UNENCRYPTED_BODY
+Enregistrer le coffre-fort NON CHIFFRÉ ?\n\nSans phrase de passe, il n'y a aucune protection au repos :\ntoute personne ayant accès au fichier peut lire vos secrets.\n(Vous pourrez ajouter une phrase de passe plus tard.)
+;
+MSG_GUI_STORE_UNENCRYPTED_BTNS
+Enregistrer sans chiffrer|Retour
+;
+MSG_GUI_PASS_MISMATCH
+Les phrases de passe ne correspondent pas.
+;
+MSG_GUI_TRY_AGAIN
+Réessayer
+;
+MSG_GUI_NO_RNG_BODY
+Aucune source aléatoire sécurisée n'est disponible, donc un\ncoffre-fort chiffré ne peut pas être créé en toute sécurité.
+;
+MSG_GUI_CANNOT_WRITE_BODY
+Impossible d'écrire le coffre-fort vers\n%s\n\nChoisir un autre emplacement ?
+;
+MSG_GUI_CHOOSE_LOCATION_BTNS
+Choisir un emplacement...|Quitter
+;
+MSG_GUI_CREATE_FAILED
+Échec de la création du coffre-fort.
+;
+; --- GUI: unlock loop (gui_open_vault) --------------------------------
+;
+MSG_GUI_ENTER_PASS
+Entrez la phrase de passe :
+;
+MSG_GUI_WRONG_PASS
+Phrase de passe incorrecte - réessayez :
+;
+MSG_GUI_CANNOT_OPEN_PRINTF
+%s : impossible d'ouvrir le coffre-fort (%ld)\n
+;
+; --- GUI: add account form (uri_request) ------------------------------
+;
+MSG_GUI_URI_PASTE_LABEL
+Collez ou saisissez une URI otpauth:// ou un secret Base32 :
+;
+MSG_GUI_TITLE_ADD_ACCOUNT
+%s - Ajouter un compte
+;
+; --- GUI: edit account form (edit_request) ------------------------------
+;
+MSG_GUI_LABEL_ISSUER
+Émetteur :
+;
+MSG_GUI_LABEL_LABEL
+Étiquette :
+;
+MSG_GUI_LABEL_DIGITS
+Chiffres :
+;
+MSG_GUI_LABEL_PERIOD
+Intervalle :
+;
+MSG_GUI_TITLE_EDIT_ACCOUNT
+%s - Modifier le compte
+;
+MSG_GUI_LABEL_REQUIRED_STEAM
+L'étiquette est requise.
+;
+MSG_GUI_LABEL_REQUIRED_FULL
+L'étiquette est requise ; les chiffres doivent être 6-8, l'intervalle 1-86400.
+;
+; --- GUI: QR export display (qr_display) --------------------------------
+;
+MSG_GUI_QR_BUILD_FAILED
+Impossible de créer un code QR pour ce compte.
+;
+MSG_GUI_QR_TOO_LONG
+L'URI de ce compte est trop longue pour être encodée en code QR.
+;
+MSG_GUI_QR_DISPLAY_FAILED
+Impossible de créer l'affichage QR.
+;
+MSG_GUI_QR_WINDOW_FAILED
+Impossible d'ouvrir la fenêtre QR.
+;
+MSG_GUI_TITLE_QR_ISSUER
+%s - QR : %s:%s
+;
+MSG_GUI_TITLE_QR_NOISSUER
+%s - QR : %s
+;
+; --- GUI: bare-secret add form (secret_meta_request) ----------------------
+;
+MSG_GUI_SECRET_META_HINT
+Un secret nu ne porte aucun nom - pour qui est ce compte ?
+;
+MSG_GUI_ADD_BTN
+Ajouter
+;
+MSG_GUI_ISSUER_LABEL_REQUIRED
+L'émetteur et l'étiquette sont tous deux requis.
+;
+; --- GUI: commodity broker (Exchange) -------------------------------------
+;
+MSG_GUI_CX_DESCR
+Authentification TOTP/HOTP
+;
+; --- GUI: remove confirmation ---------------------------------------------
+;
+MSG_GUI_REMOVE_CONFIRM
+Supprimer %s ?
+;
+MSG_GUI_REMOVE_BTNS
+Supprimer|Annuler
+;
+; --- GUI: startup failures (open_libs/main) -------------------------------
+;
+MSG_GUI_NEEDS_INTUITION
+nécessite intuition.library / utility.library v37+ (OS 2.04)
+;
+MSG_GUI_NEEDS_REACTION
+nécessite les classes ReAction/ClassAct (window/layout/listbrowser/fuelgauge/button)
+;
+MSG_GUI_WINDOW_CREATE_FAILED
+%s : impossible de créer la fenêtre\n
+;
+MSG_GUI_WINDOW_OPEN_FAILED
+%s : impossible d'ouvrir la fenêtre\n

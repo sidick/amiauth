@@ -25,10 +25,38 @@
 ; reused by the GUI for its own "%s: %s\n" library-load failure).
 ;
 ; A leading underscore in a button label (MSG_GUI_BTN_*, e.g. "_Add") marks
-; the keyboard mnemonic letter - window.class reads it back out of the
-; string at runtime (see the LBL_* comment in src/gui/main.c), so a
-; translation MUST keep exactly one '_' immediately before an ASCII letter,
-; ideally one that doesn't collide with another button's mnemonic.
+; the keyboard mnemonic letter - the WMHI_VANILLAKEY handler reads it back
+; out of the string at runtime via a HARDCODED index (LBL_ADD[1], see
+; src/gui/main.c), not by searching for '_' wherever it happens to be. This
+; means the '_' MUST be the very FIRST character of the string (index 0),
+; immediately followed by an ASCII letter (index 1) - a translation can
+; choose whichever word it likes for the button (the mnemonic is always
+; that word's first letter, not a letter of your choosing mid-word), and
+; the six mnemonics used together in the toolbar must be pairwise distinct.
+; Get this wrong (underscore not at the very start) and the code silently
+; reads whatever character actually sits at index 1 instead - not an error,
+; just a dead or wrong shortcut. `tools/check_catalog.py` enforces this.
+;
+; Same idea for the CLI's three re-key confirmation prompts
+; (MSG_CLI_REKEY_STRENGTHEN_PROMPT/MSG_CLI_REKEY_LOWER_PROMPT): the letter
+; typed to accept/decline is parsed out of the string itself at runtime -
+; the *first* "(x)" in the string is the accept letter, and for
+; MSG_CLI_REKEY_STRENGTHEN_PROMPT the *third* "(x)" is the "never ask
+; again" letter (the second, "no", is never checked - typing anything else
+; falls through to "no"). A translation is free to pick its own letters
+; (they need not be the English y/N/v, and need not be the first letter of
+; the translated word) - just keep exactly one "(x)" per choice, in the
+; same left-to-right order, and make the accept/never-ask letters distinct
+; from each other. If they DO collide (both "(x)" use the same letter), the
+; code degrades safely rather than misfiring: "never ask again" - which
+; writes a persisted opt-out pref - simply becomes unreachable that run, so
+; a mistranslation can only under-deliver (lose the never-ask shortcut),
+; never silently write a preference the user didn't ask for. Still worth
+; getting right, though - distinct letters give the user the full choice.
+; MSG_CLI_CONFIRM_YES_PROMPT works the same way but with a whole word
+; instead of a letter: the text between the first pair of ' quotes is what
+; the user must type back - translate that word freely, the check follows
+; whatever is inside the quotes.
 ;
 #language english
 #version 0
@@ -140,7 +168,7 @@ MSG_CLI_REKEY_SLOW_NOTICE (30//)
 %s: unlock took ~%lus; this vault was tuned for faster hardware.\n
 ;
 MSG_CLI_REKEY_LOWER_PROMPT (31//)
-Re-key LOWER for quicker unlocks here? This REDUCES security. [y/N]
+Re-key LOWER for quicker unlocks here? This REDUCES security. [(y)es/(N)o]
 ;
 MSG_CLI_CONFIRM_YES_PROMPT (32//)
 Type 'yes' to confirm:
