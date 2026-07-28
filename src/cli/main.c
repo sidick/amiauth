@@ -290,6 +290,7 @@ static const char *vault_err(vault_result rc)
         case VAULT_ERR_LOCKED: return MSG(MSG_ERR_LOCKED);
         case VAULT_ERR_FULL:   return MSG(MSG_ERR_FULL);
         case VAULT_ERR_RANGE:  return MSG(MSG_ERR_RANGE);
+        case VAULT_ERR_TMPKEPT: return MSG(MSG_ERR_TMPKEPT);
         default:               return MSG(MSG_ERR_UNKNOWN);
     }
 }
@@ -334,6 +335,22 @@ static int prompt_quoted_word(const char *s, char *buf, size_t cap)
     return 0;
 }
 
+/* "<catalog text> " into a prompt buffer, truncating instead of overrunning:
+ * translated text can be longer than the English (FlexCat enforces no length),
+ * and these buffers live on the ~4 KB AmigaShell stack. Keep PROMPT_CAP in
+ * sync with tools/check_catalog.py's PROMPT_CAP, which fails the build on a
+ * translation this would have to truncate. The trailing space is added here
+ * because FlexCat trims it from the catalog text itself. */
+#define PROMPT_CAP 160
+static void prompt_text(char *buf, size_t cap, const char *text)
+{
+    size_t len = strlen(text);
+    if (len > cap - 2) len = cap - 2;
+    memcpy(buf, text, len);
+    buf[len] = ' ';
+    buf[len + 1] = '\0';
+}
+
 /* After a successful unlock we know the stored iteration count and how long the
  * KDF took, so we can tell whether this machine is much faster or slower than the
  * one that secured the vault, and offer to re-key (recalibrate to ~1s here and
@@ -344,7 +361,7 @@ static void maybe_rekey(vault *v, const char *path, const char *pass, uint32_t u
 {
     uint32_t ideal;
     char prefbuf[8], line[16];
-    char prompt[160];   /* MSG() text + the trailing space FlexCat trims */
+    char prompt[PROMPT_CAP];
     const char *ptext;
 
     if (v->cipher != VAULT_CIPHER_CHACHA20) return;   /* encrypted only */
@@ -363,7 +380,7 @@ static void maybe_rekey(vault *v, const char *path, const char *pass, uint32_t u
         ptext = MSG(MSG_CLI_REKEY_STRENGTHEN_PROMPT);
         yes_c   = prompt_letter(ptext, 1, 'y');
         never_c = prompt_letter(ptext, 3, 'v');
-        sprintf(prompt, "%s ", ptext);
+        prompt_text(prompt, sizeof prompt, ptext);
         if (cli_readline(prompt, line, sizeof line) != 0)
             return;
         c = line[0] | 0x20;
@@ -385,14 +402,14 @@ static void maybe_rekey(vault *v, const char *path, const char *pass, uint32_t u
                 (unsigned long)((unlock_ms + 500) / 1000));
         ptext = MSG(MSG_CLI_REKEY_LOWER_PROMPT);
         yes_c = prompt_letter(ptext, 1, 'y');
-        sprintf(prompt, "%s ", ptext);
+        prompt_text(prompt, sizeof prompt, ptext);
         if (cli_readline(prompt, line, sizeof line) != 0
             || (line[0] | 0x20) != yes_c)
             return;
         ptext = MSG(MSG_CLI_CONFIRM_YES_PROMPT);
         if (prompt_quoted_word(ptext, confirm_word, sizeof confirm_word) != 0)
             strcpy(confirm_word, "yes");   /* malformed translation: fall back */
-        sprintf(prompt, "%s ", ptext);
+        prompt_text(prompt, sizeof prompt, ptext);
         if (cli_readline(prompt, line, sizeof line) != 0
             || !ci_streq(line, confirm_word))
             return;
@@ -418,9 +435,9 @@ static vault_result open_vault(vault *v, const char *path)
     vault_result rc = vault_load(v, path, NULL);
     if (rc == VAULT_ERR_LOCKED) {
         char pass[256];
-        char prompt[64];   /* MSG() text + the trailing space FlexCat trims */
+        char prompt[PROMPT_CAP];
         uint32_t t0, unlock_ms;
-        sprintf(prompt, "%s ", MSG(MSG_CLI_PROMPT_PASSPHRASE));
+        prompt_text(prompt, sizeof prompt, MSG(MSG_CLI_PROMPT_PASSPHRASE));
         if (read_passphrase(prompt, pass, sizeof(pass)) != 0) {
             fprintf(stderr, MSG(MSG_CLI_NO_TTY), "AmiAuth");
             return VAULT_ERR_AUTH;
@@ -604,7 +621,7 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
     static vault v;   /* ~19 KB: keep it off the (small, ~4 KB) AmigaShell stack */
     vault_result rc;
     char pass[256];
-    char prompt[96];   /* MSG() text + the trailing space FlexCat trims */
+    char prompt[PROMPT_CAP];
     FILE *exists;
 
     exists = fopen(path, "rb");
@@ -618,7 +635,7 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
         rc = vault_create(&v, NULL, 0, NULL);
     } else {
         char confirm[256];
-        sprintf(prompt, "%s ", MSG(MSG_CLI_INIT_PASS_PROMPT));
+        prompt_text(prompt, sizeof prompt, MSG(MSG_CLI_INIT_PASS_PROMPT));
         if (read_passphrase(prompt, pass, sizeof(pass)) != 0) {
             fprintf(stderr, MSG(MSG_CLI_INIT_NO_TTY), "AmiAuth");
             return 2;
@@ -627,7 +644,7 @@ static int cmd_init(const char *path, int always_unlocked, long iterations,
             rc = vault_create(&v, NULL, 0, NULL);
         } else {
             uint8_t salt[VAULT_SALT_SIZE];
-            sprintf(prompt, "%s ", MSG(MSG_CONFIRM_PASSPHRASE));
+            prompt_text(prompt, sizeof prompt, MSG(MSG_CONFIRM_PASSPHRASE));
             if (read_passphrase(prompt, confirm, sizeof(confirm)) != 0
                 || strcmp(pass, confirm) != 0) {
                 memset(pass, 0, sizeof(pass));

@@ -560,3 +560,13 @@ MSG_GUI_WINDOW_CREATE_FAILED (144//)
 ;
 MSG_GUI_WINDOW_OPEN_FAILED (145//)
 %s: could not open the window\n
+;
+; --- Vault save failure after the original file was already removed -------
+; (vault_save's atomic-replace retry failed; the .tmp file next to the
+; vault is kept on purpose - it holds the only surviving copy.)
+;
+MSG_ERR_TMPKEPT (146//)
+save failed; your accounts survive in the vault's .tmp file - rename it back
+;
+MSG_GUI_SAVE_FAILED_TMPKEPT (147//)
+Could not replace the vault file. Your accounts survive in the vault's .tmp file - rename it back over the vault.

@@ -34,7 +34,12 @@ To move an existing vault: copy the file, then update the saved path
 `AmiAuth INIT` with a non-empty passphrase creates an encrypted vault:
 accounts are encrypted at rest (ChaCha20, keyed from your passphrase via
 PBKDF2, with the whole file tamper-protected by a MAC). Every save is atomic —
-a crash mid-save can never destroy the existing vault.
+the new vault is written to a `.tmp` file next to the vault first, so a crash
+mid-save can never destroy the existing vault. In the very unlikely case that
+the final replace step fails (AmiAuth reports that your accounts survive in
+the vault's `.tmp` file), the completed new vault is left in that `.tmp`
+file — rename it back over the vault file (e.g.
+`Rename PROGDIR:AmiAuth.vault.tmp PROGDIR:AmiAuth.vault`) and nothing is lost.
 
 What to expect day-to-day:
 

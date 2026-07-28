@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>   /* mkdir, for the kept-.tmp save-failure test */
 
 #include "test.h"
 #include "vault.h"
@@ -261,6 +262,38 @@ void run_vault_tests(void)
         if (f) fclose(f);
         TEST_CHECK(n == 107);
         TEST_CHECK(hex_eq(filebuf, n, GOLDEN_HEX));
+    }
+
+    /* --- failed atomic replace keeps the .tmp file ---
+     * Once vault_save's rename retry has removed the original, the temp file
+     * can be the only copy left, so it must survive the error path (and be a
+     * complete, loadable vault). A non-empty directory at the vault path makes
+     * both rename attempts and the interposed remove() fail portably. */
+    {
+        char dirpath[512], inner[600], tmppath[600];
+        FILE *f;
+
+        snprintf(dirpath, sizeof dirpath, "%s.dir", path);
+        snprintf(inner, sizeof inner, "%s/x", dirpath);
+        snprintf(tmppath, sizeof tmppath, "%s.tmp", dirpath);
+        TEST_CHECK(mkdir(dirpath, 0700) == 0);
+        f = fopen(inner, "wb");
+        TEST_CHECK(f != NULL);
+        if (f) { fputc('x', f); fclose(f); }
+
+        sample_account(&a);
+        TEST_CHECK(vault_create(&v, "correct horse", 4096, SALT) == VAULT_OK);
+        TEST_CHECK(vault_add(&v, &a) == VAULT_OK);
+        TEST_CHECK(vault_save(&v, dirpath, NONCE) == VAULT_ERR_TMPKEPT);
+
+        /* the kept temp file is a complete vault, not a torso */
+        TEST_CHECK(vault_load(&w, tmppath, "correct horse") == VAULT_OK);
+        TEST_CHECK(w.count == 1);
+        TEST_CHECK(accounts_equal(&w.accounts[0], &a));
+
+        remove(tmppath);
+        remove(inner);
+        remove(dirpath);
     }
 
     remove(path);

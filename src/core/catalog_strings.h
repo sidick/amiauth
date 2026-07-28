@@ -196,6 +196,8 @@ extern struct Library *LocaleBase;
 #define MSG_GUI_NEEDS_REACTION 143
 #define MSG_GUI_WINDOW_CREATE_FAILED 144
 #define MSG_GUI_WINDOW_OPEN_FAILED 145
+#define MSG_ERR_TMPKEPT 146
+#define MSG_GUI_SAVE_FAILED_TMPKEPT 147
 
 #endif /* AmiAuth_NUMBERS */
 
@@ -350,6 +352,8 @@ extern struct Library *LocaleBase;
 #define MSG_GUI_NEEDS_REACTION_STR "needs ReAction/ClassAct classes (window/layout/listbrowser/fuelgauge/button)"
 #define MSG_GUI_WINDOW_CREATE_FAILED_STR "%s: could not create the window\n"
 #define MSG_GUI_WINDOW_OPEN_FAILED_STR "%s: could not open the window\n"
+#define MSG_ERR_TMPKEPT_STR "save failed; your accounts survive in the vault's .tmp file - rename it back"
+#define MSG_GUI_SAVE_FAILED_TMPKEPT_STR "Could not replace the vault file. Your accounts survive in the vault's .tmp file - rename it back over the vault."
 
 #endif /* AmiAuth_STRINGS */
 
@@ -512,6 +516,8 @@ static const struct AmiAuth_ArrayType AmiAuth_Array[] =
     { MSG_GUI_NEEDS_REACTION, (STRPTR)MSG_GUI_NEEDS_REACTION_STR },
     { MSG_GUI_WINDOW_CREATE_FAILED, (STRPTR)MSG_GUI_WINDOW_CREATE_FAILED_STR },
     { MSG_GUI_WINDOW_OPEN_FAILED, (STRPTR)MSG_GUI_WINDOW_OPEN_FAILED_STR },
+    { MSG_ERR_TMPKEPT, (STRPTR)MSG_ERR_TMPKEPT_STR },
+    { MSG_GUI_SAVE_FAILED_TMPKEPT, (STRPTR)MSG_GUI_SAVE_FAILED_TMPKEPT_STR },
 };
 
 
@@ -816,6 +822,10 @@ static const char AmiAuth_Block[] =
     MSG_GUI_WINDOW_CREATE_FAILED_STR ""
      "\x00\x00\x00\x91" "\x00\x1e"
     MSG_GUI_WINDOW_OPEN_FAILED_STR ""
+     "\x00\x00\x00\x92" "\x00\x4c"
+    MSG_ERR_TMPKEPT_STR ""
+     "\x00\x00\x00\x93" "\x00\x72"
+    MSG_GUI_SAVE_FAILED_TMPKEPT_STR "\x00"
 
 };
 
