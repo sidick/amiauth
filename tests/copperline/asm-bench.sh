@@ -5,10 +5,10 @@
 # crypto_dispatch.h's runtime asm dispatch — does not itself change anything
 # shipped. Invoked by `make asm-bench`.
 #
-# Needs copperline (or COPPERLINE= pointing at another build — see run.sh's
-# header for why you might need one), docker (the amiga-gcc image), and a
-# 512 KiB Kickstart ROM (timer.device EClock is not available under the
-# bundled AROS, so this one dev tool needs a real ROM — override with KICK=).
+# Needs copperline (or COPPERLINE= pointing at another build), docker (the
+# amiga-gcc image), and a 512 KiB Kickstart ROM (timer.device EClock is not
+# available under the bundled AROS, so this one dev tool needs a real ROM —
+# override with KICK=).
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)

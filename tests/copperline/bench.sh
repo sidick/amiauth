@@ -2,18 +2,10 @@
 # bench.sh — measure PBKDF2-HMAC-SHA1 throughput on a stock 68000 under
 # Copperline, to inform the vault KDF iteration policy (see docs/SECURITY.md).
 #
-# Needs copperline (or COPPERLINE= pointing at another build — see run.sh's
-# header for why you might need one), docker (the amiga-gcc image), and a
-# 512 KiB Kickstart ROM (timer.device EClock is not available under the
-# bundled AROS, so this one dev tool needs a real ROM — override with
-# KICK=). Invoked by `make pbkdf2-bench`.
-#
-# NOTE: [[filesys]] hangs after boot on a 68000/68010 guest under released
-# Copperline 0.12.0/0.13.0 (split move.l bus writes never ring the hostfs
-# doorbell) — see docs/copperline-bugreport/REPORT.md. Fixed upstream in
-# CopperlineHQ/Copperline#312, not yet released — until it is, point
-# COPPERLINE= at a build off that branch rather than raising the CPU model
-# below, which would invalidate these numbers as 68000 KDF calibration data.
+# Needs copperline (or COPPERLINE= pointing at another build), docker (the
+# amiga-gcc image), and a 512 KiB Kickstart ROM (timer.device EClock is not
+# available under the bundled AROS, so this one dev tool needs a real ROM —
+# override with KICK=). Invoked by `make pbkdf2-bench`.
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)

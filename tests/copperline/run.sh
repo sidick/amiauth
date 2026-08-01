@@ -11,11 +11,9 @@
 #
 # Prereqs:
 #   - copperline on PATH (brew install copperline), or COPPERLINE= pointing
-#     at another build (e.g. a local build of CopperlineHQ/Copperline#312,
-#     which fixes the [[filesys]]-hangs-on-68000 bug described in
-#     docs/copperline-bugreport/REPORT.md — not yet in a release). Such a
-#     build won't have the bundled AROS assets installed next to it, so pair
-#     COPPERLINE= with KICK= (a real ROM) when using one.
+#     at another build. Such a build won't have the bundled AROS assets
+#     installed next to it, so pair COPPERLINE= with KICK= (a real ROM)
+#     when using one.
 #   - the cross-built harness                    SERIALTEST_M68K= (default build/serialtest)
 #   - KICK= (optional): a 512 KiB Kickstart ROM. If unset, boots Copperline's
 #     bundled AROS Kickstart replacement — redistributable, so CI needs no ROM.

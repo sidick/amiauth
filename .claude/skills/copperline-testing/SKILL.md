@@ -224,9 +224,12 @@ toolchain, no build deps, and it bundles AROS):
 
 ## Local environment (this machine)
 
-- `copperline` (Homebrew): **0.12.0** as of 2026-07 (`brew upgrade
-  linuxjedi/copperline/copperline`; was 0.11.0 — see version-specific notes
-  above tagged 0.12+).
+- `copperline` (Homebrew): **0.14.0** as of 2026-08 (`brew upgrade
+  copperlinehq/copperline/copperline`; see version-specific notes above
+  tagged 0.12+). 0.14.0 also fixed the 68000/68010 `[[filesys]]`
+  boot-hang bug (`docs/copperline-bugreport/REPORT.md`,
+  CopperlineHQ/Copperline#312) — CI and this project's own tests are no
+  longer pinned below it for that reason.
 - Kickstart ROMs: `~/Documents/Amiberry/Roms/` (e.g. `amiga-os-310-a600.rom`,
   a 512 KiB 3.1). Workbench/Storage ADFs: `~/Documents/Amiberry/ADF/`.
 - `xdftool` (extract files from ADFs): `~/src/amitools/bin/xdftool`.

@@ -148,7 +148,7 @@ jobs:
     if: needs.changes.outputs.target == 'true'
     env:
       # Pin the Copperline release; bump to adopt upstream changes.
-      COPPERLINE_VERSION: "0.11.0"
+      COPPERLINE_VERSION: "0.14.0"
     steps:
       - uses: actions/checkout@v7
 
