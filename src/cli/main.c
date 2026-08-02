@@ -18,6 +18,10 @@
  * salt/nonce come from POSIX /dev/tty + /dev/urandom on the host, and from the
  * AmigaOS RAW console + entropy source (src/amiga/random.c) on hardware; where
  * no secure RNG exists, encrypted create/save is cleanly refused. */
+/* fileno() (read_passphrase, below) is POSIX, not C99 - needs an explicit
+ * feature-test macro before any header is included, or a strict-C99 glibc
+ * hides it. Must come before every #include, not just <stdio.h>. */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
