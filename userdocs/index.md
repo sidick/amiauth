@@ -63,5 +63,5 @@ yourself.
 ## License
 
 BSD 2-Clause. Copyright © 2026 Simon Dick. Bundled third-party source (the
-ISC-licensed `quirc` QR decoder) is listed in
+ISC-licensed `quirc` QR decoder and the `qrcodegen` encoder) is listed in
 [`THIRDPARTY.md`](https://github.com/sidick/amiauth/blob/main/THIRDPARTY.md).
