@@ -33,7 +33,7 @@ endif
 
 # Containerised cross-build: same image as CI, so local m68k builds match.
 DOCKER          ?= docker
-AMIGA_GCC_IMAGE ?= ghcr.io/reinauer/container-amiga-gcc:latest
+AMIGA_GCC_IMAGE ?= ghcr.io/sidick/amiga-dev:1
 # Run as the calling user, not root: the container bind-mounts $(CURDIR), and
 # without this, files it creates (build/, the m68k binaries) come out root-
 # owned on Linux hosts - breaking any later non-Docker step (e.g. `make dist`)
@@ -104,22 +104,57 @@ QUIRC_M68K_OBJS := $(patsubst src/qr/%.c,$(BUILD)/qr-m68k/%.o,$(QUIRC_SRCS))
 QRCODEGEN_HOST_OBJ := $(BUILD)/qr-host/qrcodegen.o
 QRCODEGEN_M68K_OBJ := $(BUILD)/qr-m68k/qrcodegen.o
 
-.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke arexx-onhw arexx-onhw-docker arexx-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench flexcat flexcat-docker catalog-strings catalog-strings-docker check-catalog catalog-onhw-smoke catalog-nolib-onhw catalog-nolib-onhw-docker asm-tests asm-tests-docker guide dist movepointer movepointer-docker clean
+.PHONY: all test cli smoke diff m68k m68k-docker gui gui-docker gui-smoke qr-onhw qr-onhw-docker qr-onhw-smoke arexx-onhw arexx-onhw-docker arexx-onhw-smoke serialtest-m68k serialtest-m68k-docker copperline-smoke pbkdf2-bench asm-bench amissl-bench flexcat flexcat-docker catalog-strings catalog-strings-docker check-catalog catalog-onhw-smoke catalog-nolib-onhw catalog-nolib-onhw-docker asm-tests asm-tests-docker guide dist movepointer movepointer-docker clean build test-host test-target lint
 
 all: test cli
+
+# --- Verb contract (sidick/amiga-workflows' build-test.yml) ---------------
+# ci.yml calls these five names; each build-test.yml job is independent (no
+# artifact-passing between them). The named targets below (test/cli/smoke/
+# m68k/gui/copperline-smoke/check-catalog/...) stay as the documented local
+# entry points - README.md/CLAUDE.md/userdocs/ reference them already, so
+# this adds the contract's names rather than renaming what they point to.
+build: m68k gui
+
+# "Host-side tests: vectors, portable core, vamos runs" (the verb contract's
+# own definition) maps onto three previously-separate things: RFC vector
+# tests + native CLI + e2e CLI smoke (host-tests job), the m68k asm crypto
+# tests built here and validated via vamos below (asm-crypto-tests job) -
+# one verb, not two CI jobs, since build-test.yml's test-host job already
+# runs inside the amiga-dev image (has cc, m68k-amigaos-gcc, and vamos all
+# at once - no need for asm-tests-docker's nested container indirection).
+test-host: test cli smoke asm-tests
+	for cpu in 000 020; do \
+		echo "--- CPU $$cpu ---"; \
+		vamos -C "$$cpu" $(BUILD)/asm-test-sha1 || exit 1; \
+	done
+
+# Matches today's copperline-smoke job exactly (RFC 4226 HOTP core on real
+# m68k) - not gui-smoke/qr-onhw-smoke/arexx-onhw-smoke/catalog-onhw-smoke,
+# none of which run in CI today (dev-only Copperline checks, need more
+# local setup than a fresh checkout provides). AMIGA_REAL_ROM, if the
+# workflow decoded one from the optional AMIGA_REAL_ROM_B64 secret, becomes
+# KICK=; unset (the common case), boots Copperline's bundled AROS instead.
+test-target: serialtest-m68k
+	KICK="$${AMIGA_REAL_ROM:-}" sh tests/copperline/run.sh
+
+# The only static/structural check this repo has today - catalog-lint's own
+# job folds in here rather than staying separate, unlike sana2loop's
+# docs-build (which had no verb-contract home at all).
+lint: check-catalog
 
 # --- Host: unit / RFC-vector tests ---
 test: $(BUILD)/run-tests
 	VAULT_TEST_FILE=$(BUILD)/amiauth-test.vault \
 		AMIAUTH_PREFS_DIR=$(BUILD)/prefs-test $(BUILD)/run-tests
 
-$(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) $(CORE_HDRS) $(QR_HDRS) $(TEST_HDRS) | $(BUILD)
+$(BUILD)/run-tests: $(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) $(CORE_HDRS) $(QR_HDRS) $(TEST_HDRS) | $(BUILD)/.dir
 	$(CC) $(CFLAGS) $(CObjINC) $(QR_CPPFLAGS) -Itests \
 		$(CORE_SRCS) $(TEST_SRCS) $(QR_WRAP) $(QUIRC_HOST_OBJS) \
 		$(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) -o $@
 
 # Vendored quirc objects — host toolchain, warnings suppressed (third-party).
-$(BUILD)/qr-host/%.o: src/qr/%.c $(QR_HDRS) | $(BUILD)
+$(BUILD)/qr-host/%.o: src/qr/%.c $(QR_HDRS) | $(BUILD)/.dir
 	@mkdir -p $(BUILD)/qr-host
 	$(CC) $(CFLAGS) -w $(QR_CPPFLAGS) -c $< -o $@
 
@@ -129,7 +164,7 @@ $(BUILD)/qr-host/%.o: src/qr/%.c $(QR_HDRS) | $(BUILD)
 # command): our qrencode.c wrapper + the vendored qrcodegen object.
 cli: $(BUILD)/amiauth-host
 
-$(BUILD)/amiauth-host: $(CORE_SRCS) $(CLI_SRCS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) $(CORE_HDRS) $(AMIGA_HDRS) $(QR_HDRS) | $(BUILD)
+$(BUILD)/amiauth-host: $(CORE_SRCS) $(CLI_SRCS) $(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) $(CORE_HDRS) $(AMIGA_HDRS) $(QR_HDRS) | $(BUILD)/.dir
 	$(CC) $(CFLAGS) $(CObjINC) -Isrc/qr $(CORE_SRCS) $(CLI_SRCS) \
 		$(QRENC_WRAP) $(QRCODEGEN_HOST_OBJ) -o $@
 
@@ -141,14 +176,14 @@ smoke: $(BUILD)/amiauth-host
 diff: $(BUILD)/run-diff
 	$(BUILD)/run-diff $(DIFF_ITERS)
 
-$(BUILD)/run-diff: $(CORE_SRCS) $(DIFF_SRCS) $(CORE_HDRS) | $(BUILD)
+$(BUILD)/run-diff: $(CORE_SRCS) $(DIFF_SRCS) $(CORE_HDRS) | $(BUILD)/.dir
 	$(CC) $(CFLAGS) $(CObjINC) $(OPENSSL_CFLAGS) $(CORE_SRCS) $(DIFF_SRCS) \
 		$(OPENSSL_LIBS) -o $@
 
 # --- m68k: Amiga CLI binary (amiga-gcc on PATH) ---
 # Includes the QR encoder (#45's CLI QR command): see the qr-m68k object rule
 # below (shared with the GUI's decoder build).
-m68k: $(QRCODEGEN_M68K_OBJ) | $(BUILD)
+m68k: $(QRCODEGEN_M68K_OBJ) | $(BUILD)/.dir
 	$(M68K_CC) $(M68K_CFLAGS) -Isrc/qr $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) \
 		$(QRENC_WRAP) $(QRCODEGEN_M68K_OBJ) -o $(BUILD)/AmiAuth
 
@@ -159,7 +194,7 @@ m68k: $(QRCODEGEN_M68K_OBJ) | $(BUILD)
 # components - see tests/gui/catalog-onhw.sh). Never shipped.
 CATALOG_NOLIB_DEFS := -DAMIAUTH_LOCALE_LIBNAME='"locale.library.nonexistent"'
 
-catalog-nolib-onhw: $(QRCODEGEN_M68K_OBJ) | $(BUILD)
+catalog-nolib-onhw: $(QRCODEGEN_M68K_OBJ) | $(BUILD)/.dir
 	$(M68K_CC) $(M68K_CFLAGS) $(CATALOG_NOLIB_DEFS) -Isrc/qr $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(CLI_SRCS) \
 		$(QRENC_WRAP) $(QRCODEGEN_M68K_OBJ) -o $(BUILD)/AmiAuth-nolib
 
@@ -174,11 +209,11 @@ catalog-nolib-onhw-docker:
 GUI_SRCS := src/gui/main.c src/amiga/qrimage.c src/amiga/arexx.c
 
 # Vendored quirc objects — m68k toolchain, warnings suppressed (third-party).
-$(BUILD)/qr-m68k/%.o: src/qr/%.c $(QR_HDRS) | $(BUILD)
+$(BUILD)/qr-m68k/%.o: src/qr/%.c $(QR_HDRS) | $(BUILD)/.dir
 	@mkdir -p $(BUILD)/qr-m68k
 	$(M68K_CC) $(M68K_CFLAGS) -w $(QR_CPPFLAGS) -c $< -o $@
 
-gui: $(QUIRC_M68K_OBJS) $(QRCODEGEN_M68K_OBJ) | $(BUILD)
+gui: $(QUIRC_M68K_OBJS) $(QRCODEGEN_M68K_OBJ) | $(BUILD)/.dir
 	$(M68K_CC) $(M68K_CFLAGS) $(VERSION_DEFS) $(QR_CPPFLAGS) $(CORE_SRCS) $(ASM_SRCS) $(AMIGA_SRCS) $(GUI_SRCS) \
 		$(QR_WRAP) $(QUIRC_M68K_OBJS) $(QRENC_WRAP) $(QRCODEGEN_M68K_OBJ) -lm -lamiga -o $(BUILD)/AmiAuthGUI
 
@@ -197,7 +232,7 @@ gui-docker:
 # clang chokes on FlexCat's own build flags, so use `flexcat-docker` there.
 flexcat: $(BUILD)/flexcat
 
-$(BUILD)/flexcat: | $(BUILD)
+$(BUILD)/flexcat: | $(BUILD)/.dir
 	src=$$(bash tools/fetch-flexcat.sh) && \
 	cp "$$src" $(BUILD)/flexcat && chmod +x $(BUILD)/flexcat && \
 	cp "$$(dirname $$src)/../sd/CatComp_h.sd" $(BUILD)/CatComp_h.sd
@@ -240,7 +275,7 @@ gui-smoke: $(BUILD)/amiauth-host
 QR_ONHW_DEFS ?=
 QR_ONHW_SRCS := tests/gui/qr_onhw.c src/amiga/qrimage.c $(QR_WRAP)
 
-qr-onhw: $(QUIRC_M68K_OBJS) | $(BUILD)
+qr-onhw: $(QUIRC_M68K_OBJS) | $(BUILD)/.dir
 	$(M68K_CC) $(M68K_CFLAGS) $(QR_CPPFLAGS) $(QR_ONHW_DEFS) $(QR_ONHW_SRCS) \
 		$(QUIRC_M68K_OBJS) -lm -lamiga -o $(BUILD)/qr-onhw
 
@@ -264,7 +299,7 @@ m68k-docker:
 # any other target here).
 asm-tests: $(BUILD)/asm-test-sha1
 
-$(BUILD)/asm-test-sha1: tests/asm/test_sha1_asm.c $(CORE_SRCS) $(ASM_SRCS) $(CORE_HDRS) $(TEST_HDRS) | $(BUILD)
+$(BUILD)/asm-test-sha1: tests/asm/test_sha1_asm.c $(CORE_SRCS) $(ASM_SRCS) $(CORE_HDRS) $(TEST_HDRS) | $(BUILD)/.dir
 	$(M68K_CC) $(M68K_CFLAGS) -Itests tests/asm/test_sha1_asm.c \
 		tests/test_sha1.c tests/test_hmac.c tests/test_pbkdf2.c tests/test_kdf.c \
 		$(CORE_SRCS) $(ASM_SRCS) src/amiga/prefs.c -lamiga -o $@
@@ -281,7 +316,7 @@ SERIALTEST_SRCS := src/core/otp.c src/core/hmac.c src/core/sha1.c \
                    src/core/sha256.c src/core/sha512.c src/core/steamguard.c \
                    src/core/drbg.c tests/copperline/serialtest.c
 
-serialtest-m68k: | $(BUILD)
+serialtest-m68k: | $(BUILD)/.dir
 	$(M68K_CC) $(M68K_CFLAGS) $(SERIALTEST_SRCS) -o $(BUILD)/serialtest
 
 serialtest-m68k-docker:
@@ -296,7 +331,7 @@ copperline-smoke: serialtest-m68k-docker
 # the WB image's resident RexxMast (`rx`) against AMIAUTH.1, then relay its
 # redirected output back over serial with this small m68k program (arexxtest).
 # See tests/gui/arexx-onhw.sh.
-arexx-onhw: | $(BUILD)
+arexx-onhw: | $(BUILD)/.dir
 	$(M68K_CC) $(M68K_CFLAGS) tests/copperline/arexxtest.c -o $(BUILD)/arexxtest
 
 arexx-onhw-docker:
@@ -334,7 +369,7 @@ amissl-bench:
 # --- guide: AmigaGuide user documentation, generated from userdocs/ ----------
 # userdocs/ is the single source of truth for user docs (published as the
 # MkDocs site); this converts it for on-Amiga reading (MultiView/AmigaGuide).
-guide: | $(BUILD)
+guide: | $(BUILD)/.dir
 	python3 tools/docs2guide.py userdocs $(BUILD)/AmiAuth.guide
 
 # --- lha: build the real LHa for UNIX (archive-capable), pinned --------------
@@ -359,14 +394,24 @@ $(BUILD)/tools/lha:
 	rm -rf $(BUILD)/tools/lha-src
 
 # --- dist: assemble the Aminet upload pair (archive + .readme) ---------------
-# Expects prebuilt m68k binaries (make m68k-docker gui-docker); the lha
-# archiver is built automatically (above). Produces build/dist/AmiAuth.lha
-# (drawer with binaries, docs, icons) and build/dist/AmiAuth.readme alongside
-# — the two files Aminet wants. Icons: the drawer icon sits next to the
-# drawer; the CLI deliberately has no icon (it is a Shell command).
-dist: guide $(LHA)
-	@test -f $(BUILD)/AmiAuth -a -f $(BUILD)/AmiAuthGUI || \
-		{ echo "dist: missing m68k binaries; run: make m68k-docker gui-docker"; exit 1; }
+# Builds the m68k binaries itself (build-test.yml's dist job runs `make
+# dist` standalone, with no prior `build` job's artifacts to reuse - see the
+# verb-contract comment above); the lha archiver is built automatically
+# (above). Produces build/dist/AmiAuth.lha (drawer with binaries, docs,
+# icons) and build/dist/AmiAuth.readme alongside it — the two files Aminet
+# wants. Icons: the drawer icon sits next to the drawer; the CLI
+# deliberately has no icon (it is a Shell command).
+#
+# The $VER grep below confirms the binaries just built actually embed the
+# CURRENT src/version.h AMIAUTH_VERSION - the release workflow's own
+# tag-vs-source check (scripts/verify-version.sh, run before this target)
+# separately confirms the git tag matches src/version.h itself, closing the
+# loop: tag == src/version.h == what's actually in the binaries.
+dist: build guide $(LHA)
+	@v=$$(sed -n 's/^#define AMIAUTH_VERSION[[:space:]]*"\(.*\)"$$/\1/p' src/version.h); \
+	for b in AmiAuth AmiAuthGUI; do \
+		grep -aqF "\$$VER: $$b $$v (" $(BUILD)/$$b || { echo "dist: $(BUILD)/$$b lacks \"\$$VER: $$b $$v (...)\" - stale build/?"; exit 1; }; \
+	done
 	rm -rf $(BUILD)/dist
 	mkdir -p $(BUILD)/dist/AmiAuth
 	cp $(BUILD)/AmiAuth $(BUILD)/AmiAuthGUI $(BUILD)/AmiAuth.guide \
@@ -383,7 +428,7 @@ dist: guide $(LHA)
 # from source with our own toolchain rather than trusting the original
 # Aminet prebuilt binary; -w since it's third-party (mirrors quirc's
 # treatment) - the warnings are 1987 K&R implicit-declarations, harmless.
-movepointer: | $(BUILD)
+movepointer: | $(BUILD)/.dir
 	$(M68K_CC) -w -m68000 -noixemul tests/tools/movepointer/movepointer.c \
 		-lamiga -o $(BUILD)/MovePointer
 
@@ -391,8 +436,16 @@ movepointer-docker:
 	$(DOCKER) run --rm --platform linux/amd64 $(DOCKER_USER) -v "$(CURDIR)":/work -w /work \
 		$(AMIGA_GCC_IMAGE) sh -lc 'PATH=/opt/amiga/bin:$$PATH make movepointer'
 
-$(BUILD):
-	mkdir -p $(BUILD)
+# A marker file, not $(BUILD) itself: BUILD's value is literally the string
+# "build", so a target named $(BUILD) would collide with the verb-contract
+# `build:` target below (Make merges prerequisites across every rule
+# sharing one target name) - every one of this file's `| $(BUILD)/.dir`
+# order-only prerequisites would silently gain build's own m68k+gui
+# prerequisites, breaking e.g. `make test` on a host with no cross-compiler.
+# Reproduced and confirmed before making this change; see amiga-dev's
+# docs/plan.md Phase 3 entry for the same bug caught for real in sana2loop.
+$(BUILD)/.dir:
+	@mkdir -p $(BUILD)/.dir
 
 clean:
 	rm -rf $(BUILD)

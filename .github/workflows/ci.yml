@@ -1,5 +1,31 @@
 name: CI
 
+# ci: calls sidick/amiga-workflows' build-test.yml, which implements the
+# five-verb contract (see that repo's README.md, the document of record) --
+# build/test-host/test-target/lint all resolve to Makefile targets of the
+# same name (see Makefile's own "Verb contract" comment). Each of those
+# jobs is independent (no artifact-passing between them), unlike this
+# repo's previous bespoke pipeline (one m68k-build job producing both
+# binaries, one host-tests job, one asm-crypto-tests job) -- the m68k
+# cross-build now runs more than once per CI run (build and test-target
+# each call it), a deliberate tradeoff of standardizing on the shared
+# workflow rather than keeping a repo-specific optimization.
+#
+# The `changes` job stays local (repo-specific path patterns aren't
+# something a shared workflow should know about) and its outputs feed
+# build-test.yml's run-* inputs directly, preserving the path-based
+# skip-on-docs-only-PR behavior. `differential` (opt-in OpenSSL fuzz) and
+# `docs-build` (strict MkDocs + AmigaGuide check) stay local jobs too --
+# neither fits the five verbs, and the shared workflow has no hook for an
+# extra per-project job. `catalog-lint`'s check-catalog now runs as `make
+# lint` inside build-test.yml's lint job instead of its own job.
+#
+# NOTE: branch protection's required status checks reference job names
+# directly (e.g. "m68k Amiga build") -- those all changed shape here
+# (nested reusable-workflow jobs report as "ci / build" etc). Updated to
+# match as part of this same change; see amiga-dev's docs/plan.md Phase 4
+# entry for the mapping.
+
 on:
   push:
     branches: [main]
@@ -47,6 +73,18 @@ jobs:
             echo "catalog=$(match "$always|^(locale/|tools/check_catalog\.py)")"
           } >> "$GITHUB_OUTPUT"
 
+  ci:
+    name: ci
+    needs: changes
+    uses: sidick/amiga-workflows/.github/workflows/build-test.yml@v1
+    with:
+      run-build: ${{ needs.changes.outputs.build == 'true' }}
+      run-test-host: ${{ needs.changes.outputs.host == 'true' }}
+      run-test-target: ${{ needs.changes.outputs.target == 'true' }}
+      run-lint: ${{ needs.changes.outputs.catalog == 'true' }}
+    secrets:
+      AMIGA_REAL_ROM_B64: ${{ secrets.AMIGA_REAL_ROM_B64 }}
+
   docs-build:
     name: Docs site + AmigaGuide build
     runs-on: ubuntu-latest
@@ -64,30 +102,6 @@ jobs:
       - name: AmigaGuide conversion
         run: make guide
 
-  host-tests:
-    name: Host vector tests
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.host == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - name: Build and run tests
-        run: make test
-      - name: Build native CLI
-        run: make cli
-      - name: CLI smoke test
-        run: make smoke
-
-  catalog-lint:
-    name: Catalog structural checks
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.catalog == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - name: Check placeholders, mnemonics, re-key prompt markers
-        run: make check-catalog
-
   differential:
     name: Differential fuzz (vs OpenSSL)
     runs-on: ubuntu-latest
@@ -99,82 +113,3 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
       - name: Fuzz crypto primitives against OpenSSL
         run: make diff DIFF_ITERS=20000
-
-  m68k-build:
-    name: m68k Amiga build
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.build == 'true'
-    container: ghcr.io/reinauer/container-amiga-gcc:latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Cross-build CLI for 68000
-        run: PATH="/opt/amiga/bin:$PATH" make m68k M68K_CC=m68k-amigaos-gcc
-      # The GUI pulls in sources the CLI build never touches (src/gui/,
-      # qrimage.c, arexx.c, the m68k quirc objects) - without this step a PR
-      # that breaks GUI compilation merges green and only fails at release
-      # tag time.
-      - name: Cross-build GUI for 68000
-        run: PATH="/opt/amiga/bin:$PATH" make gui M68K_CC=m68k-amigaos-gcc
-
-  asm-crypto-tests:
-    name: m68k asm crypto tests (vamos)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.build == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install amitools (vamos)
-        run: pip install 'amitools[vamos]'
-      - name: Cross-build the asm test binaries
-        run: make asm-tests-docker
-      # Every existing SHA-1/HMAC/PBKDF2 RFC vector, run against the
-      # hand-written asm (#47) instead of the C reference, on both the plain
-      # 68000 baseline and 68020+ - the asm is meant to be correct on every
-      # CPU tier this project supports, not just an accelerated one. ChaCha20
-      # has no asm path (measured slower than C on real hardware; see
-      # src/core/crypto_dispatch.h), so there's nothing to validate here.
-      - name: Validate against RFC vectors (68000 + 68020)
-        run: |
-          for cpu in 000 020; do
-            echo "--- CPU $cpu ---"
-            vamos -C "$cpu" build/asm-test-sha1
-          done
-
-  copperline-smoke:
-    name: Copperline on-target smoke test (AROS)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.target == 'true'
-    env:
-      # Pin the Copperline release; bump to adopt upstream changes.
-      COPPERLINE_VERSION: "0.14.0"
-    steps:
-      - uses: actions/checkout@v7
-
-      # Software Vulkan (lavapipe), in case the emulator initialises wgpu at
-      # start-up; the test itself runs windowless via --benchmark-until.
-      - name: Install runtime deps
-        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
-
-      # Use the prebuilt AppImage instead of compiling from source — a ~9 MB
-      # download vs a multi-minute cargo build. It bundles the emulator, its
-      # libs, and the redistributable AROS Kickstart replacement (no licensed
-      # ROM needed). Extracted (no FUSE on runners) and put on PATH.
-      - name: Install Copperline (prebuilt AppImage)
-        run: |
-          url="https://github.com/LinuxJedi/Copperline/releases/download/v${COPPERLINE_VERSION}/Copperline-${COPPERLINE_VERSION}-x86_64.AppImage"
-          curl -fsSL "$url" -o copperline.AppImage
-          chmod +x copperline.AppImage
-          ./copperline.AppImage --appimage-extract >/dev/null
-          mkdir -p "$HOME/.local/bin"
-          ln -sf "$PWD/squashfs-root/AppRun" "$HOME/.local/bin/copperline"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          # Point at the AppImage's bundled AROS explicitly, so resolution
-          # doesn't depend on the extracted layout.
-          aros_bin=$(find "$PWD/squashfs-root" -name aros-amiga-m68k-rom.bin | head -1)
-          [ -n "$aros_bin" ] && echo "COPPERLINE_AROS_DIR=$(dirname "$aros_bin")" >> "$GITHUB_ENV"
-
-      # No KICK set -> run.sh boots the bundled AROS (no ROM needed).
-      - name: On-target smoke test
-        run: make copperline-smoke
