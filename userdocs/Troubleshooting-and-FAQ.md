@@ -123,10 +123,22 @@ hardware security key — decide per account how much that matters.
 TOTP codes *are* the time, cryptographically mixed with your secret. See
 [Time and Clock Sync](Time-and-Clock-Sync.md).
 
-**Does it work without a network?**
-Yes — that's a design goal. Codes are generated entirely offline; the network
-(SNTP) is only an optional way to verify the clock. A floppy-booted A500 with
-a manually-set offset works.
+**Does it work without a network? Where do the codes come from?**
+Yes — that's a design goal. No server is ever contacted to generate a code:
+your Amiga and the service each compute the same code independently, from the
+shared secret you enrolled plus the current time. The network (SNTP) is only
+an optional way to verify the clock. A floppy-booted A500 with a manually-set
+offset works.
+
+**Will it work with my bank / my employer's login?**
+It works with any service that offers standard "authenticator app" enrolment —
+that is, it shows you a QR code or a secret key when you set up 2FA (TOTP, or
+occasionally HOTP). That covers GitHub, Google, Microsoft, and most sites'
+"use an authenticator app" option; when a service pushes its own app, look for
+a "can't scan?" / "use another authenticator" link. What it *cannot* do is
+stand in for a service's own proprietary app — banks or employers that only
+accept push-notification approval in their app leave nothing for AmiAuth (or
+any standard authenticator) to generate.
 
 **Which machines/OS versions are supported?**
 CLI: any 68000+, AmigaOS 2.04+. GUI: OS 3.0+ with ReAction/ClassAct. See
