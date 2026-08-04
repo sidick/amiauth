@@ -9,7 +9,14 @@ Distribution: Aminet
 AmiAuth is a native two-factor authentication (2FA) code generator for classic
 AmigaOS. It implements TOTP (RFC 6238) and HOTP (RFC 4226) - the codes used by
 GitHub, Google, Microsoft, banks and countless other sites - so your Amiga can
-stand in for a phone authenticator app.
+stand in for a phone authenticator app. It works with any service that offers
+standard "authenticator app" enrolment (a QR code or secret key at setup);
+only services that insist on their own proprietary push-notification app are
+out of reach.
+
+Codes are computed entirely offline, from the enrolled secret and the current
+time - no server is ever contacted to generate one. The only optional network
+use is SNTP, purely to verify your clock.
 
 It stores multiple accounts in an (optionally passphrase-encrypted) vault,
 generates 6- or 8-digit codes with a live countdown, and - critically for the
